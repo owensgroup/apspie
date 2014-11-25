@@ -6,7 +6,7 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 #include <curand.h>
-#include <cublas.h>
+#include <cublas_v2.h>
 
 // Fill the array A(nr_rows_A, nr_cols_A) with random numbers on GPU
 void GPU_fill_rand(float *A, int nr_rows_A, int nr_cols_A) {
@@ -41,6 +41,17 @@ void gpu_blas_mmul(const float *A, const float *B, float *C, const int m, const 
     cublasDestroy(handle);
 }
 
+//Calculate matrix multiplication
+int sgemm(const float*A, const float*B, float*C, const int m, const int n, const int k) {
+
+    //Check for invalid input
+    if( m<0 || n<0 || k<0 )
+        return 1;
+
+    
+
+}
+
 //Print matrix A(nr_rows_A, nr_cols_A) storage in column-major format
 void print_matrix(const float *A, int nr_rows_A, int nr_cols_A) {
 
@@ -53,7 +64,11 @@ void print_matrix(const float *A, int nr_rows_A, int nr_cols_A) {
     std::cout << std::endl;
 }
 
+//Do matrix calculation before 
+
 int main() {
+    clock_t t;
+
     // Allocate 3 arrays on CPU
     int nr_rows_A, nr_cols_A, nr_rows_B, nr_cols_B, nr_rows_C, nr_cols_C;
 
@@ -82,8 +97,12 @@ int main() {
     std::cout << "B =" << std::endl;
     print_matrix(h_B, nr_rows_B, nr_cols_B);
 
+    t = clock();
+    std::cout << "Calculating...\n";
     // Multiply A and B on GPU
     gpu_blas_mmul(d_A, d_B, d_C, nr_rows_A, nr_cols_A, nr_cols_B);
+    t = clock() - t;
+    std::cout << "It took " << ((float)t)/CLOCKS_PER_SEC << " seconds.\n";
 
     // Copy (and print) the result on host memory
     cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
