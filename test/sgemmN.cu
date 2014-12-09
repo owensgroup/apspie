@@ -3,8 +3,8 @@
 // All rights reserved.
 
 #include <stdio.h>
-#include "cuda.h"
-#include "cublas_v2.h"
+#include <cuda.h>
+#include <cublas.h>
 
 #define TIMER_TOLERANCE 0.1f
 
@@ -49,6 +49,26 @@ __device__ void saxpy( float a, float *b, float *c )
     c[13] += a*b[13];
     c[14] += a*b[14];
     c[15] += a*b[15];
+}
+
+__device__ void saxpyminplus( float a, float *b, float *c )
+{
+    c[0] = min(c[0],a+b[0]);
+    c[1] = min(c[1],a+b[1]);
+    c[2] = min(c[2],a+b[2]);
+    c[3] = min(c[3],a+b[3]);
+    c[4] = min(c[4],a+b[4]);
+    c[5] = min(c[5],a+b[5]);
+    c[6] = min(c[6],a+b[6]);
+    c[7] = min(c[7],a+b[7]);
+    c[8] = min(c[8],a+b[8]);
+    c[9] = min(c[9],a+b[9]);
+    c[10] = min(c[10],a+b[10]);
+    c[11] = min(c[11],a+b[11]);
+    c[12] = min(c[12],a+b[12]);
+    c[13] = min(c[13],a+b[13]);
+    c[14] = min(c[14],a+b[14]);
+    c[15] = min(c[15],a+b[15]);
 }
 
 extern "C" __global__ void sgemmNT( const float *A, int lda, const float *B, int ldb, float* C, int ldc, int k, float alpha, float beta )

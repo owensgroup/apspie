@@ -1,159 +1,362 @@
 // Puts everything together
+// For now, just run V times.
+// Optimizations: 
+// -come up with good stopping criteria
+// -start from i=1
 
 #include <cstdlib>
 #include <ctime>
+#include <stdio.h>
 #include <iostream>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-#include <curand.h>
+#include <cusparse.h>
+
+#include <thrust/device_vector.h>
 #include <cublas_v2.h>
 
-#define DIM 3
+//#define N (33 * 1024)
+#define N 20
 
-// Fill the array A(nr_rows_A, nr_cols_A) with random numbers on GPU
-void GPU_fill_rand(float *A, int nr_rows_A, int nr_cols_A) {
-    // Create a pseudo-random number generator
-    curandGenerator_t prng;
-    curandCreateGenerator(&prng, CURAND_RNG_PSEUDO_DEFAULT);
+/*void read_mtx( char**filename ) {
+    freopen(filename,"r",stdin);
+    //freopen("sample.out","w",stdout);
 
-    // Set the seed for the random number generator using the system clock
-    curandSetPseudoRandomGeneratorSeed(prng, (unsigned long long) clock());
+    scanf("%d", &
+}*/
 
-    // Fill the array with random numbers on the device
-    curandGenerateUniform(prng, A, nr_rows_A * nr_cols_A);
+template<typename T>
+void print_vector( T *vector, int length ) {
+    for( int j=0;j<length;j++ ) {
+        std::cout << vector[j] << " " << j << "\n";
+    }
 }
 
-// Multiply the arrays A and B on GPU and save the result in C
-// C(m,n) = A(m,k) * B(k,n)
-void gpu_blas_mmul(const float *A, const float *B, float *C, const int m, const int k, const int n) {
-    int lda=m,ldb=k,ldc=m;
-    const float alf = 1;
-    const float bet = 0;
-    const float *alpha = &alf;
-    const float *beta = &bet;
+template<typename T>
+void print_array( T *array, int length ) {
+    for( int j=0;j<length;j++ ) {
+        std::cout << array[j] << " ";
+        if( j%20==19 )
+            std::cout << "\n";
+    }
+    std::cout << "\n";
+}
 
-    // Create a handle for CUBLAS
+void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRowPtrA ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    cusparseStatus_t status = cusparseXcoo2csr(handle, d_cooRowIndA, edge, m, d_csrRowPtrA, CUSPARSE_INDEX_BASE_ZERO);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("COO -> CSR conversion successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid value for idxbase.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+    }
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+}
+
+void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_cscValA, int *d_cscRowIndA, int *d_cscColPtrA ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    // For CUDA 4.0
+    cusparseStatus_t status = cusparseScsr2csc(handle, m, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, 1, CUSPARSE_INDEX_BASE_ZERO);
+
+    // For CUDA 5.0+
+    //cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, 1, CUSPARSE_INDEX_BASE_ZERO);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("Transpose successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+    }
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+}
+
+void axpy( float *d_bfsResult, const float *d_csrValA, const int m ) {
+    const float alf = -1;
+    const float *alpha = &alf;
+
     cublasHandle_t handle;
     cublasCreate(&handle);
 
-    // Do the actual multiplication
-    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    cublasStatus_t status = cublasSaxpy(handle, 
+                            m, 
+                            alpha, 
+                            d_csrValA, 
+                            1, 
+                            d_bfsResult, 
+                            1);
 
-    // Destroy the handle
+    switch( status ) {
+        case CUBLAS_STATUS_SUCCESS:
+	    printf("axpy completed successfully!\n");
+            break;
+        case CUBLAS_STATUS_NOT_INITIALIZED:
+	    printf("The library was not initialized.\n");
+	    break;
+        case CUBLAS_STATUS_ARCH_MISMATCH:	
+	    printf("The device does not support double-precision.\n");
+	    break;
+        case CUBLAS_STATUS_EXECUTION_FAILED:
+	    printf("The function failed to launch on the GPU.\n");
+    }
+
     cublasDestroy(handle);
 }
 
-//Device code for naive matrix multiplication
-__device__ void sgemm_helper(const float*A, const float*B, float*C, int z) {
-    int x = blockIdx.x;
-    int y = blockIdx.y;
-    int offset = x+y*gridDim.x;
+void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult ) {
+    const float alpha = 1;
+    const float beta = 0;
+    const float *value = &alpha;
 
-    if( z==0 )
-        C[offset] = 0;
-    C[offset] += B[z+y*gridDim.x] * A[x+z*gridDim.x];
-}
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
 
-__global__ void sgemm(const float*A, const float*B, float*C, const int m, const int n, const int k) {
+    cusparseMatDescr_t descr;
+    cusparseCreateMatDescr(&descr);
+    //cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ONE);
 
-    int z;
+    cusparseStatus_t status = cusparseScsrmv(handle, 
+                   CUSPARSE_OPERATION_NON_TRANSPOSE, 
+                   m, m, alpha, 
+                   descr, 
+                   //value,
+                   d_csrValA, 
+                   d_csrRowPtrA, 
+                   d_csrColIndA, 
+                   d_inputVector, 
+                   beta,
+                   d_spmvResult);
 
-    for( z=0; z<k; z++ ) {
-        sgemm_helper(A, B, C, z);
+    // For CUDA 5.0+
+    //cusparseStatus_t status = cusparseScsrmv(handle,                   CUSPARSE_OPERATION_NON_TRANSPOSE, m, m, m, edge, alpha, descr, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector, m, beta, d_bfsResult, m);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            //printf("spmv multiplication successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+            printf("Error: Matrix type not supported.\n");
     }
 
+    // Important: destroy handle
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 }
 
-//Calculate matrix multiplication
-int gpu_sgemm(const float*A, const float*B, float*C, const int m, const int n, const int k) {;
-
-    //Check for invalid input
-    if( m<0 || n<0 || k<0 )
-        return;
-
-    dim3 grid(m,n);
-
-    sgemm<<<grid,1>>>( A, B, C, m, n, k );
-    return;
-}
-
-//Print matrix A(nr_rows_A, nr_cols_A) storage in column-major format
-void print_matrix(const float *A, int nr_rows_A, int nr_cols_A) {
-
-    for(int i = 0; i < nr_rows_A; ++i){
-        for(int j = 0; j < nr_cols_A; ++j){
-            std::cout << A[j * nr_rows_A + i] << " ";
-        }
-        std::cout << std::endl;
+__global__ void addResult( float *d_bfsResult, const float *d_spmvResult, const int iter ) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    while( tid < N ) {
+        d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
+        tid += blockDim.x * gridDim.x;
     }
-    std::cout << std::endl;
 }
 
-//Do matrix calculation before 
+void bfs( const int vertex, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_bfsResult ) {
 
-int main() {
-    clock_t t;
+    // Allocate GPU memory for result
+    float *d_spmvResult;
+    cudaMalloc(&d_spmvResult, m*sizeof(float));
 
-    // Allocate 3 arrays on CPU
-    int nr_rows_A, nr_cols_A, nr_rows_B, nr_cols_B, nr_rows_C, nr_cols_C;
+    // Generate initial vector using vertex
+    float *h_inputVector, *d_inputVector;
+    h_inputVector = (float*)malloc(m*sizeof(float));
+    cudaMalloc(&d_inputVector, m*sizeof(float));
 
-    // for simplicity we are going to use square arrays
-    nr_rows_A = nr_cols_A = nr_rows_B = nr_cols_B = nr_rows_C = nr_cols_C = 3;
+    for( int i=0; i<m; i++ ) {
+        h_inputVector[i]=0;
+        if( i==vertex )
+            h_inputVector[i]=1;
+    }
+    //std::cout << "This is m: " << m << std::endl;
+    //print_array(h_inputVector,m);
+    cudaMemcpy(d_inputVector,h_inputVector, m*sizeof(float), cudaMemcpyHostToDevice);
     
-    float *h_A = (float *)malloc(nr_rows_A * nr_cols_A * sizeof(float));
-    float *h_B = (float *)malloc(nr_rows_B * nr_cols_B * sizeof(float));
-    float *h_C = (float *)malloc(nr_rows_C * nr_cols_C * sizeof(float));
+    // Use Thrust to generate initial vector
+    //thrust::device_ptr<float> dev_ptr(d_inputVector);
+    //thrust::fill(dev_ptr, dev_ptr + m, (float) 0);
+    //thrust::device_vector<float> inputVector(m, 0);
+    //inputVector[vertex] = 1;
+    //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
-    // Allocate 3 arrays on GPU
-    float *d_A, *d_B, *d_C;
-    cudaMalloc(&d_A,nr_rows_A * nr_cols_A * sizeof(float));
-    cudaMalloc(&d_B,nr_rows_B * nr_cols_B * sizeof(float));
-    cudaMalloc(&d_C,nr_rows_C * nr_cols_C * sizeof(float));
+    spmv(d_inputVector, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult);
 
-    // Fill the arrays A and B on GPU with random numbers
-    GPU_fill_rand(d_A, nr_rows_A, nr_cols_A);
-    GPU_fill_rand(d_B, nr_rows_B, nr_cols_B);
 
-    // Optionally we can copy the data back on CPU and print the arrays
-    cudaMemcpy(h_A,d_A,nr_rows_A * nr_cols_A * sizeof(float),cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_B,d_B,nr_rows_B * nr_cols_B * sizeof(float),cudaMemcpyDeviceToHost);
-    std::cout << "A =" << std::endl;
-    print_matrix(h_A, nr_rows_A, nr_cols_A);
-    std::cout << "B =" << std::endl;
-    print_matrix(h_B, nr_rows_B, nr_cols_B);
+    for( int i=1; i<m; i++ ) {
+    //for( int i=1; i<3; i++ ) {
+        
+        if( i==1 ) {
+            spmv( d_bfsResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            axpy(d_bfsResult, d_csrValA, m);
+            addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
+        } else if( i%2==0 ) {
+            spmv( d_spmvResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector );
+            addResult<<<128,128>>>( d_bfsResult, d_inputVector, i );
+        } else {
+            spmv( d_inputVector, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
+        }
+    }
 
-    t = clock();
-    std::cout << "Calculating...\n";
-    // Multiply A and B on GPU
-    gpu_blas_mmul(d_A, d_B, d_C, nr_rows_A, nr_cols_A, nr_cols_B);
-    t = clock() - t;
-    std::cout << "It took " << ((float)t)/CLOCKS_PER_SEC << " seconds.\n";
+    float *h_spmvResult, *h_bfsResult;
+    h_spmvResult = (float*)malloc(m*sizeof(float));
+    h_bfsResult = (float*)malloc(m*sizeof(float));
+    cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(h_spmvResult,m);
+    print_array(h_bfsResult,m);
 
-    // Copy (and print) the result on host memory
-    cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
-    std::cout << "C =" << std::endl;
-    print_matrix(h_C, nr_rows_C, nr_cols_C);
+    cudaFree(d_inputVector);
+    free(h_inputVector);
+    free(h_spmvResult);
+}
 
-    t = clock();
-    std::cout << "Calculating...\n";
-    gpu_sgemm(d_A, d_B, d_C, nr_rows_A, nr_cols_B, nr_cols_A);
-    t = clock() - t;
-    std::cout << "It took " << ((float)t)/CLOCKS_PER_SEC << " seconds.\n";
+int main(int argc, char**argv) {
+    int m, n, edge;
 
-    // Copy (and print) the result on host memory
-    cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
-    std::cout << "C =" << std::endl;
-    print_matrix(h_C, nr_rows_C, nr_cols_C);
+    //for( int i=1; i<argc; i++ ) {
+    //bfs(argv[i]);
+    freopen(argv[1],"r",stdin);
+    //freopen("sample.out","w",stdout);
 
-    //Free GPU memory
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);  
+    scanf("%d %d %d", &m, &n, &edge);
+    
+    // Allocate memory depending on how many edges are present
+    float *h_csrValA;
+    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
 
-    // Free CPU memory
-    free(h_A);
-    free(h_B);
-    free(h_C);    
+    h_csrValA    = (float*)malloc(edge*sizeof(float));
+    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_csrColIndA = (int*)malloc(edge*sizeof(int));
+    h_cooRowIndA = (int*)malloc(edge*sizeof(int));
 
-    return 0;
+    // Could add check for edges in diagonal of adjacency matrix
+    for( int j=0; j<edge; j++ ) {
+        if( scanf("%d", &h_csrColIndA[j])==EOF ) {
+            printf("Error: not enough rows in mtx file.\n");
+            break;
+        }
+        scanf("%d", &h_cooRowIndA[j]);
+        h_csrValA[j]=1.0;
+        h_cooRowIndA[j]--;
+        h_csrColIndA[j]--;
+        //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
+    }
+
+    // Allocate GPU memory
+    float *d_csrValA;
+    int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
+    float *d_cscValA;
+    int *d_cscRowIndA, *d_cscColPtrA;
+
+    cudaMalloc(&d_csrValA, edge*sizeof(float));
+    cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
+    cudaMalloc(&d_csrColIndA, edge*sizeof(int));
+    cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
+
+    cudaMalloc(&d_cscValA, edge*sizeof(float));
+    cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
+    cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
+
+    // Copy data from host to device
+    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
+    //cudaMemcpy(h_cooRowIndA, d_cooRowIndA, (edge)*sizeof(int),cudaMemcpyDeviceToHost);
+    //print_vector(h_cooRowIndA,edge);
+
+    // Run COO -> CSR kernel
+    coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
+
+    // Run CSR -> CSC kernel
+    csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+
+    // Run BFS kernel
+    float *h_bfsResult, *d_bfsResult;
+    h_bfsResult = (float*)malloc((m+1)*sizeof(float));
+    cudaMalloc(&d_bfsResult, (m+1)*sizeof(float));
+    
+    // Non-transpose spmv
+    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult );
+
+    bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult );
+
+    //for( int i=0;i<m;i++ ) {
+    //    std::cout << i << " ";
+    //
+    //}
+
+    // Copy data back to host
+    cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    //print_array(h_csrRowPtrA,m+1);
+
+    cudaFree(d_csrValA);
+    cudaFree(d_csrRowPtrA);
+    cudaFree(d_csrColIndA);
+    cudaFree(d_cooRowIndA);
+
+    cudaFree(d_cscValA);
+    cudaFree(d_cscRowIndA);
+    cudaFree(d_cscColPtrA);
+
+    free(h_csrValA);
+    free(h_csrRowPtrA);
+    free(h_csrColIndA);
+    free(h_cooRowIndA);
+
+    //free(h_cscValA);
+    //free(h_cscRowIndA);
+    //free(h_cscColPtrA);
 }
