@@ -3,6 +3,7 @@
 // Optimizations: 
 // -come up with good stopping criteria
 // -start from i=1
+// -test whether float really are faster than ints
 
 #include <cstdlib>
 #include <ctime>
@@ -17,13 +18,6 @@
 
 #define N (33 * 1024)
 
-/*void read_mtx( char**filename ) {
-    freopen(filename,"r",stdin);
-    //freopen("sample.out","w",stdout);
-
-    scanf("%d", &
-}*/
-
 template<typename T>
 void print_vector( T *vector, int length ) {
     for( int j=0;j<length;j++ ) {
@@ -33,6 +27,7 @@ void print_vector( T *vector, int length ) {
 
 template<typename T>
 void print_array( T *array, int length ) {
+    //if( length>50 ) length=50;
     for( int j=0;j<length;j++ ) {
         std::cout << array[j] << " ";
         if( j%20==19 )
@@ -202,7 +197,7 @@ __global__ void addResult( float *d_bfsResult, const float *d_spmvResult, const 
     }
 }
 
-void bfs( const int vertex, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_bfsResult ) {
+void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_bfsResult ) {
 
     // Allocate GPU memory for result
     float *d_spmvResult, *d_spmvSwap;
@@ -221,6 +216,16 @@ void bfs( const int vertex, const int edge, const int m, const float *d_csrValA,
     //std::cout << "This is m: " << m << std::endl;
     //print_array(h_bfsResult,m);
     cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(float), cudaMemcpyHostToDevice);
+
+    // Generate values for BFS (csrValA where everything is 1)
+    float *h_bfsValA, *d_bfsValA;
+    h_bfsValA = (float*)malloc(edge*sizeof(float));
+    cudaMalloc(&d_bfsValA, edge*sizeof(float));
+
+    for( int i=0; i<edge; i++ ) {
+        h_bfsValA[i] = 1;
+    }
+    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
     
     // Use Thrust to generate initial vector
     //thrust::device_ptr<float> dev_ptr(d_inputVector);
@@ -229,18 +234,18 @@ void bfs( const int vertex, const int edge, const int m, const float *d_csrValA,
     //inputVector[vertex] = 1;
     //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
-    spmv(d_bfsResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
+    spmv(d_bfsResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
     
-    axpy(d_bfsResult, d_csrValA, m);
+    axpy(d_bfsResult, d_bfsValA, m);
     addResult<<<128,128>>>( d_bfsResult, d_spmvResult, 1 );
 
     //for( int i=1; i<m-1; i++ ) {
     for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
-            spmv( d_spmvResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
+            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
             addResult<<<128,128>>>( d_bfsResult, d_spmvSwap, i );
         } else {
-            spmv( d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
             addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
         }
     }
@@ -264,8 +269,20 @@ int main(int argc, char**argv) {
     //for( int i=1; i<argc; i++ ) {
     //bfs(argv[i]);
     freopen(argv[1],"r",stdin);
-    //freopen("sample.out","w",stdout);
+    //freopen("log","w",stdout);
 
+    int c = getchar();
+    int old_c = 0;
+    //printf("%d\n",c);
+    while( c!=EOF ) {
+        if( (old_c==10 || old_c==0) && c!=37 ) {
+            ungetc(c, stdin);
+            printf("%d %d\n",old_c,c);
+            break;
+        }
+        old_c = c;
+        c=getchar();
+    }
     scanf("%d %d %d", &m, &n, &edge);
     
     // Allocate memory depending on how many edges are present
@@ -277,6 +294,7 @@ int main(int argc, char**argv) {
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
 
+    // Currently checks if there are fewer rows than promised
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
         if( scanf("%d", &h_csrColIndA[j])==EOF ) {
@@ -284,11 +302,24 @@ int main(int argc, char**argv) {
             break;
         }
         scanf("%d", &h_cooRowIndA[j]);
-        h_csrValA[j]=1.0;
+
+        if( j==0 ) {
+            c=getchar();
+            //printf("c = %d\n",c);
+            //ungetc(c, stdin);
+        }
+
+        if( c!=32 ) {
+            h_csrValA[j]=1.0;
+        } else {
+            scanf("%f", &h_csrValA[j]);
+        }
+
         h_cooRowIndA[j]--;
         h_csrColIndA[j]--;
         //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
+    //print_array(h_csrValA,edge);
 
     // Allocate GPU memory
     float *d_csrValA;
@@ -319,14 +350,14 @@ int main(int argc, char**argv) {
     csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
 
     // Run BFS kernel
-    float *h_bfsResult, *d_bfsResult;
-    h_bfsResult = (float*)malloc((m+1)*sizeof(float));
+    float *d_bfsResult;
     cudaMalloc(&d_bfsResult, (m+1)*sizeof(float));
     
     // Non-transpose spmv
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult );
 
-    bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult );
+    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult );
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult );
 
     //for( int i=0;i<m;i++ ) {
     //    std::cout << i << " ";
@@ -335,7 +366,6 @@ int main(int argc, char**argv) {
 
     // Copy data back to host
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
     cudaFree(d_csrValA);
@@ -346,6 +376,7 @@ int main(int argc, char**argv) {
     cudaFree(d_cscValA);
     cudaFree(d_cscRowIndA);
     cudaFree(d_cscColPtrA);
+    cudaFree(d_bfsResult);
 
     free(h_csrValA);
     free(h_csrRowPtrA);
