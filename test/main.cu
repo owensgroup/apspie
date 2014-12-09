@@ -15,8 +15,7 @@
 #include <thrust/device_vector.h>
 #include <cublas_v2.h>
 
-//#define N (33 * 1024)
-#define N 20
+#define N (33 * 1024)
 
 /*void read_mtx( char**filename ) {
     freopen(filename,"r",stdin);
@@ -206,22 +205,22 @@ __global__ void addResult( float *d_bfsResult, const float *d_spmvResult, const 
 void bfs( const int vertex, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_bfsResult ) {
 
     // Allocate GPU memory for result
-    float *d_spmvResult;
+    float *d_spmvResult, *d_spmvSwap;
     cudaMalloc(&d_spmvResult, m*sizeof(float));
+    cudaMalloc(&d_spmvSwap, m*sizeof(float));
 
     // Generate initial vector using vertex
-    float *h_inputVector, *d_inputVector;
-    h_inputVector = (float*)malloc(m*sizeof(float));
-    cudaMalloc(&d_inputVector, m*sizeof(float));
+    float *h_bfsResult;
+    h_bfsResult = (float*)malloc(m*sizeof(float));
 
     for( int i=0; i<m; i++ ) {
-        h_inputVector[i]=0;
+        h_bfsResult[i]=0;
         if( i==vertex )
-            h_inputVector[i]=1;
+            h_bfsResult[i]=1;
     }
     //std::cout << "This is m: " << m << std::endl;
-    //print_array(h_inputVector,m);
-    cudaMemcpy(d_inputVector,h_inputVector, m*sizeof(float), cudaMemcpyHostToDevice);
+    //print_array(h_bfsResult,m);
+    cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(float), cudaMemcpyHostToDevice);
     
     // Use Thrust to generate initial vector
     //thrust::device_ptr<float> dev_ptr(d_inputVector);
@@ -230,35 +229,32 @@ void bfs( const int vertex, const int edge, const int m, const float *d_csrValA,
     //inputVector[vertex] = 1;
     //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
-    spmv(d_inputVector, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult);
+    spmv(d_bfsResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
+    
+    axpy(d_bfsResult, d_csrValA, m);
+    addResult<<<128,128>>>( d_bfsResult, d_spmvResult, 1 );
 
-
-    for( int i=1; i<m; i++ ) {
-    //for( int i=1; i<3; i++ ) {
-        
-        if( i==1 ) {
-            spmv( d_bfsResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
-            axpy(d_bfsResult, d_csrValA, m);
-            addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
-        } else if( i%2==0 ) {
-            spmv( d_spmvResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector );
-            addResult<<<128,128>>>( d_bfsResult, d_inputVector, i );
+    //for( int i=1; i<m-1; i++ ) {
+    for( int i=2; i<3; i++ ) {
+        if( i%2==0 ) {
+            spmv( d_spmvResult, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
+            addResult<<<128,128>>>( d_bfsResult, d_spmvSwap, i );
         } else {
-            spmv( d_inputVector, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            spmv( d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
             addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
         }
     }
 
-    float *h_spmvResult, *h_bfsResult;
+    float *h_spmvResult;
     h_spmvResult = (float*)malloc(m*sizeof(float));
-    h_bfsResult = (float*)malloc(m*sizeof(float));
     cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(h_spmvResult,m);
+    //print_array(h_spmvResult,m);
     print_array(h_bfsResult,m);
 
-    cudaFree(d_inputVector);
-    free(h_inputVector);
+    cudaFree(d_spmvResult);
+    cudaFree(d_spmvSwap);
+    free(h_bfsResult);
     free(h_spmvResult);
 }
 
