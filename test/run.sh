@@ -4,3 +4,13 @@
 ./test ../dataset/small/chesapeake.mtx
 ./test ../dataset/large/ak2010/ak2010.mtx
 
+ARCH="GEN_SM20"
+
+for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 soc-LiveJournal1 kron_g500-logn21 webbase-1M
+do
+    if [ "$ARCH" = "GEN_SM20" ] ; then
+        ./test ../dataset/large/$i/$i.mtx
+    else
+        ./test /data/gunrock_dataset/large/$i/$i.mtx
+    fi
+done

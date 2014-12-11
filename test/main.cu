@@ -17,7 +17,8 @@
 #include <sys/resource.h>
 #include <deque>
 
-#define N (33 * 1024)
+//#define N (33 * 1024)
+#define N 4096
 #define MARK_PREDECESSORS 0
 
 template<typename T>
@@ -61,6 +62,202 @@ struct CpuTimer {
     }
 
 };
+
+/******************************************************************************
+ * BFS Testing Routines
+ *****************************************************************************/
+
+ /**
+  * @brief A simple CPU-based reference BFS ranking implementation.
+  *
+  * @tparam VertexId
+  * @tparam Value
+  * @tparam SizeT
+  *
+  * @param[in] graph Reference to the CSR graph we process on
+  * @param[in] source_path Host-side vector to store CPU computed labels for each node
+  * @param[in] predecessor Host-side vector to store CPU computed predecessor for each node
+  * @param[in] src Source node where BFS starts
+  */
+template<typename VertexId>
+int SimpleReferenceBfs(
+    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
+    VertexId                                *source_path,
+    VertexId                                *predecessor,
+    VertexId                                src)
+{
+    //initialize distances
+    for (VertexId i = 0; i < m; ++i) {
+        source_path[i] = -1;
+        if (MARK_PREDECESSORS)
+            predecessor[i] = -1;
+    }
+    source_path[src] = 0;
+    VertexId search_depth = 0;
+
+    // Initialize queue for managing previously-discovered nodes
+    std::deque<VertexId> frontier;
+    frontier.push_back(src);
+
+    //
+    //Perform BFS
+    //
+
+    CpuTimer cpu_timer;
+    cpu_timer.Start();
+    while (!frontier.empty()) {
+        
+        // Dequeue node from frontier
+        VertexId dequeued_node = frontier.front();
+        frontier.pop_front();
+        VertexId neighbor_dist = source_path[dequeued_node] + 1;
+
+        // Locate adjacency list
+        int edges_begin = h_rowPtrA[dequeued_node];
+        int edges_end = h_rowPtrA[dequeued_node + 1];
+
+        for (int edge = edges_begin; edge < edges_end; ++edge) {
+            //Lookup neighbor and enqueue if undiscovered
+            VertexId neighbor = h_colIndA[edge];
+            if (source_path[neighbor] == -1) {
+                source_path[neighbor] = neighbor_dist;
+                if (MARK_PREDECESSORS)
+                    predecessor[neighbor] = dequeued_node;
+                if (search_depth < neighbor_dist) {
+                    search_depth = neighbor_dist;
+                }
+                frontier.push_back(neighbor);
+            }
+        }
+    }
+
+    if (MARK_PREDECESSORS)
+        predecessor[src] = -1;
+
+    cpu_timer.Stop();
+    float elapsed = cpu_timer.ElapsedMillis();
+    search_depth++;
+
+    printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+
+    return search_depth;
+}
+
+int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU ) {
+
+    typedef int VertexId; // Use as the node identifier type
+
+    VertexId *reference_check_preds = NULL;
+
+    int depth = SimpleReferenceBfs<VertexId>(
+        m, h_rowPtrA, h_colIndA,
+        h_bfsResultCPU,
+        reference_check_preds,
+        src);
+
+    //print_array(h_bfsResultCPU, m);
+    return depth;
+}
+/******************************************************************************
+ * Helper routines for list construction and validation 
+ ******************************************************************************/
+
+/**
+ * \addtogroup PublicInterface
+ * @{
+ */
+
+/**
+ * @brief Compares the equivalence of two arrays. If incorrect, print the location
+ * of the first incorrect value appears, the incorrect value, and the reference
+ * value.
+ * \return Zero if two vectors are exactly the same, non-zero if there is any difference.
+ *
+ */
+template <typename T>
+int CompareResults(T* computed, T* reference, int len, bool verbose = true)
+{
+    int flag = 0;
+    for (int i = 0; i < len; i++) {
+
+        if (computed[i] != reference[i] && flag == 0) {
+            printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
+            std::cout << computed[i];
+            printf(" != ");
+            std::cout << reference[i];
+
+            if (verbose) {
+                printf("\nresult[...");
+                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                    std::cout << computed[j];
+                    printf(", ");
+                }
+                printf("...]");
+                printf("\nreference[...");
+                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                    std::cout << reference[j];
+                    printf(", ");
+                }
+                printf("...]");
+            }
+            flag += 1;
+            //return flag;
+        }
+        if (computed[i] != reference[i] && flag > 0) flag+=1;
+    }
+    printf("\n");
+    if (flag == 0)
+        printf("CORRECT\n");
+    return flag;
+}
+
+// Verify the result
+void verify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ){
+    if (h_bfsResultCPU != NULL) {
+        printf("Label Validity: ");
+        int error_num = CompareResults(h_bfsResult, h_bfsResultCPU, m, true);
+        if (error_num > 0) {
+            printf("%d errors occurred.\n", error_num);
+        }
+    }
+}
+
+struct GpuTimer
+{
+    cudaEvent_t start;
+    cudaEvent_t stop;
+
+    GpuTimer()
+    {
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+    }
+
+    ~GpuTimer()
+    {
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+    }
+
+    void Start()
+    {
+        cudaEventRecord(start, 0);
+    }
+
+    void Stop()
+    {
+        cudaEventRecord(stop, 0);
+    }
+
+    float ElapsedMillis()
+    {
+        float elapsed;
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&elapsed, start, stop);
+        return elapsed;
+    }
+};
+
 
 void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRowPtrA ) {
 
@@ -289,285 +486,34 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     free(h_spmvResult);
 }
 
-/******************************************************************************
- * BFS Testing Routines
- *****************************************************************************/
-
- /**
-  * @brief A simple CPU-based reference BFS ranking implementation.
-  *
-  * @tparam VertexId
-  * @tparam Value
-  * @tparam SizeT
-  *
-  * @param[in] graph Reference to the CSR graph we process on
-  * @param[in] source_path Host-side vector to store CPU computed labels for each node
-  * @param[in] predecessor Host-side vector to store CPU computed predecessor for each node
-  * @param[in] src Source node where BFS starts
-  */
-template<typename VertexId>
-void SimpleReferenceBfs(
-    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
-    VertexId                                *source_path,
-    VertexId                                *predecessor,
-    VertexId                                src)
-{
-    //initialize distances
-    for (VertexId i = 0; i < m; ++i) {
-        source_path[i] = -1;
-        if (MARK_PREDECESSORS)
-            predecessor[i] = -1;
-    }
-    source_path[src] = 0;
-    VertexId search_depth = 0;
-
-    // Initialize queue for managing previously-discovered nodes
-    std::deque<VertexId> frontier;
-    frontier.push_back(src);
-
-    //
-    //Perform BFS
-    //
-
-    CpuTimer cpu_timer;
-    cpu_timer.Start();
-    while (!frontier.empty()) {
-        
-        // Dequeue node from frontier
-        VertexId dequeued_node = frontier.front();
-        frontier.pop_front();
-        VertexId neighbor_dist = source_path[dequeued_node] + 1;
-
-        // Locate adjacency list
-        int edges_begin = h_rowPtrA[dequeued_node];
-        int edges_end = h_rowPtrA[dequeued_node + 1];
-
-        for (int edge = edges_begin; edge < edges_end; ++edge) {
-            //Lookup neighbor and enqueue if undiscovered
-            VertexId neighbor = h_colIndA[edge];
-            if (source_path[neighbor] == -1) {
-                source_path[neighbor] = neighbor_dist;
-                if (MARK_PREDECESSORS)
-                    predecessor[neighbor] = dequeued_node;
-                if (search_depth < neighbor_dist) {
-                    search_depth = neighbor_dist;
-                }
-                frontier.push_back(neighbor);
-            }
-        }
-    }
-
-    if (MARK_PREDECESSORS)
-        predecessor[src] = -1;
-
-    cpu_timer.Stop();
-    float elapsed = cpu_timer.ElapsedMillis();
-    search_depth++;
-
-    printf("CPU BFS finished in %lf msec. Search depth is:%d\n", elapsed, search_depth);
-}
-
-void bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU ) {
-
-    typedef int VertexId; // Use as the node identifier type
-
-    VertexId *reference_check_preds = NULL;
-
-    SimpleReferenceBfs<VertexId>(
-        m, h_rowPtrA, h_colIndA,
-        h_bfsResultCPU,
-        reference_check_preds,
-        src);
-
-    //print_array(h_bfsResultCPU, m);
-}
-/******************************************************************************
- * Helper routines for list construction and validation 
- ******************************************************************************/
-
-/**
- * \addtogroup PublicInterface
- * @{
- */
-
-/**
- * @brief Compares the equivalence of two arrays. If incorrect, print the location
- * of the first incorrect value appears, the incorrect value, and the reference
- * value.
- * \return Zero if two vectors are exactly the same, non-zero if there is any difference.
- *
- */
-template <typename T>
-int CompareResults(T* computed, T* reference, int len, bool verbose = true)
-{
-    int flag = 0;
-    for (int i = 0; i < len; i++) {
-
-        if (computed[i] != reference[i] && flag == 0) {
-            printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
-            std::cout << computed[i];
-            printf(" != ");
-            std::cout << reference[i];
-
-            if (verbose) {
-                printf("\nresult[...");
-                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
-                    std::cout << computed[j];
-                    printf(", ");
-                }
-                printf("...]");
-                printf("\nreference[...");
-                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
-                    std::cout << reference[j];
-                    printf(", ");
-                }
-                printf("...]");
-            }
-            flag += 1;
-            //return flag;
-        }
-        if (computed[i] != reference[i] && flag > 0) flag+=1;
-    }
-    printf("\n");
-    if (flag == 0)
-        printf("CORRECT\n");
-    return flag;
-}
-
-
-/**
- * @brief Compares the equivalence of two arrays. Partial specialization for
- * float type. If incorrect, print the location of the first incorrect value
- * appears, the incorrect value, and the reference value.
- *
- * @tparam T datatype of the values being compared with.
- * @tparam SizeT datatype of the array length.
- *
- * @param[in] computed Vector of values to be compared.
- * @param[in] reference Vector of reference values
- * @param[in] len Vector length
- * @param[in] verbose Whether to print values around the incorrect one.
- *
- * \return Zero if difference between each element of the two vectors are less
- * than a certain threshold, non-zero if any difference is equal to or larger
- * than the threshold.
- *
- */
-/*template <typename ValT>
-int CompareResults(ValT* computed, ValT* reference, int len, bool verbose = true)
-{
-    float THRESHOLD = 0.05f;
-    int flag = 0;
-    for (SizeT i = 0; i < len; i++) {
-
-        // Use relative error rate here.
-        bool is_right = true;
-        if (fabs(computed[i] - 0.0) < 0.01f) {
-            if ((computed[i] - reference[i]) > THRESHOLD)
-                is_right = false;
-        } else {
-            if (fabs((computed[i] - reference[i])/reference[i]) > THRESHOLD)
-                is_right = false;
-        }
-        if (!is_right && flag == 0) {
-            printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
-            PrintValue<ValT>(computed[i]);
-            printf(" != ");
-            PrintValue<ValT>(reference[i]);
-
-            if (verbose) {
-                printf("\nresult[...");
-                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
-                    PrintValue<ValT>(computed[j]);
-                    printf(", ");
-                }
-                printf("...]");
-                printf("\nreference[...");
-                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
-                    PrintValue<ValT>(reference[j]);
-                    printf(", ");
-                }
-                printf("...]");
-            }
-            flag += 1;
-            //return flag;
-        }
-        if (!is_right && flag > 0) flag += 1;
-    }
-    printf("\n");
-    if (!flag)
-        printf("CORRECT");
-    return flag;
-}*/
-
-// Verify the result
-void verify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ){
-    if (h_bfsResultCPU != NULL) {
-        printf("Label Validity: ");
-        int error_num = CompareResults(h_bfsResult, h_bfsResultCPU, m, true);
-        if (error_num > 0) {
-            printf("%d errors occurred.\n", error_num);
-        }
-    }
-}
-
-struct GpuTimer
-{
-    cudaEvent_t start;
-    cudaEvent_t stop;
-
-    GpuTimer()
-    {
-        cudaEventCreate(&start);
-        cudaEventCreate(&stop);
-    }
-
-    ~GpuTimer()
-    {
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
-    }
-
-    void Start()
-    {
-        cudaEventRecord(start, 0);
-    }
-
-    void Stop()
-    {
-        cudaEventRecord(stop, 0);
-    }
-
-    float ElapsedMillis()
-    {
-        float elapsed;
-        cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&elapsed, start, stop);
-        return elapsed;
-    }
-};
-
 int main(int argc, char**argv) {
     int m, n, edge;
 
-    //for( int i=1; i<argc; i++ ) {
-    //bfs(argv[i]);
+    // Broken on graphs with more than 500k edges
     freopen(argv[1],"r",stdin);
     //freopen("log","w",stdout);
+    printf("Testing %s\n", argv[1]);
+
+    // File i/o
+    //FILE *input = fopen(argv[1], "r");
 
     int c = getchar();
+    //int c = fgetc(input);
     int old_c = 0;
     //printf("%d\n",c);
     while( c!=EOF ) {
         if( (old_c==10 || old_c==0) && c!=37 ) {
             ungetc(c, stdin);
+            //ungetc(c, input);
             //printf("%d %d\n",old_c,c);
             break;
         }
         old_c = c;
+        //c = fgetc(input);
         c=getchar();
     }
     scanf("%d %d %d", &m, &n, &edge);
+    //fscanf(input, "%d %d %d", &m, &n, &edge);
     
     // Allocate memory depending on how many edges are present
     float *h_csrValA;
@@ -585,27 +531,31 @@ int main(int argc, char**argv) {
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
         if( scanf("%d", &h_csrColIndA[j])==EOF ) {
+        //if( fscanf(input, "%d", &h_csrColIndA[j])==EOF ) {
             printf("Error: not enough rows in mtx file.\n");
             break;
         }
         scanf("%d", &h_cooRowIndA[j]);
+        //fscanf(input, "%d", &h_cooRowIndA[j]);
 
         if( j==0 ) {
             c=getchar();
+            //c=fgetc(input);
             //printf("c = %d\n",c);
-            //ungetc(c, stdin);
         }
 
         if( c!=32 ) {
             h_csrValA[j]=1.0;
         } else {
             scanf("%f", &h_csrValA[j]);
+            //fscanf(input, "%f", &h_csrValA[j]);
         }
 
         h_cooRowIndA[j]--;
         h_csrColIndA[j]--;
         //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
+    //fclose(input);
     //print_array(h_csrValA,edge);
 
     // Allocate GPU memory
@@ -639,7 +589,7 @@ int main(int argc, char**argv) {
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
-    bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU );
+    int depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU );
 
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
@@ -655,18 +605,19 @@ int main(int argc, char**argv) {
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 10 );
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth );
     gpu_timer.Stop();
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("GPU BFS finished in %f msec.\n", elapsed);
+    printf("GPU BFS finished in %f msec. performed %d iterations\n", elapsed, depth);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
+    print_array(h_bfsResult, m);
 
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
