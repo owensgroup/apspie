@@ -49,9 +49,7 @@ template<typename T>
 void print_array( T *array, int length ) {
     if( length>40 ) length=40;
     for( int j=0;j<length;j++ ) {
-        std::cout << array[j] << " ";
-        if( j%20==19 )
-            std::cout << "\n";
+        std::cout << "[" << j << "]:" << array[j] << " ";
     }
     std::cout << "\n";
 }
@@ -101,7 +99,8 @@ int SimpleReferenceBfs(
     const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
     VertexId                                *source_path,
     VertexId                                *predecessor,
-    VertexId                                src)
+    VertexId                                src,
+    VertexId                                stop)
 {
     //initialize distances
     for (VertexId i = 0; i < m; ++i) {
@@ -128,6 +127,8 @@ int SimpleReferenceBfs(
         VertexId dequeued_node = frontier.front();
         frontier.pop_front();
         VertexId neighbor_dist = source_path[dequeued_node] + 1;
+        if( neighbor_dist > stop )
+            break;
 
         // Locate adjacency list
         int edges_begin = h_rowPtrA[dequeued_node];
@@ -138,8 +139,9 @@ int SimpleReferenceBfs(
             VertexId neighbor = h_colIndA[edge];
             if (source_path[neighbor] == -1) {
                 source_path[neighbor] = neighbor_dist;
-                if (MARK_PREDECESSORS)
+                if (MARK_PREDECESSORS) {
                     predecessor[neighbor] = dequeued_node;
+                }
                 if (search_depth < neighbor_dist) {
                     search_depth = neighbor_dist;
                 }
@@ -160,7 +162,7 @@ int SimpleReferenceBfs(
     return search_depth;
 }
 
-int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU ) {
+int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU, const int stop ) {
 
     typedef int VertexId; // Use as the node identifier type
 
@@ -170,7 +172,8 @@ int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIn
         m, h_rowPtrA, h_colIndA,
         h_bfsResultCPU,
         reference_check_preds,
-        src);
+        src,
+        stop);
 
     //print_array(h_bfsResultCPU, m);
     return depth;
@@ -479,7 +482,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1 );
 
-    for( int i=2; i<depth; i++ ) {
+    for( int i=2; i<=depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
@@ -510,26 +513,83 @@ int main(int argc, char**argv) {
     printf("Testing %s\n", argv[1]);
 
     // File i/o
-    //FILE *input = fopen(argv[1], "r");
+    /*FILE *input = fopen(argv[1], "r");
+
+    bool directed;
+    int c = fgetc(input);
+    int old_c = 0;
+
+    //printf("%d\n",c);
+    while( c!=EOF ) {
+        if( (old_c==10 || old_c==0) && c!=37 ) {
+            ungetc(c, input);
+            //printf("%d %d\n",old_c,c);
+            break;
+        }
+        old_c = c;
+        c = fgetc(input);
+    }
+    fscanf(input, "%d %d %d", &m, &n, &edge);
+    
+    // Allocate memory depending on how many edges are present
+    float *h_csrValA;
+    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
+    int *h_bfsResult, *h_bfsResultCPU;
+
+    h_csrValA    = (float*)malloc(edge*sizeof(float));
+    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_csrColIndA = (int*)malloc(edge*sizeof(int));
+    h_cooRowIndA = (int*)malloc(edge*sizeof(int));
+    h_bfsResult = (int*)malloc((m)*sizeof(int));
+    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
+
+    // Currently checks if there are fewer rows than promised
+    // Could add check for edges in diagonal of adjacency matrix
+    for( int j=0; j<edge; j++ ) {
+        if( fscanf(input, "%d", &h_csrColIndA[j])==EOF ) {
+            printf("Error: not enough rows in mtx file.\n");
+            break;
+        }
+        fscanf(input, "%d", &h_cooRowIndA[j]);
+
+        if( j==0 ) {
+            c=fgetc(input);
+            //printf("c = %d\n",c);
+        }
+
+        if( c!=32 ) {
+            h_csrValA[j]=1.0;
+            if( j==0 ) directed = false;
+        } else {
+            fscanf(input, "%f", &h_csrValA[j]);
+        }
+
+        h_cooRowIndA[j]--;
+        h_csrColIndA[j]--;
+        //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
+    }
+    fclose(input);
+    if( directed==true ) {
+        printf("The graph is directed: ");
+        print_end(h_csrValA,edge);
+    } else {
+        printf("The graph is undirected.\n");
+    }*/
 
     bool directed;
     int c = getchar();
-    //int c = fgetc(input);
     int old_c = 0;
     //printf("%d\n",c);
     while( c!=EOF ) {
         if( (old_c==10 || old_c==0) && c!=37 ) {
             ungetc(c, stdin);
-            //ungetc(c, input);
             //printf("%d %d\n",old_c,c);
             break;
         }
         old_c = c;
-        //c = fgetc(input);
         c=getchar();
     }
     scanf("%d %d %d", &m, &n, &edge);
-    //fscanf(input, "%d %d %d", &m, &n, &edge);
     
     // Allocate memory depending on how many edges are present
     float *h_csrValA;
@@ -547,16 +607,13 @@ int main(int argc, char**argv) {
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
         if( scanf("%d", &h_csrColIndA[j])==EOF ) {
-        //if( fscanf(input, "%d", &h_csrColIndA[j])==EOF ) {
             printf("Error: not enough rows in mtx file.\n");
             break;
         }
         scanf("%d", &h_cooRowIndA[j]);
-        //fscanf(input, "%d", &h_cooRowIndA[j]);
 
         if( j==0 ) {
             c=getchar();
-            //c=fgetc(input);
             //printf("c = %d\n",c);
         }
 
@@ -565,14 +622,12 @@ int main(int argc, char**argv) {
             if( j==0 ) directed = false;
         } else {
             scanf("%f", &h_csrValA[j]);
-            //fscanf(input, "%f", &h_csrValA[j]);
         }
 
         h_cooRowIndA[j]--;
         h_csrColIndA[j]--;
         //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
-    //fclose(input);
     if( directed==true ) {
         printf("The graph is directed: ");
         print_end(h_csrValA,edge);
@@ -611,7 +666,10 @@ int main(int argc, char**argv) {
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
-    int depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU );
+    int depth = 1000;
+    depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
+    //int depth = 3;
+    //bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
     print_end_interesting(h_bfsResultCPU, m);
 
     GpuTimer gpu_timer;
