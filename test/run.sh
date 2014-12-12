@@ -2,11 +2,10 @@
 ./test ../dataset/small/test_bc.mtx
 ./test ../dataset/small/test_pr.mtx
 ./test ../dataset/small/chesapeake.mtx
-./test ../dataset/large/ak2010/ak2010.mtx
 
 ARCH="GEN_SM20"
 
-for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 soc-LiveJournal1 kron_g500-logn21 webbase-1M
+for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M soc-LiveJournal1 kron_g500-logn21
 do
     if [ "$ARCH" = "GEN_SM20" ] ; then
         ./test ../dataset/large/$i/$i.mtx

@@ -17,15 +17,32 @@
 #include <sys/resource.h>
 #include <deque>
 
-//#define N (33 * 1024)
-#define N 4096
+#define N (33 * 1024)
+#define NBLOCKS 128
+#define NTHREADS 128
+//#define N 4096
 #define MARK_PREDECESSORS 0
 
 template<typename T>
-void print_vector( T *vector, int length ) {
-    for( int j=0;j<length;j++ ) {
-        std::cout << vector[j] << " " << j << "\n";
+void print_end_interesting( T *array, int length ) {
+    int count=0;
+    for( int j=length-1;j>=0; j-- ) {
+        if( array[(int)j]!=-1) {
+            std::cout << "[" << j << "]:" << array[j] << " ";
+            count++;
+            if( count==9 ) break;
+        }
     }
+    std::cout << "\n";
+}
+
+template<typename T>
+void print_end( T *array, int length ) {
+    int start = length > 10 ? length-10 : 0;
+    for( int j=start;j<length;j++ ) {
+        std::cout << array[j] << " ";
+    }
+    std::cout << "\n";
 }
 
 template<typename T>
@@ -410,10 +427,8 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
 
 __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const int iter ) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    while( tid < N ) {
-        d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
-        tid += blockDim.x * gridDim.x;
-    }
+
+    d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
 }
 
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
@@ -462,16 +477,16 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
     
     //axpy(d_spmvSwap, d_bfsValA, m);
-    addResult<<<128,128>>>( d_bfsResult, d_spmvResult, 1 );
+    addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1 );
 
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
-            addResult<<<128,128>>>( d_bfsResult, d_spmvSwap, i );
+            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i );
         } else {
             spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
-            addResult<<<128,128>>>( d_bfsResult, d_spmvResult, i );
+            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i );
         }
     }
 
@@ -497,6 +512,7 @@ int main(int argc, char**argv) {
     // File i/o
     //FILE *input = fopen(argv[1], "r");
 
+    bool directed;
     int c = getchar();
     //int c = fgetc(input);
     int old_c = 0;
@@ -546,6 +562,7 @@ int main(int argc, char**argv) {
 
         if( c!=32 ) {
             h_csrValA[j]=1.0;
+            if( j==0 ) directed = false;
         } else {
             scanf("%f", &h_csrValA[j]);
             //fscanf(input, "%f", &h_csrValA[j]);
@@ -556,7 +573,12 @@ int main(int argc, char**argv) {
         //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
     //fclose(input);
-    //print_array(h_csrValA,edge);
+    if( directed==true ) {
+        printf("The graph is directed: ");
+        print_end(h_csrValA,edge);
+    } else {
+        printf("The graph is undirected.\n");
+    }
 
     // Allocate GPU memory
     float *d_csrValA;
@@ -590,6 +612,7 @@ int main(int argc, char**argv) {
     //print_array(h_csrRowPtrA,m+1);
 
     int depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU );
+    print_end_interesting(h_bfsResultCPU, m);
 
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
