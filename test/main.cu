@@ -642,10 +642,10 @@ int main(int argc, char**argv) {
         //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
     if( directed==true ) {
-        printf("The graph is directed: ");
+        printf("The graph is weighted: ");
         print_end(h_csrValA,edge);
     } else {
-        printf("The graph is undirected.\n");
+        printf("The graph is unweighted.\n");
     }
 
     // Allocate GPU memory
