@@ -1,9 +1,11 @@
 // Puts everything together
 // For now, just run V times.
 // Optimizations: 
-// -come up with good stopping criteria
-// -start from i=1
+// -come up with good stopping criteria [done]
+// -start from i=1 [done]
 // -test whether float really are faster than ints
+// -distributed idea
+// -
 
 #include <cstdlib>
 #include <ctime>
@@ -17,10 +19,9 @@
 #include <sys/resource.h>
 #include <deque>
 
-#define N (33 * 1024)
-#define NBLOCKS 128
-#define NTHREADS 128
-//#define N 4096
+#define N (100*1024)
+//#define NBLOCKS 16384
+#define NTHREADS 1024
 #define MARK_PREDECESSORS 0
 
 template<typename T>
@@ -431,7 +432,10 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
 __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const int iter ) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
+    //while( tid<N ) {
+        d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
+    //    tid += blockDim.x*gridDim.x;
+    //}
 }
 
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
@@ -477,12 +481,17 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //inputVector[vertex] = 1;
     //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
     
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1 );
 
-    for( int i=2; i<=depth; i++ ) {
+    for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
@@ -492,6 +501,10 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i );
         }
     }
+
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("GPU BFS finished in %f msec. \n", elapsed);
 
     //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
     //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
@@ -668,8 +681,11 @@ int main(int argc, char**argv) {
 
     int depth = 1000;
     depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-    //int depth = 3;
+
+    // Some testing code. To be turned into unit test.
+    //int depth = 4;
     //bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
+    //depth++;
     print_end_interesting(h_bfsResultCPU, m);
 
     GpuTimer gpu_timer;
@@ -692,7 +708,7 @@ int main(int argc, char**argv) {
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("GPU BFS finished in %f msec. performed %d iterations\n", elapsed, depth);
+    printf("GPU BFS finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     // Run check for errors
