@@ -1,3 +1,5 @@
+// Test whether loading arrays into struct and then feeding them into bfsCPU makes things faster
+//
 // Puts everything together
 // For now, just run V times.
 // Optimizations: 
@@ -5,7 +7,6 @@
 // -start from i=1 [done]
 // -test whether float really are faster than ints
 // -distributed idea
-// -
 
 #include <cstdlib>
 #include <ctime>
