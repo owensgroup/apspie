@@ -5,7 +5,7 @@
 // -start from i=1 [done]
 // -test whether float really are faster than ints
 // -distributed idea
-// -
+// -change nthread [done - doesn't work]
 
 #include <cstdlib>
 #include <ctime>
@@ -14,6 +14,7 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 #include <cusparse.h>
+#include <cuda_profiler_api.h>
 
 #include <cublas_v2.h>
 #include <sys/resource.h>
@@ -484,6 +485,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
+    cudaProfilerStart();
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
@@ -502,6 +504,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
         }
     }
 
+    cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
