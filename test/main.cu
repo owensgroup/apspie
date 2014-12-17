@@ -269,9 +269,6 @@ int main(int argc, char**argv) {
     int *d_cscRowIndA, *d_cscColPtrA;
     int *d_bfsResult;
 
-    // Allocate GPU memory for result
-    float *d_spmvResult, *d_spmvSwap;
-
     cudaMalloc(&d_bfsResult, m*sizeof(int));
 
     cudaMalloc(&d_csrValA, edge*sizeof(float));
@@ -283,15 +280,10 @@ int main(int argc, char**argv) {
     cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
-    cudaMalloc(&d_spmvResult, m*sizeof(float));
-    cudaMalloc(&d_spmvSwap, m*sizeof(float));
-
     // Copy data from host to device
-    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
-    //cudaMemcpy(h_cooRowIndA, d_cooRowIndA, (edge)*sizeof(int),cudaMemcpyDeviceToHost);
-    //print_vector(h_cooRowIndA,edge);
+    cudaMemcpy(d_csrValA, h_csrValA, edge*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrColIndA, h_csrColIndA, edge*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cooRowIndA, h_cooRowIndA, edge*sizeof(int),cudaMemcpyHostToDevice);
 
     // Run COO -> CSR kernel
     coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
@@ -307,7 +299,7 @@ int main(int argc, char**argv) {
     //int depth = 4;
     //bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
     //depth++;
-    print_end_interesting(h_bfsResultCPU, m);
+    //print_end_interesting(h_bfsResultCPU, m);
 
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
@@ -319,12 +311,29 @@ int main(int argc, char**argv) {
     csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
     gpu_timer2.Start();
 
-    // Run BFS kernel on GPU
-    // Non-transpose spmv
-    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
+    cudaFree(d_csrValA);
+    cudaFree(d_csrRowPtrA);
+    cudaFree(d_csrColIndA);
+    cudaFree(d_cooRowIndA);
+    cudaFree(d_cscValA);
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, d_spmvResult, d_spmvSwap, depth );
+    cudaMemcpy(h_csrRowPtrA, d_cscColPtrA, (m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_csrColIndA, d_cscRowIndA, edge*sizeof(int),cudaMemcpyDeviceToHost);
+    cudaFree(d_cscColPtrA);
+    cudaFree(d_cscRowIndA);
+
+    // Allocate GPU memory for result
+    float *d_spmvResult, *d_spmvSwap;
+    cudaMalloc(&d_spmvResult, m*sizeof(float));
+    cudaMalloc(&d_spmvSwap, m*sizeof(float));
+
+    Pack pack;
+    pack.copyPack( 0, m, edge, depth, h_csrRowPtrA, h_csrColIndA );
+
+    // Run BFS kernel on GPU
+    bfs( pack, d_bfsResult, d_spmvResult, d_spmvSwap );
+    pack.Free(); 
+
     gpu_timer.Stop();
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
@@ -338,14 +347,6 @@ int main(int argc, char**argv) {
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);
 
-    cudaFree(d_csrValA);
-    cudaFree(d_csrRowPtrA);
-    cudaFree(d_csrColIndA);
-    cudaFree(d_cooRowIndA);
-
-    cudaFree(d_cscValA);
-    cudaFree(d_cscRowIndA);
-    cudaFree(d_cscColPtrA);
     cudaFree(d_bfsResult);
 
     cudaFree(d_spmvResult);
