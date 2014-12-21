@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-
 #include <deque>
 
 #include <util.cuh>
@@ -107,6 +106,10 @@ int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIn
 
 void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRowPtrA ) {
 
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
+
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
@@ -128,6 +131,10 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
 
     // Important: destroy handle
     cusparseDestroy(handle);
+
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("COO->CSR finished in %f msec. \n", elapsed);
 }
 
 void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_cscValA, int *d_cscRowIndA, int *d_cscColPtrA ) {
