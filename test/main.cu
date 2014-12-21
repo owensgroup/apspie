@@ -19,22 +19,7 @@
 
 #define MARK_PREDECESSORS 0
 
-/******************************************************************************
- * BFS Testing Routines
- *****************************************************************************/
-
- /**
-  * @brief A simple CPU-based reference BFS ranking implementation.
-  *
-  * @tparam VertexId
-  * @tparam Value
-  * @tparam SizeT
-  *
-  * @param[in] graph Reference to the CSR graph we process on
-  * @param[in] source_path Host-side vector to store CPU computed labels for each node
-  * @param[in] predecessor Host-side vector to store CPU computed predecessor for each node
-  * @param[in] src Source node where BFS starts
-  */
+// A simple CPU-based reference BFS ranking implementation
 template<typename VertexId>
 int SimpleReferenceBfs(
     const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
