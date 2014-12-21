@@ -6,7 +6,7 @@
 // -test whether float really are faster than ints
 // -distributed idea
 // -change nthread [done - doesn't work]
-
+ 
 #include <cstdlib>
 #include <ctime>
 #include <stdio.h>
