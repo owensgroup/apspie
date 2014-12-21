@@ -190,38 +190,6 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
     cusparseDestroy(handle);
 }
 
-void axpy( float *d_spmvSwap, const float *d_csrValA, const int m ) {
-    const float alf = -1;
-    const float *alpha = &alf;
-
-    cublasHandle_t handle;
-    cublasCreate(&handle);
-
-    cublasStatus_t status = cublasSaxpy(handle, 
-                            m, 
-                            alpha, 
-                            d_csrValA, 
-                            1, 
-                            d_spmvSwap, 
-                            1);
-
-    switch( status ) {
-        case CUBLAS_STATUS_SUCCESS:
-	    //printf("axpy completed successfully!\n");
-            break;
-        case CUBLAS_STATUS_NOT_INITIALIZED:
-	    printf("The library was not initialized.\n");
-	    break;
-        case CUBLAS_STATUS_ARCH_MISMATCH:	
-	    printf("The device does not support double-precision.\n");
-	    break;
-        case CUBLAS_STATUS_EXECUTION_FAILED:
-	    printf("The function failed to launch on the GPU.\n");
-    }
-
-    cublasDestroy(handle);
-}
-
 void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult ) {
     const float alf = 1;
     const float bet = 0;
@@ -375,77 +343,13 @@ int main(int argc, char**argv) {
     printf("Testing %s\n", argv[1]);
 
     // File i/o
-    /*FILE *input = fopen(argv[1], "r");
 
-    bool directed;
-    int c = fgetc(input);
-    int old_c = 0;
-
-    //printf("%d\n",c);
-    while( c!=EOF ) {
-        if( (old_c==10 || old_c==0) && c!=37 ) {
-            ungetc(c, input);
-            //printf("%d %d\n",old_c,c);
-            break;
-        }
-        old_c = c;
-        c = fgetc(input);
-    }
-    fscanf(input, "%d %d %d", &m, &n, &edge);
-    
-    // Allocate memory depending on how many edges are present
-    float *h_csrValA;
-    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
-    int *h_bfsResult, *h_bfsResultCPU;
-
-    h_csrValA    = (float*)malloc(edge*sizeof(float));
-    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
-    h_csrColIndA = (int*)malloc(edge*sizeof(int));
-    h_cooRowIndA = (int*)malloc(edge*sizeof(int));
-    h_bfsResult = (int*)malloc((m)*sizeof(int));
-    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
-
-    // Currently checks if there are fewer rows than promised
-    // Could add check for edges in diagonal of adjacency matrix
-    for( int j=0; j<edge; j++ ) {
-        if( fscanf(input, "%d", &h_csrColIndA[j])==EOF ) {
-            printf("Error: not enough rows in mtx file.\n");
-            break;
-        }
-        fscanf(input, "%d", &h_cooRowIndA[j]);
-
-        if( j==0 ) {
-            c=fgetc(input);
-            //printf("c = %d\n",c);
-        }
-
-        if( c!=32 ) {
-            h_csrValA[j]=1.0;
-            if( j==0 ) directed = false;
-        } else {
-            fscanf(input, "%f", &h_csrValA[j]);
-        }
-
-        h_cooRowIndA[j]--;
-        h_csrColIndA[j]--;
-        //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
-    }
-    fclose(input);
-    if( directed==true ) {
-        printf("The graph is directed: ");
-        print_end(h_csrValA,edge);
-    } else {
-        printf("The graph is undirected.\n");
-    }*/
-
-    bool directed;
+    bool weighted;
     int c = getchar();
     int old_c = 0;
-    //printf("%d\n",c);
     while( c!=EOF ) {
         if( (old_c==10 || old_c==0) && c!=37 ) {
             ungetc(c, stdin);
-            //printf("%d %d\n",old_c,c);
             break;
         }
         old_c = c;
@@ -476,21 +380,19 @@ int main(int argc, char**argv) {
 
         if( j==0 ) {
             c=getchar();
-            //printf("c = %d\n",c);
         }
 
         if( c!=32 ) {
             h_csrValA[j]=1.0;
-            if( j==0 ) directed = false;
+            if( j==0 ) weighted = false;
         } else {
             scanf("%f", &h_csrValA[j]);
         }
 
         h_cooRowIndA[j]--;
         h_csrColIndA[j]--;
-        //printf("%d %d %d\n", h_cooRowIndA[j], h_csrColIndA[j], j);
     }
-    if( directed==true ) {
+    if( weighted==true ) {
         printf("The graph is weighted: ");
         print_end(h_csrValA,edge);
     } else {
