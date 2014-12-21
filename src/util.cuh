@@ -1,6 +1,8 @@
 // Provides utility functions
 
 #include <ctime>
+#include <iostream>
+#include <sys/resource.h>
 
 template<typename T>
 void print_end_interesting( T *array, int length ) {
