@@ -29,7 +29,7 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
                               d_csrValA, d_csrRowPtrA, d_csrColIndA, 
                               d_inputVector, beta, d_spmvResult );
 
-    /*switch( status ) {
+    switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
             //printf("spmv multiplication successful!\n");
             break;
@@ -53,7 +53,7 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
             break;
         case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
             printf("Error: Matrix type not supported.\n");
-    }*/
+    }
 
     // Important: destroy handle
     cusparseDestroy(handle);
