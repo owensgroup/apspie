@@ -285,6 +285,7 @@ int main(int argc, char**argv) {
     gpu_timer.Start();
     // Run CSR -> CSC kernel
     csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    gpu_timer.Stop();
     gpu_timer2.Start();
 
     // Run BFS kernel on GPU
@@ -293,12 +294,11 @@ int main(int argc, char**argv) {
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
     bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth );
-    gpu_timer.Stop();
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("GPU BFS finished in %f msec. performed %d iterations\n", elapsed, depth-1);
+    printf("csr->csc finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     // Run check for errors
