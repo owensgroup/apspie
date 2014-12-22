@@ -6,17 +6,12 @@
 //#define NBLOCKS 16384
 #define NTHREADS 1024
 
-void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult ) {
+void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, cusparseHandle_t handle, cusparseMatDescr_t descr) {
     const float alf = 1;
     const float bet = 0;
     const float *alpha = &alf;
     const float *beta = &bet;
 
-    cusparseHandle_t handle;
-    cusparseCreate(&handle);
-
-    cusparseMatDescr_t descr;
-    cusparseCreateMatDescr(&descr);
     //cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ONE);
 
     //cusparseStatus_t status = cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, m, m, alpha, descr, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector, beta, d_spmvResult);
@@ -56,8 +51,6 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
     }
 
     // Important: destroy handle
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
 }
 
 __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const int iter ) {
@@ -70,6 +63,12 @@ __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const in
 }
 
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    cusparseMatDescr_t descr;
+    cusparseCreateMatDescr(&descr);
 
     // Allocate GPU memory for result
     float *d_spmvResult, *d_spmvSwap;
@@ -116,7 +115,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
+    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, handle, descr);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
@@ -139,10 +138,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     elapsed += gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
 
-    //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
-    //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-    //print_array(h_spmvResult,m);
-    //print_array(h_bfsResult,m);
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
