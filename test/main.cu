@@ -12,6 +12,7 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 #include <deque>
+#include <cusparse.h>
 
 #include <util.cuh>
 #include <bfs.cuh>

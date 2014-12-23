@@ -158,8 +158,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
 
     nnz(m, d_spmvResult, d_nnzPerRowColumn, d_nnzTotalDevHostPtr, handle, descr);
     cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
-    frontier_max = frontier;
-    frontier_sum = frontier;
+    frontier_max = *frontier;
+    frontier_sum = *frontier;
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
@@ -173,8 +173,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
             if( i<10 ) {
                 nnz(m, d_spmvSwap, d_nnzPerRowColumn, d_nnzTotalDevHostPtr, handle, descr);
                 cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
-                frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
-                frontier_sum += frontier;
+                frontier_max = (*frontier > frontier_max) ? *frontier : frontier_max;
+                frontier_sum += *frontier;
             }
         } else {
             spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, handle, descr );
@@ -182,8 +182,9 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
             if( i<10 ) {
                 nnz(m, d_spmvResult, d_nnzPerRowColumn, d_nnzTotalDevHostPtr, handle, descr);
                 cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
-                frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
-                frontier_sum += frontier;
+                frontier_max = (*frontier > frontier_max) ? *frontier : frontier_max;
+                frontier_sum += *frontier;
+             }
         }
     }
 
