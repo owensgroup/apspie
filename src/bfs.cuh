@@ -151,7 +151,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     gpu_timer.Start();
     cudaProfilerStart();
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, handle, descr);
-    int *frontier;
+    /*int *frontier;
     int frontier_max;
     int frontier_sum;
     frontier = (int*)malloc(sizeof(int));
@@ -160,7 +160,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
     frontier_max = *frontier;
     frontier_sum = *frontier;
-    printf("[1]:%d ", *frontier);
+    printf("[1]:%d ", *frontier);*/
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
@@ -171,23 +171,23 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
         if( i%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, handle, descr );
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i );
-            if( i<10 ) {
+            /*if( i<10 ) {
                 nnz(m, d_spmvSwap, d_nnzPerRowColumn, d_nnzTotalDevHostPtr, handle, descr);
                 cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
                 frontier_max = (*frontier > frontier_max) ? *frontier : frontier_max;
                 frontier_sum += *frontier;
                 printf("[%d]:%d ", i, *frontier);
-            }
+            }*/
         } else {
             spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, handle, descr );
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i );
-            if( i<10 ) {
+            /*if( i<10 ) {
                 nnz(m, d_spmvResult, d_nnzPerRowColumn, d_nnzTotalDevHostPtr, handle, descr);
                 cudaMemcpy(frontier,d_nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
                 frontier_max = (*frontier > frontier_max) ? *frontier : frontier_max;
                 frontier_sum += *frontier;
                 printf("[%d]:%d ", i, *frontier);
-             }
+             }*/
         }
     }
 
@@ -195,8 +195,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
-    printf("The maximum frontier size was: %d.\n", frontier_max);
-    printf("The average frontier size was: %d.\n", frontier_sum/depth);
+    //printf("The maximum frontier size was: %d.\n", frontier_max);
+    //printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
     // Important: destroy handle
     cusparseDestroy(handle);
