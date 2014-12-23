@@ -69,6 +69,23 @@ __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const in
     //}
 }
 
+int nnz( const int m, const float *A ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    cusparseMatDescr_t descr;
+    cusparseCreateMatDescr(&descr);
+
+    cusparseSnnz(handle, CUSPARSE_DIRECTION_ROW, m, 1, descr, A, 1, int *nnzPerRowColumn, int *nnzTotalDevHostPtr);
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
+
+    return *nnzPerRowColumn;
+}
+
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
 
     // Allocate GPU memory for result
@@ -117,6 +134,12 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     gpu_timer.Start();
     cudaProfilerStart();
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
+    int frontier;
+    int frontier_max;
+    int frontier_sum;
+    frontier = nnz(m,d_spmvResult);
+    frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
+    frontier_sum = frontier;
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
@@ -127,9 +150,15 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
+            frontier = nnz(m,d_spmvSwap);
+            frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
+            frontier_sum += frontier;
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i );
         } else {
             spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            frontier = nnz(m,d_spmvResult);
+            frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
+            frontier_sum += frontier;
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i );
         }
     }
@@ -138,6 +167,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
+    printf("The maximum frontier size was: %d.\n", frontier_max);
+    printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
     //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
     //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
