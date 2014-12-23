@@ -75,6 +75,7 @@ int nnz( const int m, const float *A ) {
     int *nnzTotalDevHostPtr;
 
     cudaMalloc(&nnzPerRowColumn, sizeof(int));
+    cudaMalloc(&nnzTotalDevHostPtr, sizeof(int));
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -86,7 +87,7 @@ int nnz( const int m, const float *A ) {
 
     switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
-            //printf("spmv multiplication successful!\n");
+            //printf("nnz count successful!\n");
             break;
         case CUSPARSE_STATUS_NOT_INITIALIZED:
             printf("Error: Library not initialized.\n");
@@ -114,7 +115,12 @@ int nnz( const int m, const float *A ) {
     cusparseDestroy(handle);
     cusparseDestroyMatDescr(descr);
 
-    return *nnzPerRowColumn;
+    int *frontier;
+    frontier = (int*)malloc(sizeof(int));
+    cudaMemcpy(frontier,nnzPerRowColumn,sizeof(int),cudaMemcpyDeviceToHost);
+
+    //printf("Everything still okay.\n");
+    return *frontier;
 }
 
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
