@@ -82,7 +82,33 @@ int nnz( const int m, const float *A ) {
     cusparseMatDescr_t descr;
     cusparseCreateMatDescr(&descr);
 
-    cusparseSnnz(handle, CUSPARSE_DIRECTION_ROW, 1, m, descr, A, 1, nnzPerRowColumn, nnzTotalDevHostPtr);
+    cusparseStatus_t status = cusparseSnnz(handle, CUSPARSE_DIRECTION_ROW, 1, m, descr, A, 1, nnzPerRowColumn, nnzTotalDevHostPtr);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            //printf("spmv multiplication successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+            printf("Error: Matrix type not supported.\n");
+    }
 
     // Important: destroy handle
     cusparseDestroy(handle);
