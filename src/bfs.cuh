@@ -2,12 +2,24 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
+#include <moderngpu.cuh>
+#include "spmv.cuh"
 
 //#define NBLOCKS 16384
 #define NTHREADS 1024
 
-void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult ) {
-    const float alf = 1;
+using namespace mgpu;
+
+void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, CudaContext& context) {
+    SpmvKernel<float>(d_csrValA,
+                      d_csrColIndA,
+                      d_csrRowPtrA,
+                      d_inputVector,
+                      d_spmvResult,
+                      m,
+                      edge,
+                      context);
+    /*const float alf = 1;
     const float bet = 0;
     const float *alpha = &alf;
     const float *beta = &bet;
@@ -57,7 +69,7 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
 
     // Important: destroy handle
     cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
+    cusparseDestroyMatDescr(descr);*/
 }
 
 __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const int iter ) {
@@ -69,7 +81,7 @@ __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const in
     //}
 }
 
-void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth ) {
+void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
 
     // Allocate GPU memory for result
     float *d_spmvResult, *d_spmvSwap;
@@ -116,7 +128,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult);
+    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
@@ -126,10 +138,10 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
-            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap );
+            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i );
         } else {
-            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult );
+            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i );
         }
     }

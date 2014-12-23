@@ -175,6 +175,8 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
 
 int main(int argc, char**argv) {
     int m, n, edge;
+    
+    ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Broken on graphs with more than 500k edges
     freopen(argv[1],"r",stdin);
@@ -293,7 +295,7 @@ int main(int argc, char**argv) {
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth );
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
