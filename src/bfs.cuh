@@ -71,13 +71,18 @@ __global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const in
 
 int nnz( const int m, const float *A ) {
 
+    int *nnzPerRowColumn;
+    int *nnzTotalDevHostPtr;
+
+    cudaMalloc(&nnzPerRowColumn, sizeof(int));
+
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
     cusparseMatDescr_t descr;
     cusparseCreateMatDescr(&descr);
 
-    cusparseSnnz(handle, CUSPARSE_DIRECTION_ROW, m, 1, descr, A, 1, int *nnzPerRowColumn, int *nnzTotalDevHostPtr);
+    cusparseSnnz(handle, CUSPARSE_DIRECTION_ROW, 1, m, descr, A, 1, nnzPerRowColumn, nnzTotalDevHostPtr);
 
     // Important: destroy handle
     cusparseDestroy(handle);
@@ -138,7 +143,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     int frontier_max;
     int frontier_sum;
     frontier = nnz(m,d_spmvResult);
-    frontier_max = (frontier > frontier_max) ? frontier : frontier_max;
+    frontier_max = frontier;
     frontier_sum = frontier;
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
