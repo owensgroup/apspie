@@ -117,7 +117,7 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     elapsed += gpu_timer.ElapsedMillis();
     printf("COO->CSR finished in %f msec. \n", elapsed);
 
-    switch( status ) {
+    /*switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
             //printf("COO -> CSR conversion successful!\n");
             break;
@@ -129,7 +129,7 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
             break;
         case CUSPARSE_STATUS_EXECUTION_FAILED:
             printf("Error: Failed to launch GPU.\n");
-    }
+    }*/
 
     // Important: destroy handle
     cusparseDestroy(handle);
@@ -146,7 +146,7 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, CUSPARSE_ACTION_SYMBOLIC, CUSPARSE_INDEX_BASE_ZERO);
 
-    switch( status ) {
+    /*switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
             //printf("Transpose successful!\n");
             break;
@@ -167,7 +167,7 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
             break;
         case CUSPARSE_STATUS_INTERNAL_ERROR:
             printf("Error: An internal operation failed.\n");
-    }
+    }*/
 
     // Important: destroy handle
     cusparseDestroy(handle);
