@@ -10,13 +10,12 @@
 
 using namespace mgpu;
 
-void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, float *d_product, CudaContext& context) {
+void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, CudaContext& context) {
     SpmvKernel<float>(d_csrValA,
                       d_csrColIndA,
                       d_csrRowPtrA,
                       d_inputVector,
                       d_spmvResult,
-                      d_product,
                       m,
                       edge,
                       context);
@@ -73,12 +72,10 @@ void spmv( const float *d_inputVector, const int edge, const int m, const float 
     cusparseDestroyMatDescr(descr);*/
 }
 
-__global__ void addResult( int *d_bfsResult, const float *d_spmvResult, const int iter, const int length ) {
+__global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
-        if (d_spmvResult[idx] > 0.5 && d_bfsResult[idx]<0)
-            printf("iter: %d, idx: %d\n", iter, idx);
-        d_bfsResult[idx] = (d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0) ? iter:d_bfsResult[idx]; 
+        d_bfsResult[idx] = (d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0) ? iter:d_bfsResult[idx];
     }
     //int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -114,9 +111,6 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
 
-    float *d_product;
-    cudaMalloc((void**)&d_product, edge*sizeof(float));
-
     // Generate values for BFS (csrValA where everything is 1)
     float *h_bfsValA, *d_bfsValA;
     h_bfsValA = (float*)malloc(edge*sizeof(float));
@@ -138,7 +132,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, d_product, context);
+    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
@@ -148,10 +142,10 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
-            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, d_product, context);
+            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
         } else {
-            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, d_product, context);
+            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
         }
     }
@@ -166,7 +160,6 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //print_array(h_spmvResult,m);
     //print_array(h_bfsResult,m);
 
-    cudaFree(d_product);
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
     free(h_bfsResult);
