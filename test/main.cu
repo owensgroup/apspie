@@ -301,7 +301,7 @@ int main(int argc, char**argv) {
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("csr->csc finished in %f msec. performed %d iterations\n", elapsed, depth-1);
+    printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     // Run check for errors
