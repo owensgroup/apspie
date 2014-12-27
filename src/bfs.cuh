@@ -82,17 +82,11 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
 
 void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
 
-    cusparseHandle_t handle;
+    /*cusparseHandle_t handle;
     cusparseCreate(&handle);
 
     cusparseMatDescr_t descr;
-    cusparseCreateMatDescr(&descr);
-
-    int *d_nnzPerRowColumn;
-    int *d_nnzTotalDevHostPtr;
-
-    cudaMalloc(&d_nnzPerRowColumn, sizeof(int));
-    cudaMalloc(&d_nnzTotalDevHostPtr, sizeof(int));
+    cusparseCreateMatDescr(&descr);*/
 
     // Allocate GPU memory for result
     float *d_spmvResult, *d_spmvSwap;
@@ -164,8 +158,8 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
     // Important: destroy handle
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
+    //cusparseDestroy(handle);
+    //cusparseDestroyMatDescr(descr);
 
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
