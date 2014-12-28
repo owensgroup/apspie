@@ -36,7 +36,7 @@ __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const in
     }
 }
 
-void csrBfs( const int vertex, const int edge, const int m, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context) {
+void spsvBfs( const int vertex, const int edge, const int m, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 
     // h_csrVecInd - index to nonzero vector values
     // h_csrVecVal - for BFS, number of jumps from source
