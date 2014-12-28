@@ -16,6 +16,7 @@
 
 #include <util.cuh>
 #include <bfs.cuh>
+#include <spsvBfs.cuh>
 
 #define MARK_PREDECESSORS 0
 
