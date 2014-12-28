@@ -34,18 +34,30 @@ __global__ void csrAddResult( int *d_bfsResult, float *d_spmvResult, const int i
 
 void csrBfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
 
+    // h_csrVecInd - index to nonzero vector values
+    // h_csrVecVal - for BFS, number of jumps from source
+    //             - for SSSP, distance from source
+    // h_csrVecCount - number of nonzero vector values
     int *h_csrVecInd;
     int *d_csrVecInd;
+    int *h_csrVecVal;
+    int *d_csrVecVal;
     int h_csrVecCount;
     int *d_csrVecCount;
 
     h_csrVecInd = (int *)malloc(m*sizeof(int));
-    h_csrVecCount = 1;
     h_csrVecInd[0] = vertex;
+    h_csrVecVal = (int *)malloc(m*sizeof(int));
+    h_csrVecVal[0] = 0; // Source node always defined as zero
+    h_csrVecCount = 1;
 
     cudaMalloc(&d_csrVecInd, m*sizeof(int));
-    cudaMalloc(&d_csrVecCount, sizeof(int));
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_csrVecVal, m*sizeof(int));
+    cudaMemcpy(d_csrVecVal, h_csrVecVal, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_csrVecCount, sizeof(int));
     cudaMemcpy(d_csrVecCount, &h_csrVecCount, sizeof(int), cudaMemcpyHostToDevice);
 
     GpuTimer gpu_timer;
@@ -53,9 +65,16 @@ void csrBfs( const int vertex, const int edge, const int m, const int *d_csrRowP
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     // First iteration
+    // Note that updateBFS is similar to addResult kernel
+    //   -has additional pruning function. If new node, keep. Otherwise, prune.
     gpu_timer.Start();
     int iter = 1;
-    //bfsSv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrRowPtrA, d_csrColIndA, edge, m, d_bfsResult, iter );
+    //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrRowPtrA, d_csrColIndA, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
+    //updateBfs<<<NBLOCKS,NTHREADS>>>( d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, d_bfsResult );
+
+    for( iter=2; iter<depth; iter++ ) {
+        //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrRowPtrA, d_csrColIndA, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
+    }
 
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
