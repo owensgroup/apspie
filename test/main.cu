@@ -304,6 +304,9 @@ int main(int argc, char**argv) {
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
+    cudaMemcpy(h_csrColIndA, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrColIndA, m);
+
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
