@@ -212,6 +212,11 @@ int main(int argc, char**argv) {
     h_bfsResult = (int*)malloc((m)*sizeof(int));
     h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
+    int csr_max = 0;
+    int csr_current = 0;
+    int csr_row = 0;
+    int csr_first = 1;
+
     // Currently checks if there are fewer rows than promised
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
@@ -234,7 +239,23 @@ int main(int argc, char**argv) {
 
         h_cooRowIndA[j]--;
         h_csrColIndA[j]--;
+
+        // Finds max csr row.
+        if( j!=0 ) {
+            if( h_cooRowIndA[j]==0 ) csr_first++;
+            if( h_cooRowIndA[j]==h_cooRowIndA[j-1] )
+                csr_current++;
+            else {
+                if( csr_current > csr_max ) {
+                    csr_max = csr_current;
+                    csr_current = 1;
+                    csr_row = h_cooRowIndA[j-1];
+                }
+            }
+        }
     }
+    printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
+    printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
         printf("The graph is weighted: ");
         print_end(h_csrValA,edge);

@@ -29,10 +29,18 @@ __global__ void updateBfs( int *d_bfsResult, float *d_spmvResult, const int iter
 
 __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const int *d_csrVecVal, const int *d_csrRowPtr, const int *d_csrColInd, const int edge, const int m, int *d_csrSwapInd, int *d_csrSwapCount, int *d_csrSwapVal, const int iter ) {
     const int STRIDE = gridDim.x * blockDim.x;
+    const int BLOCKS = blockIdx.x * blockDim.x;
     //for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < *d_csrSwapCount; idx += STRIDE) {
-    for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < m; idx += STRIDE) {
-        d_csrSwapInd[idx] = d_csrColInd[d_csrRowPtr[d_csrVecInd[idx]]];
-        d_csrSwapVal[idx] = d_csrVecVal[d_csrRowPtr[d_csrVecInd[idx]]];
+
+    #pragma unroll
+    for (int idx = 0; idx < *d_csrVecCount; idx++) {
+        #pragma unroll
+        for( int idy = threadIdx.x; idy < d_csrRowPtr[d_csrVecInd[idx]+1]; idy++ ) {
+        //for( int idy = threadIdx.x; idy<2; idy++ ) {
+            //int idy = threadIdx.x;
+            d_csrSwapInd[idy] = d_csrColInd[d_csrRowPtr[d_csrVecInd[idx]]+idy];
+            d_csrSwapVal[idy] = d_csrVecVal[d_csrRowPtr[d_csrVecInd[idx]]+idy];
+        }
     }
 }
 
@@ -95,9 +103,20 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *d_csrRow
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
 
     cudaMemcpy(&h_csrVecCount, d_csrSwapCount, sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_csrVecInd, d_csrSwapInd, h_csrVecCount*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd, h_csrVecCount);
+    cudaMemcpy(h_csrVecInd, d_csrSwapInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
+    //printf("Reading %d nonzero vector elements:\n", h_csrVecCount);
+    print_array(h_csrVecInd, 50);
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
+
+    cudaFree(d_csrVecInd);
+    cudaFree(d_csrVecVal);
+    cudaFree(d_csrVecCount);
+    cudaFree(d_csrSwapInd);
+    cudaFree(d_csrSwapVal);
+    cudaFree(d_csrSwapCount);
+    
+    free(h_csrVecInd);
+    free(h_csrVecVal);
 }
