@@ -44,18 +44,23 @@ __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const in
     }
 }
 
-void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, CudaContext& context ) {
+void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, int *d_csrBfsArray, CudaContext& context ) {
     int swapCount;
     
     for( int i=0; i<h_csrVecCount; i++ ) {
         swapCount = h_csrRowPtr[h_csrVecInd[i]+1]-h_csrRowPtr[h_csrVecInd[i]];
         mgpu::step_iterator<int> insertdata( h_csrRowPtr[h_csrVecInd[i]], 1 );
 
-        printf("bulkExtract iteration %d: first index is %d\n", i, h_csrRowPtr[h_csrVecInd[i]]);
-
+        /*printf("bulkExtract iteration %d: first index is %d\n", i, h_csrRowPtr[h_csrVecInd[i]]);
         if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
         else if( i%2!=0 ) BulkRemove( d_outputArray, h_outputCount, insertdata, swapCount, d_swapArray, context );
-        else BulkRemove( d_swapArray, h_outputCount, insertdata, swapCount, d_outputArray, context );
+        else BulkRemove( d_swapArray, h_outputCount, insertdata, swapCount, d_outputArray, context );*/
+
+        if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
+        else {
+            BulkRemove( d_inputArray, h_outputCount, insertdata, swapCount, d_swapArray, context );
+            SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, d_csrBfsArray, context, false);
+        }
 
         h_outputCount = swapCount;
     }
@@ -72,12 +77,11 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int *h_csrVecVal;
     int *d_csrVecVal;
     int h_csrVecCount;
-    int *d_csrVecCount;
 
     int *d_csrSwapInd;
+    int *d_csrSwap2Ind;
     int *d_csrSwapVal;
     int h_csrSwapCount;
-    int *d_csrSwapCount;
 
     h_csrVecInd = (int *)malloc(m*sizeof(int));
     h_csrVecInd[0] = vertex;
@@ -94,11 +98,11 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMemcpy(d_csrVecVal, h_csrVecVal, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     cudaMalloc(&d_csrSwapInd, m*sizeof(int));
+    cudaMalloc(&d_csrSwap2Ind, m*sizeof(int));
     cudaMalloc(&d_csrSwapVal, m*sizeof(int));
-    cudaMalloc(&d_csrSwapCount, sizeof(int));
 
     GpuTimer gpu_timer;
-    float elapsed = 0.0f;
+    float elapsed = 0.0f;d
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     // First iteration
@@ -109,7 +113,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     //d_csrSwapCount[0] = d_csrRowPtr[d_csrVecInd[0]+1];
     //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrVecVal, d_csrRowPtr, d_csrColInd, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
-    bulkExtract( d_csrColInd, m, h_csrRowPtr, d_csrSwapInd, h_csrSwapCount, h_csrVecInd, h_csrVecCount, d_csrVecInd, context );
+    bulkExtract( d_csrColInd, m, h_csrRowPtr, d_csrSwapInd, h_csrSwapCount, h_csrVecInd, h_csrVecCount, d_csrSwap2Ind, d_csrVecInd, context );
     //updateBfs<<<NBLOCKS,NTHREADS>>>( d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, d_bfsResult );
 
     for( iter=2; iter<depth; iter++ ) {
@@ -128,18 +132,13 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMemcpy(h_csrVecInd, d_csrVecInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd, 40);
 
-    cudaMemcpy(h_csrVecInd, d_csrSwapInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd, 40);
-
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
 
     cudaFree(d_csrVecInd);
     cudaFree(d_csrVecVal);
-    cudaFree(d_csrVecCount);
     cudaFree(d_csrSwapInd);
     cudaFree(d_csrSwapVal);
-    cudaFree(d_csrSwapCount);
     
     free(h_csrVecInd);
     free(h_csrVecVal);
