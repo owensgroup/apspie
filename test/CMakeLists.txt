@@ -1,5 +1,5 @@
 # CMakeLists.txt for unittest
-
+ 
 # required cmakeversion                                                                                                                                                                                   
 cmake_minimum_required(VERSION 2.8)
 
@@ -14,10 +14,10 @@ set( PROJ_HEADERS   "" )
 set( PROJ_LIBRARIES "" )
 set( PROJ_INCLUDES  "../src" "/home/ctcyang/gunrock/externals/moderngpu/include")
 set( mgpu_SRC_DIR "/home/ctcyang/gunrock/externals/moderngpu/src")
-set (mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
+set(mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
 
-set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
-set( CUDA_CUBLAS_LIBRARY "$ENV{CUDA_HOME}/lib64/libcublas.so" )
+#set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
+#set( CUDA_CUBLAS_LIBRARY "$ENV{CUDA_HOME}/lib64/libcublas.so" )
 set( CUDA_CUSPARSE_LIBRARY "$ENV{CUDA_HOME}/lib64/libcusparse.so" )
 
 #FILE( GLOB_RECURSE PROJ_SOURCES ../src/*.cpp )
