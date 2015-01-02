@@ -44,8 +44,19 @@ __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const in
     }
 }
 
-__global__ void BulkExtract( int *d_csrVecInd, const int *d_csrVecCount, int *d_csrSwapCount, const int *d_csrRowPtr, const int *d_csrColInd, const int m, CudaContext &context) {
+void BulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, CudaContext& context ) {
+    int swapCount;
+    
+    for( int i=0; i<h_csrVecCount; i++ ) {
+        swapCount = h_csrRowPtr[h_csrVecInd[i]+1]-h_csrRowPtr[h_csrVecInd[i]];
+        mgpu::step_iterator<int> insertdata( h_csrRowPtr[h_inputArray[i]], 1 );
 
+        if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
+        else if( i%2!=0 ) BulkRemove( d_outputArray, h_outputCount, insertdata, swapCount, d_swapArray, context );
+        else BulkRemove( d_swapArray, h_outputCount, insertdata, swapCount, d_outputArray, context );
+
+        h_outputCount = swapCount;
+    }
 }
 
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
@@ -68,18 +79,16 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     h_csrVecInd = (int *)malloc(m*sizeof(int));
     h_csrVecInd[0] = vertex;
+    h_csrVecInd[1] = 2;
     h_csrVecVal = (int *)malloc(m*sizeof(int));
     h_csrVecVal[0] = 0; // Source node always defined as zero
-    h_csrVecCount = 1;
+    h_csrVecCount = 2;
 
     cudaMalloc(&d_csrVecInd, m*sizeof(int));
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     cudaMalloc(&d_csrVecVal, m*sizeof(int));
     cudaMemcpy(d_csrVecVal, h_csrVecVal, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
-
-    cudaMalloc(&d_csrVecCount, sizeof(int));
-    cudaMemcpy(d_csrVecCount, &h_csrVecCount, sizeof(int), cudaMemcpyHostToDevice);
 
     cudaMalloc(&d_csrSwapInd, m*sizeof(int));
     cudaMalloc(&d_csrSwapVal, m*sizeof(int));
@@ -97,19 +106,15 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     //d_csrSwapCount[0] = d_csrRowPtr[d_csrVecInd[0]+1];
     //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrVecVal, d_csrRowPtr, d_csrColInd, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
-    int swapCount;
-
-    for( int i=0; i<h_csrVecCount; i++ ) {
-        swapCount = h_csrRowPtr[i+1]-h_csrRowPtr[i];
-        mgpu::step_iterator<int> insertdata( h_csrRowPtr[i], 1 );
-        BulkRemove( d_csrColInd, m, insertdata, swapCount, d_csrVecInd, context );
-
-        if( i==0 ) h_csrSwapCount = swapCount;
-        else h_csrSwapCount += swapCount;
-    }
+    bulkExtract( d_csrColInd, m, h_csrRowPtr, d_csrSwapInd, h_csrSwapCount, h_csrVecInd, h_csrVecCount, d_csrVecInd, CudaContext& context );
     //updateBfs<<<NBLOCKS,NTHREADS>>>( d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, d_bfsResult );
 
     for( iter=2; iter<depth; iter++ ) {
+        /*if( h_csrSwapCount%2==1 ) {
+            cudaMemcpy( h_csrVecInd, d_csrSwapInd, h_csrSwapCount*sizeof(int), cudaMemcpyDeviceToHost );
+        } else {
+            cudaMemcpy( h_csrVecInd, d_csrVecInd, h_csrSwapCount*sizeof(int), cudaMemcpyDeviceToHost );
+        }*/
         //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrVecVal, d_csrRowPtr, d_csrColInd, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
     }
 
