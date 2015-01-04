@@ -44,29 +44,7 @@ __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const in
     }
 }
 
-void DemoSets(CudaContext& context) {
-    printf("\nMULTISET-KEYS DEMONSTRATION:\n\n");
- 
-    // Use CudaContext::SortRandom to generate 100 random sorted integers
-    // between 0 and 99.
-    int N = 100;
-    MGPU_MEM(int) aData = context.SortRandom<int>(N, 0, 99);
-    MGPU_MEM(int) bData = context.SortRandom<int>(N, 0, 99);
- 
-    printf("A:\n");
-    PrintArray(*aData, "%4d", 10);
-    printf("\nB:\n\n");
-    PrintArray(*bData, "%4d", 10);
-     
-    MGPU_MEM(int) intersectionDevice;
-    SetOpKeys<MgpuSetOpIntersection, true>(aData->get(), N, bData->get(), N,
-        &intersectionDevice, context, false);
- 
-    printf("\nIntersection:\n");
-    PrintArray(*intersectionDevice, "%4d", 10);
-}
-
-void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, MGPU_MEM(int) d_csrBfsArray, CudaContext& context ) {
+void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, MGPU_MEM(int) *unionDevice, CudaContext& context ) {
     int swapCount;
     
     for( int i=0; i<h_csrVecCount; i++ ) {
@@ -77,15 +55,15 @@ void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_
 
         //PrintArray( insertdata->get(), 10, "%4d", 10 );
         printf("bulkExtract iteration %d: first is %d, last is %d\n", i, h_csrRowPtr[h_csrVecInd[i]], h_csrRowPtr[h_csrVecInd[i]+1]);
-        printf("Comparing %d elements of A and %d elements of B.\n", h_outputCount, swapCount);
 
-        if( i==0 ) IntervalGather( swapCount, insertdata->get(), insertdata2->get(), swapCount, d_inputArray, d_outputArray, context );
-        else {
+        if( i==0 ) {
+            IntervalGather( swapCount, insertdata->get(), insertdata2->get(), swapCount, d_inputArray, d_outputArray, context );
+            h_outputCount = swapCount;
+        } else {
+            printf("Comparing %d elements of A and %d elements of B.\n", h_outputCount, swapCount);
             IntervalGather( swapCount, insertdata->get(), insertdata2->get(), swapCount, d_inputArray, d_swapArray, context );
-            SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, true);
+            h_outputCount = SetOpKeys<MgpuSetOpUnion, false>(d_outputArray, h_outputCount, d_swapArray, swapCount, unionDevice, context, true);
         }
-
-        h_outputCount = swapCount;
     }
 }
 
@@ -123,9 +101,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMalloc(&d_csrSwapInd, m*sizeof(int));
     cudaMalloc(&d_csrSwap2Ind, m*sizeof(int));
     cudaMalloc(&d_csrSwapVal, m*sizeof(int));
-    MGPU_MEM(int) intersectionDevice = context.Malloc<int>(m);
-
-    DemoSets(context);
+    MGPU_MEM(int) unionDevice;
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
@@ -139,7 +115,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     //d_csrSwapCount[0] = d_csrRowPtr[d_csrVecInd[0]+1];
     //spsv<<<NBLOCKS,NTHREADS>>>( d_csrVecInd, d_csrVecCount, d_csrVecVal, d_csrRowPtr, d_csrColInd, edge, m, d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, iter );
-    bulkExtract( d_csrColInd, m, h_csrRowPtr, d_csrSwapInd, h_csrSwapCount, h_csrVecInd, h_csrVecCount, d_csrVecInd, intersectionDevice, context );
+    bulkExtract( d_csrColInd, m, h_csrRowPtr, d_csrSwapInd, h_csrSwapCount, h_csrVecInd, h_csrVecCount, d_csrVecInd, &unionDevice, context );
     //updateBfs<<<NBLOCKS,NTHREADS>>>( d_csrSwapInd, d_csrSwapCount, d_csrSwapVal, d_bfsResult );
 
     for( iter=2; iter<depth; iter++ ) {
@@ -159,7 +135,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     print_array(h_csrVecInd, 40);
     cudaMemcpy(h_csrVecInd, d_csrSwapInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd, 40);
-    PrintArray(*intersectionDevice, 40, "%4d", 10);
+    PrintArray(*unionDevice, "%4d", 10);
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
