@@ -44,6 +44,28 @@ __global__ void spsv( const int *d_csrVecInd, const int *d_csrVecCount, const in
     }
 }
 
+void DemoSets(CudaContext& context) {
+    printf("\nMULTISET-KEYS DEMONSTRATION:\n\n");
+ 
+    // Use CudaContext::SortRandom to generate 100 random sorted integers
+    // between 0 and 99.
+    int N = 100;
+    MGPU_MEM(int) aData = context.SortRandom<int>(N, 0, 99);
+    MGPU_MEM(int) bData = context.SortRandom<int>(N, 0, 99);
+ 
+    printf("A:\n");
+    PrintArray(*aData, "%4d", 10);
+    printf("\nB:\n\n");
+    PrintArray(*bData, "%4d", 10);
+     
+    MGPU_MEM(int) intersectionDevice;
+    SetOpKeys<MgpuSetOpIntersection, true>(aData->get(), N, bData->get(), N,
+        &intersectionDevice, context, false);
+ 
+    printf("\nIntersection:\n");
+    PrintArray(*intersectionDevice, "%4d", 10);
+}
+
 void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_csrRowPtr, int *d_outputArray, int h_outputCount, const int *h_csrVecInd, const int h_csrVecCount, int *d_swapArray, MGPU_MEM(int) d_csrBfsArray, CudaContext& context ) {
     int swapCount;
     
@@ -102,6 +124,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMalloc(&d_csrSwap2Ind, m*sizeof(int));
     cudaMalloc(&d_csrSwapVal, m*sizeof(int));
     MGPU_MEM(int) intersectionDevice = context.Malloc<int>(m);
+
+    DemoSets(context);
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
