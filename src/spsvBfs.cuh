@@ -50,22 +50,18 @@ void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_
     for( int i=0; i<h_csrVecCount; i++ ) {
         swapCount = h_csrRowPtr[h_csrVecInd[i]+1]-h_csrRowPtr[h_csrVecInd[i]];
         //mgpu::step_iterator<int> insertdata( h_csrRowPtr[h_csrVecInd[i]], 1 );
-        //MGPU_MEM(int) insertdata = context.FillAscending(swapCount, h_csrRowPtr[h_csrVecInd[i]], 1);
+        MGPU_MEM(int) insertdata = context.FillAscending(swapCount, h_csrRowPtr[h_csrVecInd[i]], 1);
+        MGPU_MEM(int) insertdata2 = context.FillAscending(swapCount, 0, 1);
 
         //PrintArray( insertdata->get(), 10, "%4d", 10 );
         printf("bulkExtract iteration %d: first is %d, last is %d\n", i, h_csrRowPtr[h_csrVecInd[i]], h_csrRowPtr[h_csrVecInd[i]+1]);
+        printf("Comparing %d elements of A and %d elements of B.\n", h_outputCount, swapCount);
 
-        if( i==0 ) IntervalGather( swapCount, h_csrRowPtr[h_csrVecInd[i]], 0, swapCount, d_csrColInd, d_swapArray, context );
+        if( i==0 ) IntervalGather( swapCount, insertdata->get(), insertdata2->get(), swapCount, d_inputArray, d_outputArray, context );
         else {
-            IntervalGather( swapCount, h_csrRowPtr[h_csrVecInd[i]], 0, swapCount, d_csrColInd, d_outputArray, context );
-            SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, false);
+            IntervalGather( swapCount, insertdata->get(), insertdata2->get(), swapCount, d_inputArray, d_swapArray, context );
+            SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, true);
         }
-
-        /*if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
-        else {
-            BulkRemove( d_inputArray, h_outputCount, insertdata, swapCount, d_swapArray, context );
-            SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, false);
-        }*/
 
         h_outputCount = swapCount;
     }
@@ -136,6 +132,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
 
     cudaMemcpy(h_csrVecInd, d_csrVecInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd, 40);
+    cudaMemcpy(h_csrVecInd, d_csrSwapInd, 40*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd, 40);
     PrintArray(*intersectionDevice, 40, "%4d", 10);
 
