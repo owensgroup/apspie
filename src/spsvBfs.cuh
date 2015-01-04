@@ -49,23 +49,23 @@ void bulkExtract( const int *d_inputArray, const int h_inputCount, const int *h_
     
     for( int i=0; i<h_csrVecCount; i++ ) {
         swapCount = h_csrRowPtr[h_csrVecInd[i]+1]-h_csrRowPtr[h_csrVecInd[i]];
-        mgpu::step_iterator<int> insertdata( h_csrRowPtr[h_csrVecInd[i]], 1 );
+        //mgpu::step_iterator<int> insertdata( h_csrRowPtr[h_csrVecInd[i]], 1 );
         //MGPU_MEM(int) insertdata = context.FillAscending(swapCount, h_csrRowPtr[h_csrVecInd[i]], 1);
 
         //PrintArray( insertdata->get(), 10, "%4d", 10 );
         printf("bulkExtract iteration %d: first is %d, last is %d\n", i, h_csrRowPtr[h_csrVecInd[i]], h_csrRowPtr[h_csrVecInd[i]+1]);
 
-        /*if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata->get(), swapCount, d_outputArray, context );
+        if( i==0 ) IntervalGather( swapCount, h_csrRowPtr[h_csrVecInd[i]], 0, swapCount, d_csrColInd, d_swapArray, context );
         else {
-            BulkRemove( d_inputArray, h_outputCount, insertdata->get(), swapCount, d_swapArray, context );
+            IntervalGather( swapCount, h_csrRowPtr[h_csrVecInd[i]], 0, swapCount, d_csrColInd, d_outputArray, context );
             SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, false);
-        }*/
+        }
 
-        if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
+        /*if( i==0 ) BulkRemove( d_inputArray, h_inputCount, insertdata, swapCount, d_outputArray, context );
         else {
             BulkRemove( d_inputArray, h_outputCount, insertdata, swapCount, d_swapArray, context );
             SetOpKeys<MgpuSetOpUnion, true>(d_outputArray, h_outputCount, d_swapArray, swapCount, &d_csrBfsArray, context, false);
-        }
+        }*/
 
         h_outputCount = swapCount;
     }
