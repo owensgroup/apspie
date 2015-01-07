@@ -87,9 +87,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     h_csrVecInd = (int *)malloc(m*sizeof(int));
     h_csrVecInd[0] = vertex;
     h_csrVecInd[1] = 2;
+    h_csrVecInd[2] = 3;
     h_csrVecVal = (int *)malloc(m*sizeof(int));
     h_csrVecVal[0] = 0; // Source node always defined as zero
-    h_csrVecCount = 2;
+    h_csrVecCount = 3;
     h_csrSwapCount = 0;
 
     cudaMalloc(&d_csrVecInd, m*sizeof(int));
@@ -101,7 +102,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMalloc(&d_csrSwapInd, m*sizeof(int));
     cudaMalloc(&d_csrSwap2Ind, m*sizeof(int));
     cudaMalloc(&d_csrSwapVal, m*sizeof(int));
-    MGPU_MEM(int) unionDevice;
+    MGPU_MEM(int) unionDevice = context.Malloc<int>(m);
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
