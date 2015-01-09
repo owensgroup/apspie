@@ -332,9 +332,9 @@ int main(int argc, char**argv) {
     print_array(h_csrColIndA, m);
 
     // Run check for errors
-    /*cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);*/
+    print_array(h_bfsResult, m);
 
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
