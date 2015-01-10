@@ -146,15 +146,15 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     }
     IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
     if( total>1 ) {
-        /*MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
+        MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
         lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlagFloat);
         cusparseSnnz( handle, CUSPARSE_DIRECTION_ROW, 1, total, descr, d_csrFlagFloat, 1, d_nnzPtr, h_nnzPtr );
         dense2csr( handle, total, descr, d_csrFlagFloat, d_nnzPtr, d_csrFloat, d_csrRowGood, d_csrRowBad, context );
         BulkRemove( d_csrVecInd, total, d_csrRowBad, *h_nnzPtr, d_csrSwapInd, context );
         h_csrVecCount = total-*h_nnzPtr;
         flag = 1;
-        IntervalScatter( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );*/
-        IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_bfsSwap, context );
+        IntervalScatter( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
+        //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_bfsSwap, context );
     } else {
         h_csrVecCount = 1;
         IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
