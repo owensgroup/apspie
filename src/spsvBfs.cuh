@@ -34,11 +34,6 @@ __global__ void diff( const int *d_csrRowPtr, int *d_csrRowDiff, const int m ) {
     }
 }
  
-void gather( const int h_csrVecCount, const int * d_csrVecInd, const int *d_csrRowPtr, int *d_csrRowGood, CudaContext& context ) {
-    MGPU_MEM(int) insertdata = context.FillAscending( h_csrVecCount, 0, 1 );
-    IntervalGather( h_csrVecCount, d_csrVecInd, insertdata->get(), h_csrVecCount, d_csrRowPtr, d_csrRowGood, context);
-}
-
 __global__ void lookRight( const int *d_csrSwapInd, const int total, float *d_csrFlagFloat) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
@@ -115,6 +110,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int *d_bfsSwap;
     cudaMalloc(&d_bfsSwap, m*sizeof(int));
     cudaMemcpy(d_bfsSwap, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    MGPU_MEM(int) ones = context.Fill( m, 1 );
+    MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
+    MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
+    MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -123,12 +122,9 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int iter = 1;
     int flag = 0;
     int total= 0;
+    cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
-    MGPU_MEM(int) ones = context.Fill( m, 1 );
-    MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
-    MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
-    MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
 
     for( iter=1; iter<depth; iter++ ) {
 
@@ -169,6 +165,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, iter, m );
     }
 
+    cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
