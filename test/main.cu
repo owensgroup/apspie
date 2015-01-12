@@ -318,7 +318,7 @@ int main(int argc, char**argv) {
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
-    spsvBfs( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
@@ -332,9 +332,9 @@ int main(int argc, char**argv) {
     print_array(h_csrColIndA, m);
 
     // Run check for errors
-    /*cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);*/
+    print_array(h_bfsResult, m);
 
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
