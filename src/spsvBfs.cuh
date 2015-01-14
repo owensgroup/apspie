@@ -27,6 +27,17 @@ __global__ void updateBfs( int *d_bfsResult, int *d_spmvResult, const int iter, 
     //}
 }
 
+__global__ void updateBfsScatter( int *d_bfsResult, int *d_spmvResult, int *d_csrFlag, const int iter, const int length ) {
+    //const int STRIDE = gridDim.x * blockDim.x;
+    //for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if( d_spmvResult[idx]>0 && d_bfsResult[idx]<0 ) {
+            d_bfsResult[idx] = iter;
+            d_csrFlag[idx] = 1;
+        } else d_csrFlag[idx] = 0;
+    //}
+}
+
 __global__ void diff( const int *d_csrRowPtr, int *d_csrRowDiff, const int m ) {
 
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<m; idx+=blockDim.x*gridDim.x) {
@@ -34,11 +45,19 @@ __global__ void diff( const int *d_csrRowPtr, int *d_csrRowDiff, const int m ) {
     }
 }
  
-__global__ void lookRight( const int *d_csrSwapInd, const int total, float *d_csrFlagFloat) {
+__global__ void lookRightFloat( const int *d_csrSwapInd, const int total, float *d_csrFlagFloat) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
         if( d_csrSwapInd[idx]==d_csrSwapInd[idx+1] ) d_csrFlagFloat[idx]=(float)1;
         else d_csrFlagFloat[idx]=(float)0;
+    }
+}
+
+__global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrFlag) {
+    
+    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
+        if( d_csrSwapInd[idx]==d_csrSwapInd[idx+1] ) d_csrFlag[idx]=0;
+        else d_csrFlag[idx]=1;
     }
 }
 
@@ -96,6 +115,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
     float *h_csrFlagFloat = (float*)malloc(m*sizeof(float));
     int *h_nnzPtr = (int*)malloc(sizeof(int));
+    int *d_csrFlag;
+    cudaMalloc(&d_csrFlag, m*sizeof(int));
 
     int *h_bfsResult = (int*)malloc(m*sizeof(int));
     for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
@@ -134,30 +155,32 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, (int*)0, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
     }
-    printf("Good to here\n");
+    printf("Running iteration %d.\n", iter);
     IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
     if( total>1 ) {
         MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
-        lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlagFloat);
-        cusparseSnnz( handle, CUSPARSE_DIRECTION_ROW, 1, total, descr, d_csrFlagFloat, 1, d_nnzPtr, h_nnzPtr );
-        dense2csr( handle, total, descr, d_csrFlagFloat, d_nnzPtr, d_csrFloat, d_csrRowGood, d_csrRowBad, context );
-        BulkRemove( d_csrVecInd, total, d_csrRowBad, *h_nnzPtr, d_csrSwapInd, context );
-        h_csrVecCount = total-*h_nnzPtr;
+        lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlag);
+        Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+        IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_csrSwapInd, context );
+        IntervalScatter( h_csrVecCount, d_csrSwapInd, index_big->get(), h_csrVecCount, ones_big->get(), d_bfsSwap, context );
         flag = 1;
-        IntervalScatter( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
-        //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_bfsSwap, context );
+        //IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_csrSwapInd, context );
+        //IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_bfsSwap, context );
     } else {
         h_csrVecCount = 1;
         IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
     }
-    /*printf("Running iteration %d.\n", iter);
-    printf("Removing %d elements out of %d.\n", *h_nnzPtr, total);
-        cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecInd, d_csrFlagFloat, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);*/
+    /*printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+    cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
+    cudaMemcpy(h_csrVecInd, d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
+    cudaMemcpy(h_csrVecInd, d_bfsSwap, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);*/
 
     updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, iter, m );
+    //updateBfsScatter<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, d_csrFlag, iter, m );
+    //Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
     }
 
     cudaProfilerStop();
@@ -175,6 +198,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaFree(d_csrRowDiff);
     cudaFree(d_csrFlagFloat);
     cudaFree(d_csrFloat);
+    cudaFree(d_csrFlag);
 
     cusparseDestroy(handle);
     cusparseDestroyMatDescr(descr);
