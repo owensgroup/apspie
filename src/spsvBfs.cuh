@@ -120,7 +120,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     float *h_csrFlagFloat = (float*)malloc(m*sizeof(float));
     int *h_nnzPtr = (int*)malloc(sizeof(int));
     int *d_csrFlag;
-    cudaMalloc(&d_csrFlag, edge*sizeof(int));
+    cudaMalloc(&d_csrFlag, m*sizeof(int));
 
     int *h_bfsResult = (int*)malloc(m*sizeof(int));
     for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
@@ -147,39 +147,23 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     for( iter=1; iter<depth; iter++ ) {
 
-    if( flag==0 ) {
         IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-    } else {
-        IntervalGather( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
-        flag = 0;
-        Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-    }
-    //printf("Running iteration %d.\n", iter);
-    IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
-    if( total>1 ) {
-        MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
-        lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlag);
-        Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_csrSwapInd, context );
-        IntervalScatter( h_csrVecCount, d_csrSwapInd, index_big->get(), h_csrVecCount, ones_big->get(), d_bfsSwap, context );
 
-        flag = 1;
-        
-        //preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
-        //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
-    } else {
-        h_csrVecCount = 1;
-        IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
-        //IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_csrFlag, context );
-    }
+        //printf("Running iteration %d.\n", iter);
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
+        if( total>1 ) {
+            preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
+            IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
+        } else {
+            h_csrVecCount = 1;
+            IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_csrFlag, context );
+        }
 
-    updateBfsMerge<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, iter, m );
-    //updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
-    //Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-    //streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_csrVecInd, m );
+        updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
+        Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_csrVecInd, m );
 
     /*printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
