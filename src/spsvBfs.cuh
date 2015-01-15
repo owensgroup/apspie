@@ -172,7 +172,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
     } else {
         h_csrVecCount = 1;
-        IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_csrFlag, context );
+        IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
+        //IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_csrFlag, context );
     }
 
     updateBfsMerge<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, iter, m );
