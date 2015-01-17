@@ -72,7 +72,8 @@ __global__ void preprocessFlag( int *d_csrFlag, const int total ) {
 
 __global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, int *d_csrVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
-        if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
+        if( d_csrFlag[idx] ) d_csrVecInd[d_csrRowGood[idx]]=idx;
+        //if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
 }
 
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
@@ -94,8 +95,6 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     h_csrVecInd = (int *)malloc(m*sizeof(int));
     h_csrVecInd[0] = vertex;
-    h_csrVecInd[1] = 2;
-    h_csrVecInd[2] = 3;
     h_csrVecCount = 1;
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
@@ -165,8 +164,13 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
         streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_csrVecInd, m );
 
-    /*printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-    cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+    gpu_timer.Stop();
+    elapsed = gpu_timer.ElapsedMillis();
+    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    gpu_timer.Start();
+
+    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+    /*cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd,40);
     cudaMemcpy(h_csrVecInd, d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd,40);
