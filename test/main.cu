@@ -187,7 +187,7 @@ int main(int argc, char**argv) {
 
     // File i/o
 
-    bool weighted;
+    bool weighted = true;
     int c = getchar();
     int old_c = 0;
     while( c!=EOF ) {
@@ -257,8 +257,8 @@ int main(int argc, char**argv) {
     printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
     printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
-        printf("The graph is weighted: ");
-        print_end(h_csrValA,edge);
+        printf("The graph is weighted. ");
+        //print_end(h_csrValA,edge);
     } else {
         printf("The graph is unweighted.\n");
     }
