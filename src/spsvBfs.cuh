@@ -3,9 +3,7 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
-#include <cub/util_allocator.cuh>
-#include <cub/device/device_radix_sort.cuh>
-//#include "spmv.cuh"
+#include <cub/cub.cuh>
 
 //#define NBLOCKS 16384
 #define NTHREADS 1024
@@ -105,6 +103,17 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     h_csrVecInd[2] = 3;
     h_csrVecCount = 1;
 
+    // Allocate device array
+    cub::DoubleBuffer<int> d_keys;
+    cudaMalloc(&d_keys.d_buffers[0], edge*sizeof(int));
+    cudaMalloc(&d_keys.d_buffers[1], edge*sizeof(int));
+    cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Allocate temporary storage
+    size_t temp_storage_bytes = 0;
+    void *d_temp_storage = NULL;
+    cudaMalloc(&d_temp_storage, edge*sizeof(int));
+
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
@@ -167,7 +176,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     //printf("Running iteration %d.\n", iter);
     IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
     if( total>1 ) {
-        cub::DeviceRadixSort::SortKeys( d_csrSwapInd, temp_storage_bytes, d_keys, total );
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
         lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlag);
         Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
