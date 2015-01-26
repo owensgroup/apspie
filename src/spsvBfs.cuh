@@ -72,7 +72,8 @@ __global__ void preprocessFlag( int *d_csrFlag, const int total ) {
 
 __global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, int *d_csrVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
-        if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
+        if( d_csrFlag[idx] ) d_csrVecInd[d_csrRowGood[idx]]=idx;
+        //if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
 }
 
 __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag ) {
@@ -95,38 +96,19 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int *h_csrVecInd;
     int *d_csrVecInd;
     int h_csrVecCount;
-    int *d_csrSwapInd;
 
     h_csrVecInd = (int *)malloc(m*sizeof(int));
     h_csrVecInd[0] = vertex;
-    h_csrVecInd[1] = 2;
-    h_csrVecInd[2] = 3;
     h_csrVecCount = 1;
 
-    // Allocate device array
-    cub::DoubleBuffer<int> d_keys;
-    cudaMalloc(&d_keys.d_buffers[0], edge*sizeof(int));
-    cudaMalloc(&d_keys.d_buffers[1], edge*sizeof(int));
-    cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
-
-    // Allocate temporary storage
-    size_t temp_storage_bytes = 0;
-    void *d_temp_storage = NULL;
-    cudaMalloc(&d_temp_storage, edge*sizeof(int));
-
-    cudaMalloc(&d_csrVecInd, edge*sizeof(int));
-    cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
+    //cudaMalloc(&d_csrVecInd, edge*sizeof(int));
+    //cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff, *d_nnzPtr;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
     cudaMalloc(&d_csrRowBad, m*sizeof(int));
     cudaMalloc(&d_csrRowDiff, m*sizeof(int));
     cudaMalloc(&d_nnzPtr, 2*sizeof(int));
-
-    float *d_csrFlagFloat, *d_csrFloat;
-    cudaMalloc(&d_csrFlagFloat, m*sizeof(float));
-    cudaMalloc(&d_csrFloat, m*sizeof(float));
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
@@ -136,19 +118,29 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     float *h_csrFlagFloat = (float*)malloc(m*sizeof(float));
     int *h_nnzPtr = (int*)malloc(sizeof(int));
     int *d_csrFlag;
-    cudaMalloc(&d_csrFlag, edge*sizeof(int));
+    cudaMalloc(&d_csrFlag, m*sizeof(int));
 
     int *h_bfsResult = (int*)malloc(m*sizeof(int));
     for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
     h_bfsResult[vertex]=0;
     cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice); 
-    int *d_bfsSwap;
-    cudaMalloc(&d_bfsSwap, m*sizeof(int));
-    cudaMemcpy(d_bfsSwap, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     MGPU_MEM(int) ones = context.Fill( m, 1 );
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
-    MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
-    MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
+    //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
+    //MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
+
+    // Allocate device array
+    cub::DoubleBuffer<int> d_keys;
+    cudaMalloc((void**)&d_keys.d_buffers[0], edge*sizeof(int));
+    cudaMalloc((void**)&d_keys.d_buffers[1], edge*sizeof(int));
+    cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Allocate temporary storage
+    size_t temp_storage_bytes = 0;
+    void *d_temp_storage = NULL;
+    //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys,  );
+    
+    //cudaMalloc(&d_temp_storage, edge*sizeof(int));
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -163,49 +155,38 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     for( iter=1; iter<depth; iter++ ) {
 
-    if( flag==0 ) {
-        IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-    } else {
-        IntervalGather( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
-        flag = 0;
-        Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_csrSwapInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-    }
-    //printf("Running iteration %d.\n", iter);
-    IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
-    if( total>1 ) {
-        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
-        //MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
-        lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlag);
-        Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_csrSwapInd, context );
-        IntervalScatter( h_csrVecCount, d_csrSwapInd, index_big->get(), h_csrVecCount, ones_big->get(), d_bfsSwap, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        flag = 1;
-        
+        // Sort step
+        cudaFree(d_temp_storage);
+        temp_storage_bytes = 0;
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total);
+        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
+        cudaMalloc(&d_temp_storage, temp_storage_bytes);
+        size_t temp = total*sizeof(int);
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp, d_keys, total );
+
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
-        scatter<<<NBLOCKS, NTHREADS>>>( total, d_csrVecInd, d_csrFlag );
-        //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
-    } else {
-        h_csrVecCount = 1;
-        IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_bfsSwap, context );
-        //IntervalScatter( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, ones->get(), d_csrFlag, context );
-    }
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+        //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
+        scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
-    updateBfsMerge<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_bfsSwap, iter, m );
-    //updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
-    //Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-    //streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_csrVecInd, m );
+        updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
+        Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_keys.Current(), m );
 
-    /*printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-    cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
-    cudaMemcpy(h_csrVecInd, d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+//    printf("Running iteration %d.\n", iter);
+//    gpu_timer.Stop();
+//    elapsed = gpu_timer.ElapsedMillis();
+//    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+//    gpu_timer.Start();
+//    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd,40);
     cudaMemcpy(h_csrVecInd, d_csrFlag, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);*/
+    print_array(h_csrVecInd,40);
     }
 
     cudaProfilerStop();
@@ -216,13 +197,9 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
 
-    cudaFree(d_csrVecInd);
-    cudaFree(d_csrSwapInd);
     cudaFree(d_csrRowGood);
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
-    cudaFree(d_csrFlagFloat);
-    cudaFree(d_csrFloat);
     cudaFree(d_csrFlag);
 
     cusparseDestroy(handle);
@@ -230,3 +207,4 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     
     free(h_csrVecInd);
 }
+
