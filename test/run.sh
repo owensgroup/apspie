@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM35"
+ARCH="GEN_SM20"
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../dataset/small/test_cc.mtx
@@ -19,5 +19,12 @@ do
             ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx
             break
         fi
+    fi
+done
+
+for i in 2-bitcoin 6-roadnet 4-pld 
+do
+    if [ "$ARCH" = "GEN_SM45" ] ; then
+        ./test /data/PPOPP15/$i.mtx
     fi
 done

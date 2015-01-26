@@ -187,7 +187,7 @@ int main(int argc, char**argv) {
 
     // File i/o
 
-    bool weighted;
+    bool weighted = true;
     int c = getchar();
     int old_c = 0;
     while( c!=EOF ) {
@@ -257,8 +257,8 @@ int main(int argc, char**argv) {
     printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
     printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
-        printf("The graph is weighted: ");
-        print_end(h_csrValA,edge);
+        printf("The graph is weighted. ");
+        //print_end(h_csrValA,edge);
     } else {
         printf("The graph is unweighted.\n");
     }
@@ -325,7 +325,7 @@ int main(int argc, char**argv) {
     elapsed2 += gpu_timer2.ElapsedMillis();
 
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
-    printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
+    //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     //cudaMemcpy(h_csrColIndA, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
@@ -336,6 +336,8 @@ int main(int argc, char**argv) {
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);
 
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 1, *context);
+    
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
