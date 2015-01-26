@@ -83,35 +83,6 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
 
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 
-    int num_items = 7;
-    int *h_key_buf = (int *)malloc(num_items*sizeof(int));
-    int *h_key_alt_buf = (int *)malloc(num_items*sizeof(int));
-    h_key_buf[0] = 8;
-    h_key_buf[1] = 6;
-    h_key_buf[2] = 7;
-    h_key_buf[3] = 5;
-    h_key_buf[4] = 3;
-    h_key_buf[5] = 0;
-    h_key_buf[6] = 9;
-
-    int *d_key_buf;
-    int *d_key_alt_buf;
-    cudaMalloc(&d_key_buf, num_items*sizeof(int));
-    cudaMalloc(&d_key_alt_buf, num_items*sizeof(int));
-    cudaMemcpy(d_key_buf, h_key_buf, num_items*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_key_alt_buf, h_key_alt_buf, num_items*sizeof(int), cudaMemcpyHostToDevice);
-    
-    cub::DoubleBuffer<int> d_key(d_key_buf, d_key_alt_buf);
-    void *temp_storage = NULL;
-    size_t temp_storage_b = 0;
-    cub::DeviceRadixSort::SortKeys(temp_storage, temp_storage_b, d_key, num_items);
-    cudaMalloc(&temp_storage, temp_storage_b);
-    printf("The amount allocated is: %d\n", temp_storage_b);
-    cub::DeviceRadixSort::SortKeys(temp_storage, temp_storage_b, d_key, num_items);
-
-    cudaMemcpy(h_key_buf, d_key.Current(), num_items*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_key_buf, num_items);
-
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
@@ -192,14 +163,13 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
+//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
         // Sort step
-        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
+//        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
         cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
-        //cub::DeviceRadixSort::SortKeys( temp_storage, temp_storage_b, d_keys, total );
-    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
+//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
 
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
