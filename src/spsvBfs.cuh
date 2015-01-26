@@ -75,6 +75,11 @@ __global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, in
         if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
 }
 
+__global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        d_csrFlag[d_csrVecInd[idx]] = 1;
+}
+
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 
     cusparseHandle_t handle;
@@ -168,7 +173,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
         flag = 1;
         
-        //preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
+        preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
+        scatter<<<NBLOCKS, NTHREADS>>>( total, d_csrVecInd, d_csrFlag );
         //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
     } else {
         h_csrVecCount = 1;
