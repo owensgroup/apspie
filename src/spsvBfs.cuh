@@ -83,6 +83,35 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
 
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 
+    int num_items = 7;
+    int *h_key_buf = (int *)malloc(num_items*sizeof(int));
+    int *h_key_alt_buf = (int *)malloc(num_items*sizeof(int));
+    h_key_buf[0] = 8;
+    h_key_buf[1] = 6;
+    h_key_buf[2] = 7;
+    h_key_buf[3] = 5;
+    h_key_buf[4] = 3;
+    h_key_buf[5] = 0;
+    h_key_buf[6] = 9;
+
+    int *d_key_buf;
+    int *d_key_alt_buf;
+    cudaMalloc(&d_key_buf, num_items*sizeof(int));
+    cudaMalloc(&d_key_alt_buf, num_items*sizeof(int));
+    cudaMemcpy(d_key_buf, h_key_buf, num_items*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_key_alt_buf, h_key_alt_buf, num_items*sizeof(int), cudaMemcpyHostToDevice);
+    
+    cub::DoubleBuffer<int> d_key(d_key_buf, d_key_alt_buf);
+    void *temp_storage = NULL;
+    size_t temp_storage_b = 0;
+    cub::DeviceRadixSort::SortKeys(temp_storage, temp_storage_b, d_key, num_items);
+    cudaMalloc(&temp_storage, temp_storage_b);
+    printf("The amount allocated is: %d\n", temp_storage_b);
+    cub::DeviceRadixSort::SortKeys(temp_storage, temp_storage_b, d_key, num_items);
+
+    cudaMemcpy(h_key_buf, d_key.Current(), num_items*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_key_buf, num_items);
+
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
@@ -95,14 +124,16 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     // h_csrVecCount - number of nonzero vector values
     int *h_csrVecInd;
     int *d_csrVecInd;
+    int *d_csrSwapInd;
     int h_csrVecCount;
 
-    h_csrVecInd = (int *)malloc(m*sizeof(int));
+    h_csrVecInd = (int *)malloc(edge*sizeof(int));
     h_csrVecInd[0] = vertex;
     h_csrVecCount = 1;
 
-    //cudaMalloc(&d_csrVecInd, edge*sizeof(int));
-    //cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc(&d_csrVecInd, edge*sizeof(int));
+    cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
+    cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff, *d_nnzPtr;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
@@ -130,17 +161,16 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     //MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
 
     // Allocate device array
-    cub::DoubleBuffer<int> d_keys;
-    cudaMalloc((void**)&d_keys.d_buffers[0], edge*sizeof(int));
-    cudaMalloc((void**)&d_keys.d_buffers[1], edge*sizeof(int));
-    cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+    cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
+    //cub::DoubleBuffer<int> d_keys;
+    //cudaMalloc(&d_keys.d_buffers[0], edge*sizeof(int));
+    //cudaMalloc(&d_keys.d_buffers[1], edge*sizeof(int));
+    //cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate temporary storage
-    size_t temp_storage_bytes = 0;
+    size_t temp_storage_bytes = 93184;
     void *d_temp_storage = NULL;
-    //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys,  );
-    
-    //cudaMalloc(&d_temp_storage, edge*sizeof(int));
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -159,17 +189,18 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        // Sort step
-        cudaFree(d_temp_storage);
-        temp_storage_bytes = 0;
-        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total);
-        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
-        cudaMalloc(&d_temp_storage, temp_storage_bytes);
-        size_t temp = total*sizeof(int);
-        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp, d_keys, total );
-
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
+        // Sort step
+        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        //cub::DeviceRadixSort::SortKeys( temp_storage, temp_storage_b, d_keys, total );
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
+
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
@@ -183,10 +214,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    printf("\nGPU BFS finished in %f msec. \n", elapsed);
 //    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
-    cudaMemcpy(h_csrVecInd, d_csrFlag, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
+//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
+//    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
     }
 
     cudaProfilerStop();
