@@ -3,6 +3,8 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
+#include <cub/util_allocator.cuh>
+#include <cub/device/device_radix_sort.cuh>
 //#include "spmv.cuh"
 
 //#define NBLOCKS 16384
@@ -165,7 +167,8 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     //printf("Running iteration %d.\n", iter);
     IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
     if( total>1 ) {
-        MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
+        cub::DeviceRadixSort::SortKeys( d_csrSwapInd, temp_storage_bytes, d_keys, total );
+        //MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
         lookRight<<<NBLOCKS,NTHREADS>>>(d_csrVecInd, total, d_csrFlag);
         Scan<MgpuScanTypeExc>( d_csrFlag, total, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
         IntervalScatter( total, d_csrRowGood, index_big->get(), total, d_csrVecInd, d_csrSwapInd, context );
