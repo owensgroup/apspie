@@ -1,5 +1,5 @@
 // Provides BFS function for GPU
- 
+
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
