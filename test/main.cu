@@ -318,8 +318,17 @@ int main(int argc, char**argv) {
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
-    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    //cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    //verify( m, h_bfsResult, h_bfsResultCPU );
+    
+    // 0-no sort (pigeonhole/address sort)
+    // 1-merge sort
+    // 2-radix sort
+    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 0, *context); 
+    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 1, *context); 
+    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 2, *context); 
+
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
@@ -336,8 +345,6 @@ int main(int argc, char**argv) {
     //verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 1, *context);
-    
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);

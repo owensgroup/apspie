@@ -81,7 +81,7 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
+void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, const int sort, CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -148,6 +148,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int iter = 1;
     int flag = 0;
     int total= 0;
+    int traversed = 0;
     //cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
@@ -164,10 +165,16 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
         // Sort step
+        switch(sort) {
+            case(1):
         //SegSortKeysFromIndices( d_keys.Current(), total, blockIndex->get(), NBLOCKS, context );
         //LocalitySortKeys( d_keys.Current(), total, context );
-        //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
-        //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+                MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+                break;
+            case(2):
+                cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+                break;
+        }
 //    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
 
@@ -188,10 +195,12 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    print_array(h_csrVecInd,40);
 //    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
+        traversed+=total;
     }
 
     //cudaProfilerStop();
     gpu_timer.Stop();
+    if( test==0 ) printf("Traversed edges: %d\n", traversed);
     elapsed += gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec.\n", elapsed);
     }

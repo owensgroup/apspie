@@ -100,6 +100,21 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     h_bfsResult = (int*)malloc(m*sizeof(int));
     h_spmvResult = (float*)malloc(m*sizeof(float));
 
+    //std::cout << "This is m: " << m << std::endl;
+    //print_array(h_bfsResult,m);
+
+    // Generate values for BFS (csrValA where everything is 1)
+    float *h_bfsValA, *d_bfsValA;
+    h_bfsValA = (float*)malloc(edge*sizeof(float));
+    cudaMalloc(&d_bfsValA, edge*sizeof(float));
+
+    // Use Thrust to generate initial vector
+    //thrust::device_ptr<float> dev_ptr(d_inputVector);
+    //thrust::fill(dev_ptr, dev_ptr + m, (float) 0);
+    //thrust::device_vector<float> inputVector(m, 0);
+    //inputVector[vertex] = 1;
+    //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
+
     for( int i=0; i<m; i++ ) {
         h_bfsResult[i]=-1;
         h_spmvResult[i]=0;
@@ -108,55 +123,45 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
             h_spmvResult[i]=1;
         }
     }
-    //std::cout << "This is m: " << m << std::endl;
-    //print_array(h_bfsResult,m);
-    cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
-
-    // Generate values for BFS (csrValA where everything is 1)
-    float *h_bfsValA, *d_bfsValA;
-    h_bfsValA = (float*)malloc(edge*sizeof(float));
-    cudaMalloc(&d_bfsValA, edge*sizeof(float));
 
     for( int i=0; i<edge; i++ ) {
         h_bfsValA[i] = 1;
     }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
-    
-    // Use Thrust to generate initial vector
-    //thrust::device_ptr<float> dev_ptr(d_inputVector);
-    //thrust::fill(dev_ptr, dev_ptr + m, (float) 0);
-    //thrust::device_vector<float> inputVector(m, 0);
-    //inputVector[vertex] = 1;
-    //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
+    //cudaProfilerStart();
+
+    for( int test=0;test<10;test++) {
+    cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
+    
     gpu_timer.Start();
-    cudaProfilerStart();
     spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
-    for( int i=2; i<depth; i++ ) {
-    //for( int i=2; i<3; i++ ) {
-        if( i%2==0 ) {
+    for( int iter=2; iter<depth; iter++ ) {
+        if( iter%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
-            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
+            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, iter, m);
         } else {
             spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
+            addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, iter, m);
         }
     }
-
-    cudaProfilerStop();
+   
+    //cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    //printf("GPU BFS finished in %f msec. \n", elapsed);
     //printf("The maximum frontier size was: %d.\n", frontier_max);
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
+    }
+    printf("%f\n", elapsed/10);
 
     // Important: destroy handle
     //cusparseDestroy(handle);
