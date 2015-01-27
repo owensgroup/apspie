@@ -130,6 +130,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
     //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
     //MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
+    MGPU_MEM(int) blockIndex = context.FillAscending( NBLOCKS, 0, NTHREADS );
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
@@ -166,8 +167,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
         // Sort step
-//        printf("Iteration #%d, # of bytes %d\n", iter, temp_storage_bytes);
-        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        //SegSortKeysFromIndices( d_keys.Current(), total, blockIndex->get(), NBLOCKS, context );
+        //LocalitySortKeys( d_keys.Current(), total, context );
+        //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 //    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
 
