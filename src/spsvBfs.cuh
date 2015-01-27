@@ -99,13 +99,9 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int h_csrVecCount;
 
     h_csrVecInd = (int *)malloc(edge*sizeof(int));
-    h_csrVecInd[0] = vertex;
-    h_csrVecCount = 1;
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
-    cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
-
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff, *d_nnzPtr;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
     cudaMalloc(&d_csrRowBad, m*sizeof(int));
@@ -123,9 +119,6 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaMalloc(&d_csrFlag, m*sizeof(int));
 
     int *h_bfsResult = (int*)malloc(m*sizeof(int));
-    for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
-    h_bfsResult[vertex]=0;
-    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice); 
     MGPU_MEM(int) ones = context.Fill( m, 1 );
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
     //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
@@ -134,15 +127,19 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    //cub::DoubleBuffer<int> d_keys;
-    //cudaMalloc(&d_keys.d_buffers[0], edge*sizeof(int));
-    //cudaMalloc(&d_keys.d_buffers[1], edge*sizeof(int));
-    //cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate temporary storage
     size_t temp_storage_bytes = 93184;
     void *d_temp_storage = NULL;
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    for( int test=0;test<10;test++) {
+    h_csrVecInd[0] = vertex;
+    h_csrVecCount = 1;
+    cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+    for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
+    h_bfsResult[vertex]=0;
+    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice); 
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -151,7 +148,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int iter = 1;
     int flag = 0;
     int total= 0;
-    cudaProfilerStart();
+    //cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
@@ -193,10 +190,12 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    print_array(h_csrVecInd,40);
     }
 
-    cudaProfilerStop();
+    //cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    //printf("GPU BFS finished in %f msec.\n", elapsed);
+    }
+    printf("%f\n", elapsed/10);    
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );

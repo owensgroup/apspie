@@ -84,7 +84,7 @@ int SimpleReferenceBfs(
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
-    printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+    //printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
 
     return search_depth;
 }
@@ -117,7 +117,7 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     cusparseStatus_t status = cusparseXcoo2csr(handle, d_cooRowIndA, edge, m, d_csrRowPtrA, CUSPARSE_INDEX_BASE_ZERO);
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("COO->CSR finished in %f msec. \n", elapsed);
+    //printf("COO->CSR finished in %f msec. \n", elapsed);
 
     /*switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
@@ -183,7 +183,7 @@ int main(int argc, char**argv) {
     // Broken on graphs with more than 500k edges
     freopen(argv[1],"r",stdin);
     //freopen("log","w",stdout);
-    printf("Testing %s\n", argv[1]);
+    //printf("Testing %s\n", argv[1]);
 
     // File i/o
 
@@ -221,7 +221,7 @@ int main(int argc, char**argv) {
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
         if( scanf("%d", &h_csrColIndA[j])==EOF ) {
-            printf("Error: not enough rows in mtx file.\n");
+            //printf("Error: not enough rows in mtx file.\n");
             break;
         }
         scanf("%d", &h_cooRowIndA[j]);
@@ -254,13 +254,13 @@ int main(int argc, char**argv) {
             }
         }
     }
-    printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
-    printf("The first row has %d elements.\n", csr_first);
+    //printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
+    //printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
-        printf("The graph is weighted. ");
+        //printf("The graph is weighted. ");
         //print_end(h_csrValA,edge);
     } else {
-        printf("The graph is unweighted.\n");
+        //printf("The graph is unweighted.\n");
     }
 
     // Allocate GPU memory
@@ -301,7 +301,7 @@ int main(int argc, char**argv) {
     //int depth = 4;
     //bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
     //depth++;
-    print_end_interesting(h_bfsResultCPU, m);
+    //print_end_interesting(h_bfsResultCPU, m);
 
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
@@ -324,17 +324,17 @@ int main(int argc, char**argv) {
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
+    //printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
     //cudaMemcpy(h_csrColIndA, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrColIndA, m);
+    //print_array(h_csrColIndA, m);
 
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    //verify( m, h_bfsResult, h_bfsResultCPU );
+    //print_array(h_bfsResult, m);
 
     bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 1, *context);
     
