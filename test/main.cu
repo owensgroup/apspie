@@ -294,8 +294,8 @@ int main(int argc, char**argv) {
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
-    int depth = 1000;
-    depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
+    int depth[10];
+    for(int i=0;i<10;i++) depth[i] = bfsCPU( i, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
 
     // Some testing code. To be turned into unit test.
     //int depth = 4;
@@ -342,7 +342,7 @@ int main(int argc, char**argv) {
 
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    //verify( m, h_bfsResult, h_bfsResultCPU );
+    verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
 
     cudaFree(d_csrValA);
