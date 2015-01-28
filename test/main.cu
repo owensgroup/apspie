@@ -217,6 +217,9 @@ int main(int argc, char**argv) {
     int csr_row = 0;
     int csr_first = 1;
 
+    int study[10];
+    int studyInd=1;
+
     // Currently checks if there are fewer rows than promised
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
@@ -228,6 +231,7 @@ int main(int argc, char**argv) {
 
         if( j==0 ) {
             c=getchar();
+            study[0]=h_cooRowIndA[j]-1;
         }
 
         if( c!=32 ) {
@@ -250,6 +254,10 @@ int main(int argc, char**argv) {
                     csr_max = csr_current;
                     csr_current = 1;
                     csr_row = h_cooRowIndA[j-1];
+                    if( studyInd<10 ) {
+                        study[studyInd]=h_cooRowIndA[j];
+                        studyInd++;
+                    }
                 }
             }
         }
@@ -262,6 +270,8 @@ int main(int argc, char**argv) {
     } else {
         //printf("The graph is unweighted.\n");
     }
+
+    if( studyInd==1 ) return 0;
 
     // Allocate GPU memory
     float *d_csrValA;
@@ -294,8 +304,8 @@ int main(int argc, char**argv) {
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
-    int depth = 1000;
-    depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
+    int depth[10];
+    for(int i=0;i<10;i++) depth[i] = bfsCPU( study[i], m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
 
     // Some testing code. To be turned into unit test.
     //int depth = 4;
@@ -318,16 +328,19 @@ int main(int argc, char**argv) {
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    for(int i=0;i<10;i++) bfs( study[i], edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth[i], *context);
     //cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     //verify( m, h_bfsResult, h_bfsResultCPU );
-    
+   
+    int traversed[10];
+ 
     // 0-no sort (pigeonhole/address sort)
     // 1-merge sort
     // 2-radix sort
-    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 0, *context); 
-    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 1, *context); 
-    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, 2, *context); 
+    for(int i=0;i<10;i++) traversed[i]=spsvBfs( study[i], edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth[i], 0, *context); 
+    for(int i=0;i<10;i++) spsvBfs( study[i], edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth[i], 1, *context); 
+    for(int i=0;i<10;i++) spsvBfs( study[i], edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth[i], 2, *context); 
+    for(int i=0;i<10;i++) printf("%d\n",traversed[i]);
 
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
@@ -342,7 +355,7 @@ int main(int argc, char**argv) {
 
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    //verify( m, h_bfsResult, h_bfsResultCPU );
+    verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
 
     cudaFree(d_csrValA);

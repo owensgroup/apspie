@@ -132,7 +132,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     float elapsed = 0.0f;
     //cudaProfilerStart();
 
-    for( int test=0;test<10;test++) {
+    //for( int test=0;test<10;test++) {
     cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
@@ -160,8 +160,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //printf("GPU BFS finished in %f msec. \n", elapsed);
     //printf("The maximum frontier size was: %d.\n", frontier_max);
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
-    }
-    printf("%f\n", elapsed/10);
+    printf("%f\n", elapsed);
 
     // Important: destroy handle
     //cusparseDestroy(handle);

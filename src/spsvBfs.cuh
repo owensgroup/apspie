@@ -81,7 +81,7 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, const int sort, CudaContext& context ) {
+int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, const int sort, CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -113,7 +113,6 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
-    float *h_csrFlagFloat = (float*)malloc(m*sizeof(float));
     int *h_nnzPtr = (int*)malloc(sizeof(int));
     int *d_csrFlag;
     cudaMalloc(&d_csrFlag, m*sizeof(int));
@@ -133,7 +132,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     void *d_temp_storage = NULL;
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
-    for( int test=0;test<10;test++) {
+    //for( int test=0;test<10;test++) {
     h_csrVecInd[0] = vertex;
     h_csrVecCount = 1;
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
@@ -200,11 +199,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     //cudaProfilerStop();
     gpu_timer.Stop();
-    if( test==0 ) printf("Traversed edges: %d\n", traversed);
+    //printf("Traversed edges: %d\n", traversed);
     elapsed += gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec.\n", elapsed);
-    }
-    printf("%f\n", elapsed/10);    
+    printf("%f\n", elapsed);    
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
@@ -213,10 +211,17 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
     cudaFree(d_csrFlag);
+    cudaFree(d_csrVecInd);
+    cudaFree(d_csrSwapInd);
+    cudaFree(d_temp_storage);
 
     cusparseDestroy(handle);
     cusparseDestroyMatDescr(descr);
     
     free(h_csrVecInd);
+    free(h_bfsResult);
+    free(h_csrRowDiff);
+
+    return traversed;
 }
 
