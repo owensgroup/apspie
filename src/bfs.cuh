@@ -81,7 +81,7 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
     //}
 }
 
-void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
+void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth[], CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -115,15 +115,6 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //inputVector[vertex] = 1;
     //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
 
-    for( int i=0; i<m; i++ ) {
-        h_bfsResult[i]=-1;
-        h_spmvResult[i]=0;
-        if( i==vertex ) {
-            h_bfsResult[i]=0;
-            h_spmvResult[i]=1;
-        }
-    }
-
     for( int i=0; i<edge; i++ ) {
         h_bfsValA[i] = 1;
     }
@@ -132,7 +123,16 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     float elapsed = 0.0f;
     //cudaProfilerStart();
 
-    //for( int test=0;test<10;test++) {
+    for( int test=0;test<10;test++) {
+    for( int i=0; i<m; i++ ) {
+        h_bfsResult[i]=-1;
+        h_spmvResult[i]=0;
+        if( i==test ) {
+            h_bfsResult[i]=0;
+            h_spmvResult[i]=1;
+        }
+    }
+
     cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
@@ -144,7 +144,7 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
-    for( int iter=2; iter<depth; iter++ ) {
+    for( int iter=2; iter<depth[test]; iter++ ) {
         if( iter%2==0 ) {
             spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, iter, m);
@@ -156,11 +156,13 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
    
     //cudaProfilerStop();
     gpu_timer.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
+    elapsed = gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec. \n", elapsed);
     //printf("The maximum frontier size was: %d.\n", frontier_max);
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
     printf("%f\n", elapsed);
+    }
+    printf("bfs done\n");
 
     // Important: destroy handle
     //cusparseDestroy(handle);

@@ -305,7 +305,7 @@ int main(int argc, char**argv) {
     //print_array(h_csrRowPtrA,m+1);
 
     int depth[10];
-    for(int i=0;i<10;i++) depth[i] = bfsCPU( study[i], m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
+    for(int i=0;i<10;i++) depth[i] = bfsCPU( i, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
 
     // Some testing code. To be turned into unit test.
     //int depth = 4;

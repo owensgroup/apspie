@@ -81,7 +81,7 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, const int sort, CudaContext& context ) {
+void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth[], const int sort, CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -132,12 +132,15 @@ int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowP
     void *d_temp_storage = NULL;
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
-    //for( int test=0;test<10;test++) {
-    h_csrVecInd[0] = vertex;
+    int traversed[10];
+    for(int i=0;i<10;i++) traversed[i]=0;
+
+    for( int test=0;test<10;test++) {
+    h_csrVecInd[0] = test;
     h_csrVecCount = 1;
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
     for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
-    h_bfsResult[vertex]=0;
+    h_bfsResult[test]=0;
     cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice); 
 
     // First iteration
@@ -147,12 +150,11 @@ int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowP
     int iter = 1;
     int flag = 0;
     int total= 0;
-    int traversed = 0;
     //cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<depth; iter++ ) {
+    for( iter=1; iter<depth[test]; iter++ ) {
 
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
@@ -161,8 +163,8 @@ int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowP
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
         // Sort step
         switch(sort) {
             case(1):
@@ -174,8 +176,8 @@ int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowP
                 cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
                 break;
         }
-//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
 
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
@@ -194,15 +196,22 @@ int spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowP
 //    print_array(h_csrVecInd,40);
 //    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
-        traversed+=total;
+        traversed[test]+=total;
     }
 
     //cudaProfilerStop();
     gpu_timer.Stop();
-    //printf("Traversed edges: %d\n", traversed);
-    elapsed += gpu_timer.ElapsedMillis();
+    elapsed = gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec.\n", elapsed);
-    printf("%f\n", elapsed);    
+    printf("%f\n", elapsed);
+    }
+    printf("sort %d finished\n", sort);    
+    if( sort==2 ) {
+        for( int i=0;i<10;i++ ) printf("%d\n", traversed[i] );
+    }
+    if( sort==2 ) {
+        for( int i=0;i<10;i++ ) printf("%d\n", depth[i] );
+    }
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
