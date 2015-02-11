@@ -3,7 +3,7 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
-//#include "spmv.cuh"
+#include <cub/cub.cuh>
 
 //#define NBLOCKS 16384
 #define NTHREADS 1024
@@ -95,13 +95,15 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     // h_csrVecCount - number of nonzero vector values
     int *h_csrVecInd;
     int *d_csrVecInd;
+    int *d_csrSwapInd;
     int h_csrVecCount;
 
-    h_csrVecInd = (int *)malloc(m*sizeof(int));
+    h_csrVecInd = (int *)malloc(edge*sizeof(int));
     h_csrVecInd[0] = vertex;
     h_csrVecCount = 1;
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
+    cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
     cudaMemcpy(d_csrVecInd, h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff, *d_nnzPtr;
@@ -128,6 +130,20 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
     //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
     //MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
+    MGPU_MEM(int) blockIndex = context.FillAscending( NBLOCKS, 0, NTHREADS );
+    MGPU_MEM(int) everyOther = context.FillAscending( m, 0, 2 );
+
+    // Allocate device array
+    cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
+    //cub::DoubleBuffer<int> d_keys;
+    //cudaMalloc(&d_keys.d_buffers[0], edge*sizeof(int));
+    //cudaMalloc(&d_keys.d_buffers[1], edge*sizeof(int));
+    //cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Allocate temporary storage
+    size_t temp_storage_bytes = 93184;
+    void *d_temp_storage = NULL;
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -142,18 +158,31 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     for( iter=1; iter<depth; iter++ ) {
 
-        IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_csrVecInd, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
-        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
-        //IntervalScatter( total, d_csrVecInd, index_big->get(), total, ones_big->get(), d_csrFlag, context );
-        scatter<<<NBLOCKS,NTHREADS>>>( total, d_csrVecInd, d_csrFlag );
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+        // Sort step
+
+        IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+        SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
+        //LocalitySortKeys( d_keys.Current(), total, context );
+        //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+
+        //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
+        scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
         Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_csrVecInd, m );
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_keys.Current(), m );
 
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
@@ -161,10 +190,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 //    printf("\nGPU BFS finished in %f msec. \n", elapsed);
 //    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-    /*cudaMemcpy(h_csrVecInd, d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
-    cudaMemcpy(h_csrVecInd, d_csrFlag, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);*/
+//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
+//    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
+//    print_array(h_csrVecInd,40);
     }
 
     cudaProfilerStop();
@@ -175,7 +204,6 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
 
-    cudaFree(d_csrVecInd);
     cudaFree(d_csrRowGood);
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
@@ -186,3 +214,4 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     
     free(h_csrVecInd);
 }
+
