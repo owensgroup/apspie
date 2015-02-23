@@ -131,6 +131,7 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
     //MGPU_MEM(int) index_big= context.FillAscending( edge, 0, 1 );
     MGPU_MEM(int) blockIndex = context.FillAscending( NBLOCKS, 0, NTHREADS );
+    MGPU_MEM(int) everyOther = context.FillAscending( m, 0, 2 );
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
@@ -164,15 +165,17 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
         // Sort step
-        //SegSortKeysFromIndices( d_keys.Current(), total, blockIndex->get(), NBLOCKS, context );
+
+        IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+        SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
         //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
-//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
 
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
