@@ -26,9 +26,11 @@ __global__ void updateBfs( int *d_bfsResult, int *d_spmvResult, const int iter, 
     }
 }
 
-__global__ void updateBfsMerge( int *d_bfsResult, int *d_spmvResult, const int iter, const int length ) {
-    for (int idx = blockIdx.x*blockDim.x+threadIdx.x; idx < length; idx += gridDim.x*blockDim.x) {
-        if( d_spmvResult[idx]>0 && d_bfsResult[idx]<0 ) d_bfsResult[idx] = iter;
+__global__ void updateSparseBfs( int *d_bfsResult, const int *d_csrVecInd, const int iter, const int total ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) {
+        int index = d_csrVecInd[idx];
+        if( d_bfsResult[index] == -1 ) d_bfsResult[index] = iter;
+        //else d_csrVecInd[idx] = 0;
     }
 }
 
@@ -50,7 +52,7 @@ __global__ void lookRightFloat( const int *d_csrSwapInd, const int total, float 
 __global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrFlag) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
-        if( d_csrSwapInd[idx]==d_csrSwapInd[idx+1] ) d_csrFlag[idx]=0;
+        if( d_csrSwapInd[idx]!=d_csrSwapInd[idx+1] ) d_csrFlag[idx]=0;
         else d_csrFlag[idx]=1;
     }
 }
@@ -158,31 +160,35 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     for( iter=1; iter<depth; iter++ ) {
 
+        // Compact dense vector into sparse
+        if( iter>1 ) {
+            Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+            streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_keys.Current(), m );
+        }
+
+        // Gather from CSR graph into one big array
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-
-        preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    //print_array(h_csrVecInd,40);
+        // Reset dense flag array
+        preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
+
         // Sort step
-
-        IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
-        SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
+        //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+        //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
-        //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
-    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    //print_array(h_csrVecInd,40);
 
+        //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_keys.Current(), iter, total );
+
+        // Scatter into dense flag array
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
-        Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_keys.Current(), m );
 
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
