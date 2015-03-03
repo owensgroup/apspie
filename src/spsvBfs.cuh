@@ -6,7 +6,7 @@
 #include <cub/cub.cuh>
 
 //#define NBLOCKS 16384
-#define NTHREADS 1024
+#define NTHREADS 512
 
 /*void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, CudaContext& context) {
     SpmvKernel<float>(d_csrValA,

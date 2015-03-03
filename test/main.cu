@@ -336,7 +336,12 @@ int main(int argc, char**argv) {
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 1, *context);
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+
+    // Run check for errors
+    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    verify( m, h_bfsResult, h_bfsResultCPU );
+    print_array(h_bfsResult, m);
     
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
