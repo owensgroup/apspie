@@ -47,7 +47,9 @@ int SimpleReferenceBfs(
     //
 
     CpuTimer cpu_timer;
+    timespec time1, time2;
     cpu_timer.Start();
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1);
     while (!frontier.empty()) {
         
         // Dequeue node from frontier
@@ -81,10 +83,13 @@ int SimpleReferenceBfs(
         predecessor[src] = -1;
 
     cpu_timer.Stop();
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2);
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
     printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+    printf("More accurately in %lf msec\n", diff(time1,time2).tv_nsec/1000.0);
+    printf("More accurately in %ld nsec\n", diff(time1,time2).tv_nsec);
 
     return search_depth;
 }
@@ -175,9 +180,14 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
     cusparseDestroy(handle);
 }
 
+void runBfs( int, char** );
+
 int main(int argc, char**argv) {
+    runBfs(argc, argv);
+}    
+   
+void runBfs(int argc, char**argv) { 
     int m, n, edge;
-    
     ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Broken on graphs with more than 500k edges
@@ -336,12 +346,12 @@ int main(int argc, char**argv) {
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);
 
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    /*bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
 
     // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    print_array(h_bfsResult, m);*/
     
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
