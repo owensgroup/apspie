@@ -83,7 +83,7 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-template< typename T >
+/*template< typename T >
 void spmspvCsr( const int *d_csrColInd, const int edge, const int *d_csrRowPtr, const int m, const T *d_inputVector, T *d_spmvResult, CudaContext& context ) {
 
     int h_csrVecCount;
@@ -112,7 +112,7 @@ void spmspvCsr( const int *d_csrColInd, const int edge, const int *d_csrRowPtr, 
     // Scatter into dense flag array
     //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
     scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
-}
+}*/
 
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 

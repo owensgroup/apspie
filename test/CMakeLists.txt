@@ -25,7 +25,7 @@ set( CUDA_CUSPARSE_LIBRARY "$ENV{CUDA_HOME}/lib64/libcusparse.so" )
 FILE( GLOB_RECURSE PROJ_HEADERS ../src/*.cuh )
 
 # nvcc flags                                                                                                                                                                                               
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_35,code=sm_35)
+set(CUDA_NVCC_FLAGS  ${CUDA_NVCC_FLAGS};-gencode arch=compute_35,code=sm_35)
 #set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_20,code=sm_21)
 
 # needed for cudamalloc
@@ -34,9 +34,10 @@ set(CMAKE_EXE_LINKER_FLAGS "-lpthread")
 #set(CMAKE_EXE_LINKER_FLAGS "-Xlinker --verbose")
 
 include_directories( ${PROJ_INCLUDES} )
-cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
-#cuda_compile( ${PROJ_NAME} ${PROJ_SOURCES} )
-cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
-#cuda_add_executable( test01 ${PROJ_SOURCES})
-target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
-#target_link_libraries( test01 ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
+cuda_compile_ptx( cuda_ptx_files main.cu )
+add_custom_target( ptx ALL DEPENDS ${cuda_ptx_files} ${PROJ_HEADERS} main.cu SOURCES main.cu ${PROJ_HEADERS} )
+
+#include_directories( ${PROJ_INCLUDES} )
+#cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
+#cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
+#target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
