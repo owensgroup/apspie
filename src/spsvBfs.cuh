@@ -83,6 +83,37 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
+template< typename T >
+void spmspvCsr( const int *d_csrColInd, const int edge, const int *d_csrRowPtr, const int m, const T *d_inputVector, T *d_spmvResult, CudaContext& context ) {
+
+    int h_csrVecCount;
+
+    Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+    streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_inputVector, m );
+
+    // Gather from CSR graph into one big array
+    IntervalGather( h_csrVecCount, d_inputVector, index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+    Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
+    IntervalGather( h_csrVecCount, d_inputVector, index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
+    IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+
+    // Reset dense flag array
+    preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrFlag, m );
+
+    // Sort step
+    //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+    //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
+    //LocalitySortKeys( d_keys.Current(), total, context );
+    //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+    //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+
+    //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_keys.Current(), iter, total );
+
+    // Scatter into dense flag array
+    //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
+    scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
+}
+
 void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
 
     cusparseHandle_t handle;
