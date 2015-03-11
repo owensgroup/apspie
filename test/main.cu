@@ -47,9 +47,7 @@ int SimpleReferenceBfs(
     //
 
     CpuTimer cpu_timer;
-    timespec time1, time2;
     cpu_timer.Start();
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1);
     while (!frontier.empty()) {
         
         // Dequeue node from frontier
@@ -83,13 +81,10 @@ int SimpleReferenceBfs(
         predecessor[src] = -1;
 
     cpu_timer.Stop();
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2);
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
     printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
-    printf("More accurately in %lf msec\n", diff(time1,time2).tv_nsec/1000.0);
-    printf("More accurately in %ld nsec\n", diff(time1,time2).tv_nsec);
 
     return search_depth;
 }
