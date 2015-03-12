@@ -119,20 +119,6 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     elapsed += gpu_timer.ElapsedMillis();
     printf("COO->CSR finished in %f msec. \n", elapsed);
 
-    /*switch( status ) {
-        case CUSPARSE_STATUS_SUCCESS:
-            //printf("COO -> CSR conversion successful!\n");
-            break;
-        case CUSPARSE_STATUS_NOT_INITIALIZED:
-            printf("Error: Library not initialized.\n");
-            break;
-        case CUSPARSE_STATUS_INVALID_VALUE:
-            printf("Error: Invalid value for idxbase.\n");
-            break;
-        case CUSPARSE_STATUS_EXECUTION_FAILED:
-            printf("Error: Failed to launch GPU.\n");
-    }*/
-
     // Important: destroy handle
     cusparseDestroy(handle);
 }
@@ -148,75 +134,30 @@ void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, CUSPARSE_ACTION_SYMBOLIC, CUSPARSE_INDEX_BASE_ZERO);
 
-    /*switch( status ) {
-        case CUSPARSE_STATUS_SUCCESS:
-            //printf("Transpose successful!\n");
-            break;
-        case CUSPARSE_STATUS_NOT_INITIALIZED:
-            printf("Error: Library not initialized.\n");
-            break;
-        case CUSPARSE_STATUS_INVALID_VALUE:
-            printf("Error: Invalid parameters m, n, or nnz.\n");
-            break;
-        case CUSPARSE_STATUS_EXECUTION_FAILED:
-            printf("Error: Failed to launch GPU.\n");
-            break;
-        case CUSPARSE_STATUS_ALLOC_FAILED:
-            printf("Error: Resources could not be allocated.\n");
-            break;
-        case CUSPARSE_STATUS_ARCH_MISMATCH:
-            printf("Error: Device architecture does not support.\n");
-            break;
-        case CUSPARSE_STATUS_INTERNAL_ERROR:
-            printf("Error: An internal operation failed.\n");
-    }*/
-
     // Important: destroy handle
     cusparseDestroy(handle);
 }
 
-void runBfs( int, char** );
-
-int main(int argc, char**argv) {
-    runBfs(argc, argv);
-}    
-   
-void runBfs(int argc, char**argv) { 
-    int m, n, edge;
-    ContextPtr context = mgpu::CreateCudaDevice(0);
-
-    // Broken on graphs with more than 500k edges
-    freopen(argv[1],"r",stdin);
-    //freopen("log","w",stdout);
-    printf("Testing %s\n", argv[1]);
-
-    // File i/o
-
-    bool weighted = true;
+// This function extracts the number of nodes and edges from input file
+void readEdge( int &m, int &n, int &edge, FILE *inputFile ) {
     int c = getchar();
     int old_c = 0;
     while( c!=EOF ) {
         if( (old_c==10 || old_c==0) && c!=37 ) {
-            ungetc(c, stdin);
+            ungetc(c, inputFile);
             break;
         }
         old_c = c;
         c=getchar();
     }
     scanf("%d %d %d", &m, &n, &edge);
-    
-    // Allocate memory depending on how many edges are present
-    float *h_csrValA;
-    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
-    int *h_bfsResult, *h_bfsResultCPU;
+}
 
-    h_csrValA    = (float*)malloc(edge*sizeof(float));
-    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
-    h_csrColIndA = (int*)malloc(edge*sizeof(int));
-    h_cooRowIndA = (int*)malloc(edge*sizeof(int));
-    h_bfsResult = (int*)malloc((m)*sizeof(int));
-    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
-
+// This function loads a graph from .mtx input file
+template<typename typeVal>
+void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) {
+    bool weighted = true;
+    int c;
     int csr_max = 0;
     int csr_current = 0;
     int csr_row = 0;
@@ -225,36 +166,36 @@ void runBfs(int argc, char**argv) {
     // Currently checks if there are fewer rows than promised
     // Could add check for edges in diagonal of adjacency matrix
     for( int j=0; j<edge; j++ ) {
-        if( scanf("%d", &h_csrColIndA[j])==EOF ) {
+        if( scanf("%d", &h_csrColInd[j])==EOF ) {
             printf("Error: not enough rows in mtx file.\n");
             break;
         }
-        scanf("%d", &h_cooRowIndA[j]);
+        scanf("%d", &h_cooRowInd[j]);
 
         if( j==0 ) {
             c=getchar();
         }
 
         if( c!=32 ) {
-            h_csrValA[j]=1.0;
+            h_csrVal[j]=1.0;
             if( j==0 ) weighted = false;
         } else {
-            scanf("%f", &h_csrValA[j]);
+            scanf("%f", &h_csrVal[j]);
         }
 
-        h_cooRowIndA[j]--;
-        h_csrColIndA[j]--;
+        h_cooRowInd[j]--;
+        h_csrColInd[j]--;
 
         // Finds max csr row.
         if( j!=0 ) {
-            if( h_cooRowIndA[j]==0 ) csr_first++;
-            if( h_cooRowIndA[j]==h_cooRowIndA[j-1] )
+            if( h_cooRowInd[j]==0 ) csr_first++;
+            if( h_cooRowInd[j]==h_cooRowInd[j-1] )
                 csr_current++;
             else {
                 if( csr_current > csr_max ) {
                     csr_max = csr_current;
                     csr_current = 1;
-                    csr_row = h_cooRowIndA[j-1];
+                    csr_row = h_cooRowInd[j-1];
                 }
             }
         }
@@ -263,12 +204,43 @@ void runBfs(int argc, char**argv) {
     printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
         printf("The graph is weighted. ");
-        //print_end(h_csrValA,edge);
     } else {
         printf("The graph is unweighted.\n");
     }
+}
 
-    // Allocate GPU memory
+void runBfs(int argc, char**argv) { 
+    int m, n, edge;
+    ContextPtr context = mgpu::CreateCudaDevice(0);
+
+    // Define what filetype edge value should be stored
+    typedef float typeVal;
+
+    // File i/o
+    // 1. Open file from command-line 
+    // -source 1
+    freopen(argv[1],"r",stdin);
+    printf("Testing %s\n", argv[1]);
+    
+    // 2. Reads in number of edges, number of nodes
+    readEdge( m, n, edge, stdin );
+
+    // 3. Allocate memory depending on how many edges are present
+    typeVal *h_csrValA;
+    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
+    int *h_bfsResult, *h_bfsResultCPU;
+
+    h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_csrColIndA = (int*)malloc(edge*sizeof(int));
+    h_cooRowIndA = (int*)malloc(edge*sizeof(int));
+    h_bfsResult = (int*)malloc((m)*sizeof(int));
+    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
+
+    // 4. Read in graph from .mtx file
+    readMtx<typeVal>( edge, h_csrRowPtrA, h_cooRowIndA, h_csrValA );
+
+    // 5. Allocate GPU memory
     float *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
     float *d_cscValA;
@@ -285,44 +257,37 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
-    // Copy data from host to device
+    // 6. Copy data from host to device
     cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
-    //cudaMemcpy(h_cooRowIndA, d_cooRowIndA, (edge)*sizeof(int),cudaMemcpyDeviceToHost);
-    //print_vector(h_cooRowIndA,edge);
 
-    // Run COO -> CSR kernel
+    // 7. Run COO -> CSR kernel
     coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
-    // Run BFS on CPU. Need data in CSR form first.
+    // 8. Run BFS on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
-    //print_array(h_csrRowPtrA,m+1);
-
     int depth = 1000;
     depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-
-    // Some testing code. To be turned into unit test.
-    //int depth = 4;
-    //bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-    //depth++;
     print_end_interesting(h_bfsResultCPU, m);
 
+    // Make two GPU timers
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
     float elapsed = 0.0f;
     float elapsed2 = 0.0f;
     gpu_timer.Start();
-    // Run CSR -> CSC kernel
+
+    // 9. Run CSR -> CSC kernel
     csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
     gpu_timer.Stop();
     gpu_timer2.Start();
 
-    // Run BFS kernel on GPU
-    // Non-transpose spmv
+    // 10. Run BFS kernel on GPU
     //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
+    // 10. Run BFS kernel on GPU
     spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     gpu_timer2.Stop();
@@ -332,18 +297,16 @@ void runBfs(int argc, char**argv) {
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
 
-    //cudaMemcpy(h_csrColIndA, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrColIndA, m);
 
-    // Run check for errors
+    // Compare with CPU BFS for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);
 
+    // Compare with SpMV for errors
     /*bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-
-    // Run check for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);*/
@@ -369,3 +332,7 @@ void runBfs(int argc, char**argv) {
     //free(h_cscRowIndA);
     //free(h_cscColPtrA);
 }
+
+int main(int argc, char**argv) {
+    runBfs(argc, argv);
+}    
