@@ -6,65 +6,13 @@
 #include "spmv.cuh"
 
 //#define NBLOCKS 16384
-#define NTHREADS 1024
+#define NTHREADS 512
 
 using namespace mgpu;
 
-void spmv( const float *d_inputVector, const int edge, const int m, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_spmvResult, CudaContext& context) {
-    SpmvKernel<float>(d_csrValA,
-                      d_csrColIndA,
-                      d_csrRowPtrA,
-                      d_inputVector,
-                      d_spmvResult,
-                      m,
-                      edge,
-                      context);
-    /*const float alf = 1;
-    const float bet = 0;
-    const float *alpha = &alf;
-    const float *beta = &bet;
-
-    //cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ONE);
-
-    //cusparseStatus_t status = cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, m, m, alpha, descr, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector, beta, d_spmvResult);
-
-    // For CUDA 5.0+
-    cusparseStatus_t status = cusparseScsrmv(handle,                   
-                              CUSPARSE_OPERATION_NON_TRANSPOSE, 
-                              m, m, edge, 
-                              alpha, descr, 
-                              d_csrValA, d_csrRowPtrA, d_csrColIndA, 
-                              d_inputVector, beta, d_spmvResult );
-
-    /*switch( status ) {
-        case CUSPARSE_STATUS_SUCCESS:
-            //printf("spmv multiplication successful!\n");
-            break;
-        case CUSPARSE_STATUS_NOT_INITIALIZED:
-            printf("Error: Library not initialized.\n");
-            break;
-        case CUSPARSE_STATUS_INVALID_VALUE:
-            printf("Error: Invalid parameters m, n, or nnz.\n");
-            break;
-        case CUSPARSE_STATUS_EXECUTION_FAILED:
-            printf("Error: Failed to launch GPU.\n");
-            break;
-        case CUSPARSE_STATUS_ALLOC_FAILED:
-            printf("Error: Resources could not be allocated.\n");
-            break;
-        case CUSPARSE_STATUS_ARCH_MISMATCH:
-            printf("Error: Device architecture does not support.\n");
-            break;
-        case CUSPARSE_STATUS_INTERNAL_ERROR:
-            printf("Error: An internal operation failed.\n");
-            break;
-        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
-            printf("Error: Matrix type not supported.\n");
-    }
-
-    // Important: destroy handle
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);*/
+template<typename T>
+void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, CudaContext& context) {
+    SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
@@ -121,20 +69,13 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     for( int i=0; i<edge; i++ ) {
         h_bfsValA[i] = 1;
     }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
-    
-    // Use Thrust to generate initial vector
-    //thrust::device_ptr<float> dev_ptr(d_inputVector);
-    //thrust::fill(dev_ptr, dev_ptr + m, (float) 0);
-    //thrust::device_vector<float> inputVector(m, 0);
-    //inputVector[vertex] = 1;
-    //d_inputVector = thrust::raw_pointer_cast( &inputVector[0] );
+    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);;
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    spmv(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+    spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
@@ -143,10 +84,10 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
-            spmv( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
+            spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
         } else {
-            spmv( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+            spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
         }
     }
