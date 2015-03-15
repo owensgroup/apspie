@@ -43,4 +43,3 @@ include_directories( ${PROJ_INCLUDES} )
 cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
 cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
 target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
-
