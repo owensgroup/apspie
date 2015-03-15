@@ -28,4 +28,3 @@ do
         ./test /data/PPOPP15/$i.mtx
     fi
 done
-
