@@ -13,104 +13,88 @@
 #include <cuda.h>
 #include <deque>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 
 #include <util.cuh>
-#include <bfs.cuh>
-#include <spsvBfs.cuh>
+#include <mis.cuh>
+//#include <spmspv.cuh>
 
 #include <string.h>
 
-#define MARK_PREDECESSORS 0
 
-// A simple CPU-based reference BFS ranking implementation
+// A simple CPU-based reference MIS ranking implementation
 template<typename VertexId>
-int SimpleReferenceBfs(
+int SimpleReferenceMis(
     const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
     VertexId                                *source_path,
-    VertexId                                *predecessor,
-    VertexId                                src,
-    VertexId                                stop)
+    VertexId                                src)
 {
     //initialize distances
     for (VertexId i = 0; i < m; ++i) {
         source_path[i] = -1;
-        if (MARK_PREDECESSORS)
-            predecessor[i] = -1;
     }
-    source_path[src] = 0;
-    VertexId search_depth = 0;
+    source_path[src] = 1;
+    int edges_begin = h_rowPtrA[src];
+    int edges_end = h_rowPtrA[src + 1];
 
-    // Initialize queue for managing previously-discovered nodes
-    std::deque<VertexId> frontier;
-    frontier.push_back(src);
+    for( int edge=edges_begin; edge<edges_end; edge++ ) {
+        VertexId neighbor = h_colIndA[edge];
+
+        if (source_path[neighbor] == -1)
+            source_path[neighbor] = 0;
+    }
+    
+    VertexId search_depth = 1;
 
     //
-    //Perform BFS
+    //Perform MIS
     //
 
     CpuTimer cpu_timer;
     cpu_timer.Start();
-    while (!frontier.empty()) {
-        
-        // Dequeue node from frontier
-        VertexId dequeued_node = frontier.front();
-        frontier.pop_front();
-        VertexId neighbor_dist = source_path[dequeued_node] + 1;
-        if( neighbor_dist > stop )
-            break;
+   
+    for( VertexId i=0; i<m; i++ ) {
+        if( source_path[i]==-1 ) {
+            source_path[i] = 1;
+       
+            // Locate adjacency list 
+            edges_begin = h_rowPtrA[i];
+            edges_end = h_rowPtrA[i + 1];
 
-        // Locate adjacency list
-        int edges_begin = h_rowPtrA[dequeued_node];
-        int edges_end = h_rowPtrA[dequeued_node + 1];
+            for( int edge=edges_begin; edge<edges_end; edge++ ) {
+                VertexId neighbor = h_colIndA[edge];
 
-        for (int edge = edges_begin; edge < edges_end; ++edge) {
-            //Lookup neighbor and enqueue if undiscovered
-            VertexId neighbor = h_colIndA[edge];
-            if (source_path[neighbor] == -1) {
-                source_path[neighbor] = neighbor_dist;
-                if (MARK_PREDECESSORS) {
-                    predecessor[neighbor] = dequeued_node;
-                }
-                if (search_depth < neighbor_dist) {
-                    search_depth = neighbor_dist;
-                }
-                frontier.push_back(neighbor);
+                if ( source_path[neighbor]==-1 )
+                    source_path[neighbor] = 0;
             }
         }
     }
-
-    if (MARK_PREDECESSORS)
-        predecessor[src] = -1;
-
+ 
     cpu_timer.Stop();
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
-    printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+    printf("CPU MIS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
 
     return search_depth;
 }
 
-int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU, const int stop ) {
+int misCPU( const int src, const int m, const int *h_rowPtr, const int *h_colInd, int *h_misResultCPU ) {
 
     typedef int VertexId; // Use as the node identifier type
 
-    VertexId *reference_check_preds = NULL;
+    int depth = SimpleReferenceMis<VertexId>(
+        m, h_rowPtr, h_colInd,
+        h_misResultCPU,
+        src);
 
-    int depth = SimpleReferenceBfs<VertexId>(
-        m, h_rowPtrA, h_colIndA,
-        h_bfsResultCPU,
-        reference_check_preds,
-        src,
-        stop);
-
-    //print_array(h_bfsResultCPU, m);
+    //print_array(h_misResultCPU, m);
     return depth;
 }
 
-void runBfs(int argc, char**argv) { 
+void runMis(int argc, char**argv) { 
     int m, n, edge;
-    ContextPtr context = mgpu::CreateCudaDevice(0);
+    mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
     typedef float typeVal;
@@ -135,26 +119,26 @@ void runBfs(int argc, char**argv) {
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_csrValA;
     int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
-    int *h_bfsResult, *h_bfsResultCPU;
+    int *h_misResult, *h_misResultCPU;
 
     h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
-    h_bfsResult = (int*)malloc((m)*sizeof(int));
-    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
+    h_misResult = (int*)malloc((m)*sizeof(int));
+    h_misResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
-    print_array( h_csrRowPtrA, m );
+    print_array( h_cooRowIndA, m );
 
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
     typeVal *d_cscValA;
     int *d_cscRowIndA, *d_cscColPtrA;
-    int *d_bfsResult;
-    cudaMalloc(&d_bfsResult, m*sizeof(int));
+    int *d_misResult;
+    cudaMalloc(&d_misResult, m*sizeof(int));
 
     cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
@@ -173,11 +157,11 @@ void runBfs(int argc, char**argv) {
     // 7. Run COO -> CSR kernel
     coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
-    // 8. Run BFS on CPU. Need data in CSR form first.
+    // 8. Run MIS on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
-    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-    print_end_interesting(h_bfsResultCPU, m);
+    depth = misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
+    print_end_interesting(h_misResultCPU, m);
 
     // Make two GPU timers
     GpuTimer gpu_timer;
@@ -191,33 +175,33 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     gpu_timer2.Start();
 
-    // 10. Run BFS kernel on GPU
-    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
+    // 10. Run MIS kernel on GPU
+    //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
+    //mis( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_misResult, 5 );
 
-    // 10. Run BFS kernel on GPU
-    spsvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    // 10. Run MIS kernel on GPU
+    /*lubyMis( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context); 
+    //mis( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_misResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
-    //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
+    //printf("GPU MIS finished in %f msec. not including transpose\n", elapsed2);
 
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrColIndA, m);
 
-    // Compare with CPU BFS for errors
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    // Compare with CPU MIS for errors
+    cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    verify( m, h_misResult, h_misResultCPU );
+    print_array(h_misResult, m);
 
     // Compare with SpMV for errors
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    cuspMis( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_misResult, depth, *context);
+    cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    verify( m, h_misResult, h_misResultCPU );
+    print_array(h_misResult, m);*/
     
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
@@ -227,14 +211,14 @@ void runBfs(int argc, char**argv) {
     cudaFree(d_cscValA);
     cudaFree(d_cscRowIndA);
     cudaFree(d_cscColPtrA);
-    cudaFree(d_bfsResult);
+    cudaFree(d_misResult);
 
     free(h_csrValA);
     free(h_csrRowPtrA);
     free(h_csrColIndA);
     free(h_cooRowIndA);
-    free(h_bfsResult);
-    free(h_bfsResultCPU);
+    free(h_misResult);
+    free(h_misResultCPU);
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
@@ -242,5 +226,5 @@ void runBfs(int argc, char**argv) {
 }
 
 int main(int argc, char**argv) {
-    runBfs(argc, argv);
+    runMis(argc, argv);
 }    

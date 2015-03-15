@@ -229,7 +229,7 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
     int csr_max = 0;
     int csr_current = 0;
     int csr_row = 0;
-    int csr_first = 1;
+    int csr_first = 0;
 
     // Currently checks if there are fewer rows than promised
     // Could add check for edges in diagonal of adjacency matrix
@@ -261,11 +261,14 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
             if( h_cooRowInd[j]==h_cooRowInd[j-1] )
                 csr_current++;
             else {
+                csr_current++;
+                //printf("New row: Last row %d elements long\n", csr_current);
                 if( csr_current > csr_max ) {
                     csr_max = csr_current;
-                    csr_current = 1;
+                    csr_current = 0;
                     csr_row = h_cooRowInd[j-1];
-                }
+                } else
+                    csr_current = 0;
             }
         }
     }

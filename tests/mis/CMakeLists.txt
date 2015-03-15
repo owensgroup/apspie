@@ -12,7 +12,7 @@ set( PROJ_OUT_PATH  ${CMAKE_BINARY_DIR})
 set( PROJ_SOURCES   "main.cu" )
 set( PROJ_HEADERS   "" )
 set( PROJ_LIBRARIES "" )
-set( PROJ_INCLUDES  "../../src" "/home/ctcyang/gunrock/externals/moderngpu/include""/home/ctcyang/apspie/ext/cub ")
+set( PROJ_INCLUDES  "../../src" "/home/ctcyang/gunrock/externals/moderngpu/include" "/home/ctcyang/apspie/ext/cub")
 set( mgpu_SRC_DIR "/home/ctcyang/gunrock/externals/moderngpu/src")
 set( mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
 
