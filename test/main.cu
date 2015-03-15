@@ -18,6 +18,8 @@
 #include <bfs.cuh>
 #include <spsvBfs.cuh>
 
+#include <string.h>
+
 #define MARK_PREDECESSORS 0
 
 // A simple CPU-based reference BFS ranking implementation
@@ -123,7 +125,8 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     cusparseDestroy(handle);
 }
 
-void csr2csc( const int m, const int edge, const float *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, float *d_cscValA, int *d_cscRowIndA, int *d_cscColPtrA ) {
+template<typename typeVal>
+void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, typeVal *d_cscValA, int *d_cscRowIndA, int *d_cscColPtrA ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -209,6 +212,22 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
     }
 }
 
+bool parseArgs( int argc, char**argv, int &source, int &device ) {
+    bool error = false;
+    source = 0;
+    device = 0;
+
+    if( argc%2!=0 )
+        return true;   
+ 
+    for( int i=2; i<argc; i+=2 )
+       if( strstr(argv[i], "-string") != NULL )
+           source = atoi(argv[i+1]);
+       else if( strstr(argv[i], "-device") != NULL )
+           device = atoi(argv[i+1]);
+    return error;
+}
+
 void runBfs(int argc, char**argv) { 
     int m, n, edge;
     ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -220,6 +239,13 @@ void runBfs(int argc, char**argv) {
     // 1. Open file from command-line 
     // -source 1
     freopen(argv[1],"r",stdin);
+    int source;
+    int device;
+    if( parseArgs( argc, argv, source, device )==true ) {
+        printf( "Usage: test apple.mtx -source 5\n");
+        return;
+    }
+    cudaSetDevice(device);
     printf("Testing %s\n", argv[1]);
     
     // 2. Reads in number of edges, number of nodes
@@ -241,19 +267,19 @@ void runBfs(int argc, char**argv) {
     readMtx<typeVal>( edge, h_csrRowPtrA, h_cooRowIndA, h_csrValA );
 
     // 5. Allocate GPU memory
-    float *d_csrValA;
+    typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
     float *d_cscValA;
     int *d_cscRowIndA, *d_cscColPtrA;
     int *d_bfsResult;
     cudaMalloc(&d_bfsResult, m*sizeof(int));
 
-    cudaMalloc(&d_csrValA, edge*sizeof(float));
+    cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndA, edge*sizeof(int));
     cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
 
-    cudaMalloc(&d_cscValA, edge*sizeof(float));
+    cudaMalloc(&d_cscValA, edge*sizeof(typeVal));
     cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
@@ -268,7 +294,7 @@ void runBfs(int argc, char**argv) {
     // 8. Run BFS on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
-    depth = bfsCPU( 0, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
+    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
     print_end_interesting(h_bfsResultCPU, m);
 
     // Make two GPU timers
@@ -279,7 +305,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Start();
 
     // 9. Run CSR -> CSC kernel
-    csr2csc( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
     gpu_timer.Stop();
     gpu_timer2.Start();
 
@@ -288,7 +314,7 @@ void runBfs(int argc, char**argv) {
     //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
 
     // 10. Run BFS kernel on GPU
-    spsvBfs( 0, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    spsvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
