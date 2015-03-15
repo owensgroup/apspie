@@ -206,3 +206,124 @@ struct GpuTimer
     }
 };
 
+// This function extracts the number of nodes and edges from input file
+void readEdge( int &m, int &n, int &edge, FILE *inputFile ) {
+    int c = getchar();
+    int old_c = 0;
+    while( c!=EOF ) {
+        if( (old_c==10 || old_c==0) && c!=37 ) {
+            ungetc(c, inputFile);
+            break;
+        }
+        old_c = c;
+        c=getchar();
+    }
+    scanf("%d %d %d", &m, &n, &edge);
+}
+
+// This function loads a graph from .mtx input file
+template<typename typeVal>
+void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) {
+    bool weighted = true;
+    int c;
+    int csr_max = 0;
+    int csr_current = 0;
+    int csr_row = 0;
+    int csr_first = 1;
+
+    // Currently checks if there are fewer rows than promised
+    // Could add check for edges in diagonal of adjacency matrix
+    for( int j=0; j<edge; j++ ) {
+        if( scanf("%d", &h_csrColInd[j])==EOF ) {
+            printf("Error: not enough rows in mtx file.\n");
+            break;
+        }
+        scanf("%d", &h_cooRowInd[j]);
+
+        if( j==0 ) {
+            c=getchar();
+        }
+
+        if( c!=32 ) {
+            h_csrVal[j]=1.0;
+            if( j==0 ) weighted = false;
+        } else {
+            //std::cin >> h_csrVal[j];
+            scanf("%f", &h_csrVal[j]);
+        }
+
+        h_cooRowInd[j]--;
+        h_csrColInd[j]--;
+
+        // Finds max csr row.
+        if( j!=0 ) {
+            if( h_cooRowInd[j]==0 ) csr_first++;
+            if( h_cooRowInd[j]==h_cooRowInd[j-1] )
+                csr_current++;
+            else {
+                if( csr_current > csr_max ) {
+                    csr_max = csr_current;
+                    csr_current = 1;
+                    csr_row = h_cooRowInd[j-1];
+                }
+            }
+        }
+    }
+    printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
+    printf("The first row has %d elements.\n", csr_first);
+    if( weighted==true ) {
+        printf("The graph is weighted. ");
+    } else {
+        printf("The graph is unweighted.\n");
+    }
+}
+
+bool parseArgs( int argc, char**argv, int &source, int &device ) {
+    bool error = false;
+    source = 0;
+    device = 0;
+
+    if( argc%2!=0 )
+        return true;   
+ 
+    for( int i=2; i<argc; i+=2 ) {
+       if( strstr(argv[i], "-source") != NULL )
+           source = atoi(argv[i+1]);
+       else if( strstr(argv[i], "-device") != NULL )
+           device = atoi(argv[i+1]);
+    }
+    return error;
+}
+
+void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRowPtrA ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
+    cusparseStatus_t status = cusparseXcoo2csr(handle, d_cooRowIndA, edge, m, d_csrRowPtrA, CUSPARSE_INDEX_BASE_ZERO);
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("COO->CSR finished in %f msec. \n", elapsed);
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+}
+
+template<typename typeVal>
+void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, typeVal *d_cscValA, int *d_cscRowIndA, int *d_cscColPtrA ) {
+
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    // For CUDA 4.0
+    //cusparseStatus_t status = cusparseScsr2csc(handle, m, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, 1, CUSPARSE_INDEX_BASE_ZERO);
+
+    // For CUDA 5.0+
+    cusparseStatus_t status = cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, CUSPARSE_ACTION_SYMBOLIC, CUSPARSE_INDEX_BASE_ZERO);
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+}
