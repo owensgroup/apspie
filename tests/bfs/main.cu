@@ -221,11 +221,12 @@ bool parseArgs( int argc, char**argv, int &source, int &device ) {
     if( argc%2!=0 )
         return true;   
  
-    for( int i=2; i<argc; i+=2 )
+    for( int i=2; i<argc; i+=2 ) {
        if( strstr(argv[i], "-source") != NULL )
            source = atoi(argv[i+1]);
        else if( strstr(argv[i], "-device") != NULL )
            device = atoi(argv[i+1]);
+    }
     return error;
 }
 
@@ -247,7 +248,7 @@ void runBfs(int argc, char**argv) {
         return;
     }
     //cudaSetDevice(device);
-    printf("Testing %s\n", argv[1]);
+    printf("Testing %s from source %d\n", argv[1], source);
     
     // 2. Reads in number of edges, number of nodes
     readEdge( m, n, edge, stdin );
@@ -266,7 +267,8 @@ void runBfs(int argc, char**argv) {
     h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
-    readMtx<typeVal>( edge, h_csrRowPtrA, h_cooRowIndA, h_csrValA );
+    readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
+    print_array( h_csrRowPtrA, m );
 
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
@@ -334,12 +336,12 @@ void runBfs(int argc, char**argv) {
     print_array(h_bfsResult, m);
 
     // Compare with SpMV for errors
-    /*bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);*/
+    print_array(h_bfsResult, m);
     
-    /*cudaFree(d_csrValA);
+    cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
     cudaFree(d_cooRowIndA);
@@ -354,7 +356,7 @@ void runBfs(int argc, char**argv) {
     free(h_csrColIndA);
     free(h_cooRowIndA);
     free(h_bfsResult);
-    free(h_bfsResultCPU);*/
+    free(h_bfsResultCPU);
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
