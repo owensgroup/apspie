@@ -183,6 +183,7 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
             h_csrVal[j]=1.0;
             if( j==0 ) weighted = false;
         } else {
+            //std::cin >> h_csrVal[j];
             scanf("%f", &h_csrVal[j]);
         }
 
@@ -221,7 +222,7 @@ bool parseArgs( int argc, char**argv, int &source, int &device ) {
         return true;   
  
     for( int i=2; i<argc; i+=2 )
-       if( strstr(argv[i], "-string") != NULL )
+       if( strstr(argv[i], "-source") != NULL )
            source = atoi(argv[i+1]);
        else if( strstr(argv[i], "-device") != NULL )
            device = atoi(argv[i+1]);
@@ -245,11 +246,12 @@ void runBfs(int argc, char**argv) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
-    cudaSetDevice(device);
+    //cudaSetDevice(device);
     printf("Testing %s\n", argv[1]);
     
     // 2. Reads in number of edges, number of nodes
     readEdge( m, n, edge, stdin );
+    printf("Graph has %d nodes, %d edges\n", m, edge);
 
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_csrValA;
@@ -269,7 +271,7 @@ void runBfs(int argc, char**argv) {
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
-    float *d_cscValA;
+    typeVal *d_cscValA;
     int *d_cscRowIndA, *d_cscColPtrA;
     int *d_bfsResult;
     cudaMalloc(&d_bfsResult, m*sizeof(int));
@@ -284,7 +286,7 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
     // 6. Copy data from host to device
-    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
 
@@ -337,7 +339,7 @@ void runBfs(int argc, char**argv) {
     verify( m, h_bfsResult, h_bfsResultCPU );
     print_array(h_bfsResult, m);*/
     
-    cudaFree(d_csrValA);
+    /*cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
     cudaFree(d_cooRowIndA);
@@ -352,7 +354,7 @@ void runBfs(int argc, char**argv) {
     free(h_csrColIndA);
     free(h_cooRowIndA);
     free(h_bfsResult);
-    free(h_bfsResultCPU);
+    free(h_bfsResultCPU);*/
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
