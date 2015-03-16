@@ -16,7 +16,7 @@ set( PROJ_INCLUDES  "../../src" "/home/ctcyang/gunrock/externals/moderngpu/inclu
 set( mgpu_SRC_DIR "/home/ctcyang/gunrock/externals/moderngpu/src")
 set( mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
 
-#set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
+set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
 #set( CUDA_CUBLAS_LIBRARY "$ENV{CUDA_HOME}/lib64/libcublas.so" )
 set( CUDA_CUSPARSE_LIBRARY "$ENV{CUDA_HOME}/lib64/libcusparse.so" )
 
@@ -42,4 +42,4 @@ set(CMAKE_EXE_LINKER_FLAGS "-lpthread")
 include_directories( ${PROJ_INCLUDES} )
 cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
 cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
-target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
+target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CURAND_LIBRARY} )

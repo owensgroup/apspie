@@ -16,8 +16,7 @@
 #include <moderngpu.cuh>
 
 #include <util.cuh>
-#include <mis.cuh>
-#include <spmspv.cuh>
+#include <spmspvMis.cuh>
 
 #include <string.h>
 
@@ -98,9 +97,9 @@ void verifyMis( const int edge, const int m, const int *d_misResultCPU, const in
 
 void fillUniform( float *d_A, int edge ) {
     curandGenerator_t prng;
-    curandCreateGenerator(&prng, CURAND_RNG_PSEUDO_DEFAULT);
+    curandCreateGenerator( &prng, CURAND_RNG_PSEUDO_DEFAULT );
 
-    curandGenerateUniform( &prng, d_A, edge );
+    curandGenerateUniform( prng, d_A, edge );
 }
 
 void runMis(int argc, char**argv) { 
@@ -182,11 +181,13 @@ void runMis(int argc, char**argv) {
 
     // 9. Generate random numbers
     //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
-    fillUniform( d_csrValA, edge);
+    fillUniform( d_csrValA, m);
+    cudaMemcpy( h_csrValA, d_csrValA, m*sizeof(typeVal), cudaMemcpyDeviceToHost );
+    print_array( h_csrValA, 40);
 
     // 10. Run MIS kernel on GPU
     int delta = 0.25;
-    spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_csrValA, d_misResult, delta, *context); 
+    //spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_csrValA, d_misResult, delta, *context); 
     //mis( edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, delta, *context);
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
@@ -199,12 +200,12 @@ void runMis(int argc, char**argv) {
     print_array(h_csrColIndA, m);
 
     // Compare with CPU MIS for errors
-    cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    /*cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);
 
     // Compare with SpMV for errors
-    /*cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
+    cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
     cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);*/

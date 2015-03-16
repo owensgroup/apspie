@@ -66,6 +66,8 @@ void spmspvCsr( const T *d_inputVector, const int edge, const int m, const int *
     int h_csrVecCount;
     int total;
 
+    gpu_timer.Start();
+    
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
     mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
     streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
@@ -96,12 +98,16 @@ void spmspvCsr( const T *d_inputVector, const int edge, const int m, const int *
     //cudaMemcpy(h_csrVecInd, d_spmspvResult, m*sizeof(int), cudaMemcpyDeviceToHost);
     //print_array(h_csrVecInd,40);
 
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+
     cudaFree(d_csrRowGood);
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
 }
 
-void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, mgpu::CudaContext& context ) {
+/*void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, const int *d_inputVector, int *d_misResult, const int delta, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -139,10 +145,9 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     int *d_csrFlag;
     cudaMalloc(&d_csrFlag, m*sizeof(int));
 
-    int *h_bfsResult = (int*)malloc(m*sizeof(int));
-    for( int i=0;i<m;i++ ) h_bfsResult[i] = -1;
-    h_bfsResult[vertex]=0;
-    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice); 
+    int *h_misResult = (int*)malloc(m*sizeof(int));
+    for( int i=0;i<m;i++ ) h_misResult[i] = -1;
+    cudaMemcpy(d_misResult, h_misResult, m*sizeof(int), cudaMemcpyHostToDevice); 
     MGPU_MEM(int) ones = context.Fill( m, 1 );
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
     //MGPU_MEM(int) ones_big = context.Fill( edge, 1 );
@@ -172,7 +177,10 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<depth; iter++ ) {
+    for( iter=1; iter<2; iter++ ) {
+
+        // Check which values are less than delta
+            updateVector( delta, d_inputVector, d_misResult );
 
         // Compact dense vector into sparse
         if( iter>1 ) {
@@ -196,13 +204,13 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
         cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
-        //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_keys.Current(), iter, total );
+        //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_misResult, d_keys.Current(), iter, total );
 
         // Scatter into dense flag array
         //IntervalScatter( total, d_keys.Current(), index_big->get(), total, ones_big->get(), d_csrFlag, context );
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
-        //updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
+        //updateBfs<<<NBLOCKS,NTHREADS>>>( d_misResult, d_csrFlag, iter, m );
 
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
@@ -233,5 +241,5 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     cusparseDestroyMatDescr(descr);
     
     free(h_csrVecInd);
-}
+}*/
 
