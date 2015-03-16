@@ -76,9 +76,10 @@ void spmspvCsr( const T *d_inputVector, const int edge, const int m, const int *
     IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
     IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-    printf("The number of elements is %d\n", total);
-    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
+    //printf("The number of elements is %d\n", total);
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+
     // Reset dense flag array
     preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_spmspvResult, m );
 
