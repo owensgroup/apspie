@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-#include <deque>
+#include <curand.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
 
@@ -96,6 +96,13 @@ void verifyMis( const int edge, const int m, const int *d_misResultCPU, const in
     spmspvCsr<int>( d_misResultCPU, edge, m, d_csrRowPtr, d_csrColInd, d_result, context );
 }
 
+void fillUniform( float *d_A, int edge ) {
+    curandGenerator_t prng;
+    curandCreateGenerator(&prng, CURAND_RNG_PSEUDO_DEFAULT);
+
+    curandGenerateUniform( &prng, d_A, edge );
+}
+
 void runMis(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -157,8 +164,7 @@ void runMis(int argc, char**argv) {
 
     // 8. Run MIS on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
-    int depth = 1000;
-    depth = misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
+    misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
     print_end_interesting(h_misResultCPU, m);
 
     // 9. Verify MIS on CPU.
@@ -174,20 +180,19 @@ void runMis(int argc, char**argv) {
     float elapsed2 = 0.0f;
     gpu_timer.Start();
 
-    gpu_timer.Stop();
-    gpu_timer2.Start();
-
-    // 10. Run MIS kernel on GPU
+    // 9. Generate random numbers
     //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
+    fillUniform( d_csrValA, edge);
 
     // 10. Run MIS kernel on GPU
-    /*lubyMis( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context); 
-    //mis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
-    gpu_timer2.Stop();
+    int delta = 0.25;
+    spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_csrValA, d_misResult, delta, *context); 
+    //mis( edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, delta, *context);
+    gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("performed %d iterations in %f time\n", depth-1, elapsed);
+    printf("performed %d steps in %f time\n", delta, elapsed);
     //printf("GPU MIS finished in %f msec. not including transpose\n", elapsed2);
 
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
@@ -199,7 +204,7 @@ void runMis(int argc, char**argv) {
     print_array(h_misResult, m);
 
     // Compare with SpMV for errors
-    cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
+    /*cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
     cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);*/
