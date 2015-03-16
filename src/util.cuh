@@ -170,6 +170,53 @@ void verify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ){
     }
 }
 
+template <typename T>
+int uncompareResults(T* computed, T* reference, int len, bool verbose = true)
+{
+    int flag = 0;
+    for (int i = 0; i < len; i++) {
+
+        if (computed[i] + reference[i] != 1 && flag == 0) {
+            printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
+            std::cout << computed[i];
+            printf(" != ");
+            std::cout << reference[i];
+
+            if (verbose) {
+                printf("\nresult[...");
+                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                    std::cout << computed[j];
+                    printf(", ");
+                }
+                printf("...]");
+                printf("\nreference[...");
+                for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                    std::cout << reference[j];
+                    printf(", ");
+                }
+                printf("...]");
+            }
+            flag += 1;
+            //return flag;
+        }
+        if (computed[i]+reference[i]!=1 && flag > 0) flag+=1;
+    }
+    printf("\n");
+    if (flag == 0)
+        printf("CORRECT\n");
+    return flag;
+}
+
+void unverify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ) {
+    if (h_bfsResultCPU != NULL) {
+        printf("Label Validity: ");
+        int error_num = uncompareResults(h_bfsResult, h_bfsResultCPU, m, true);
+        if (error_num > 0) {
+            printf("%d errors occurred.\n", error_num);
+        }
+    }
+}
+    
 struct GpuTimer
 {
     cudaEvent_t start;

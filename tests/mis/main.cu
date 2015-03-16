@@ -17,7 +17,7 @@
 
 #include <util.cuh>
 #include <mis.cuh>
-//#include <spmspv.cuh>
+#include <spmspv.cuh>
 
 #include <string.h>
 
@@ -92,6 +92,10 @@ int misCPU( const int src, const int m, const int *h_rowPtr, const int *h_colInd
     return depth;
 }
 
+void verifyMis( const int edge, const int m, const int *d_misResultCPU, const int *d_csrRowPtr, const int *d_csrColInd, int *d_result, mgpu::CudaContext& context ) {
+    spmspvCsr<int>( d_misResultCPU, edge, m, d_csrRowPtr, d_csrColInd, d_result, context );
+}
+
 void runMis(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -135,8 +139,6 @@ void runMis(int argc, char**argv) {
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
-    typeVal *d_cscValA;
-    int *d_cscRowIndA, *d_cscColPtrA;
     int *d_misResult;
     cudaMalloc(&d_misResult, m*sizeof(int));
 
@@ -144,10 +146,6 @@ void runMis(int argc, char**argv) {
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndA, edge*sizeof(int));
     cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
-
-    cudaMalloc(&d_cscValA, edge*sizeof(typeVal));
-    cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
-    cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
     // 6. Copy data from host to device
     cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
@@ -163,6 +161,12 @@ void runMis(int argc, char**argv) {
     depth = misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
     print_end_interesting(h_misResultCPU, m);
 
+    // 9. Verify MIS on CPU.
+    cudaMemcpy( d_misResult, h_misResultCPU, m*sizeof(int), cudaMemcpyHostToDevice );
+    verifyMis( edge, m, d_misResult, d_csrRowPtrA, d_csrColIndA, d_cooRowIndA, *context );
+    cudaMemcpy( h_misResult, d_cooRowIndA, m*sizeof(int), cudaMemcpyDeviceToHost );
+    unverify( m, h_misResult, h_misResultCPU );
+
     // Make two GPU timers
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
@@ -170,23 +174,20 @@ void runMis(int argc, char**argv) {
     float elapsed2 = 0.0f;
     gpu_timer.Start();
 
-    // 9. Run CSR -> CSC kernel
-    csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
     gpu_timer.Stop();
     gpu_timer2.Start();
 
     // 10. Run MIS kernel on GPU
     //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
-    //mis( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_misResult, 5 );
 
     // 10. Run MIS kernel on GPU
     /*lubyMis( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context); 
-    //mis( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_misResult, depth, *context);
+    //mis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
+    printf("performed %d iterations in %f time\n", depth-1, elapsed);
     //printf("GPU MIS finished in %f msec. not including transpose\n", elapsed2);
 
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
@@ -198,7 +199,7 @@ void runMis(int argc, char**argv) {
     print_array(h_misResult, m);
 
     // Compare with SpMV for errors
-    cuspMis( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_misResult, depth, *context);
+    cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
     cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);*/
@@ -207,10 +208,6 @@ void runMis(int argc, char**argv) {
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
     cudaFree(d_cooRowIndA);
-
-    cudaFree(d_cscValA);
-    cudaFree(d_cscRowIndA);
-    cudaFree(d_cscColPtrA);
     cudaFree(d_misResult);
 
     free(h_csrValA);
@@ -220,9 +217,6 @@ void runMis(int argc, char**argv) {
     free(h_misResult);
     free(h_misResultCPU);
 
-    //free(h_cscValA);
-    //free(h_cscRowIndA);
-    //free(h_cscColPtrA);
 }
 
 int main(int argc, char**argv) {
