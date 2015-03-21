@@ -179,7 +179,7 @@ int uncompareResults(T* computed, T* reference, int len, bool verbose = true)
         if (computed[i] + reference[i] != 1 && flag == 0) {
             printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
             std::cout << computed[i];
-            printf(" != ");
+            printf(" == ");
             std::cout << reference[i];
 
             if (verbose) {
