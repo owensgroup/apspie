@@ -11,13 +11,12 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-#include <deque>
+#include <curand.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
 
 #include <util.cuh>
-#include <mis.cuh>
-#include <spmspv.cuh>
+#include <spmspvMis.cuh>
 
 #include <string.h>
 
@@ -50,23 +49,33 @@ int SimpleReferenceMis(
     //Perform MIS
     //
 
+    //int flag = 0;
     CpuTimer cpu_timer;
     cpu_timer.Start();
    
     for( VertexId i=0; i<m; i++ ) {
         if( source_path[i]==-1 ) {
             source_path[i] = 1;
-       
+            flag = 0;
+            
             // Locate adjacency list 
             edges_begin = h_rowPtrA[i];
             edges_end = h_rowPtrA[i + 1];
 
-            for( int edge=edges_begin; edge<edges_end; edge++ ) {
+            /*for( int edge=edges_begin; edge<edges_end; edge++ ) {
                 VertexId neighbor = h_colIndA[edge];
-
-                if ( source_path[neighbor]==-1 )
-                    source_path[neighbor] = 0;
+                if( neighbor==i ) {
+                    flag = 1;
+                    source_path[i] = 0;
+                    break;
+                }
             }
+            if( flag!=1 )*/
+                for( int edge=edges_begin; edge<edges_end; edge++ ) {
+                    VertexId neighbor = h_colIndA[edge];
+
+                    if( source_path[neighbor]==-1 )
+                        source_path[neighbor] = 0;
         }
     }
  
@@ -94,6 +103,13 @@ int misCPU( const int src, const int m, const int *h_rowPtr, const int *h_colInd
 
 void verifyMis( const int edge, const int m, const int *d_misResultCPU, const int *d_csrRowPtr, const int *d_csrColInd, int *d_result, mgpu::CudaContext& context ) {
     spmspvCsr<int>( d_misResultCPU, edge, m, d_csrRowPtr, d_csrColInd, d_result, context );
+}
+
+void fillUniform( float *d_A, int edge ) {
+    curandGenerator_t prng;
+    curandCreateGenerator( &prng, CURAND_RNG_PSEUDO_DEFAULT );
+
+    curandGenerateUniform( prng, d_A, edge );
 }
 
 void runMis(int argc, char**argv) { 
@@ -157,8 +173,7 @@ void runMis(int argc, char**argv) {
 
     // 8. Run MIS on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
-    int depth = 1000;
-    depth = misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
+    misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
     print_end_interesting(h_misResultCPU, m);
 
     // 9. Verify MIS on CPU.
@@ -174,27 +189,28 @@ void runMis(int argc, char**argv) {
     float elapsed2 = 0.0f;
     gpu_timer.Start();
 
-    gpu_timer.Stop();
-    gpu_timer2.Start();
-
-    // 10. Run MIS kernel on GPU
+    // 9. Generate random numbers
     //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
+    fillUniform( d_csrValA, m);
+    cudaMemcpy( h_csrValA, d_csrValA, m*sizeof(typeVal), cudaMemcpyDeviceToHost );
+    print_array( h_csrValA, 40);
 
     // 10. Run MIS kernel on GPU
-    /*lubyMis( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context); 
-    //mis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
-    gpu_timer2.Stop();
+    int delta = 0.25;
+    //spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_csrValA, d_misResult, delta, *context); 
+    //mis( edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, delta, *context);
+    gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("performed %d iterations in %f time\n", depth-1, elapsed);
+    printf("performed %d steps in %f time\n", delta, elapsed);
     //printf("GPU MIS finished in %f msec. not including transpose\n", elapsed2);
 
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrColIndA, m);
 
     // Compare with CPU MIS for errors
-    cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    /*cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);
 
