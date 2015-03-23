@@ -49,7 +49,7 @@ int SimpleReferenceMis(
     //Perform MIS
     //
 
-    //int flag = 0;
+    int flag = 0;
     CpuTimer cpu_timer;
     cpu_timer.Start();
    
@@ -76,6 +76,7 @@ int SimpleReferenceMis(
 
                     if( source_path[neighbor]==-1 )
                         source_path[neighbor] = 0;
+             }
         }
     }
  
@@ -137,11 +138,11 @@ void runMis(int argc, char**argv) {
     printf("Graph has %d nodes, %d edges\n", m, edge);
 
     // 3. Allocate memory depending on how many edges are present
-    typeVal *h_csrValA;
+    typeVal *h_randVec;
     int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
     int *h_misResult, *h_misResultCPU;
 
-    h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    h_randVec    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
@@ -149,22 +150,22 @@ void runMis(int argc, char**argv) {
     h_misResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
-    readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
+    readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_randVec );
     print_array( h_cooRowIndA, m );
 
     // 5. Allocate GPU memory
-    typeVal *d_csrValA;
+    typeVal *d_randVec;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
     int *d_misResult;
     cudaMalloc(&d_misResult, m*sizeof(int));
 
-    cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
+    cudaMalloc(&d_randVec, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndA, edge*sizeof(int));
     cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
 
     // 6. Copy data from host to device
-    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_randVec, h_randVec, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
 
@@ -190,24 +191,24 @@ void runMis(int argc, char**argv) {
     gpu_timer.Start();
 
     // 9. Generate random numbers
-    //mis( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
-    fillUniform( d_csrValA, m);
-    cudaMemcpy( h_csrValA, d_csrValA, m*sizeof(typeVal), cudaMemcpyDeviceToHost );
-    print_array( h_csrValA, 40);
+    //mis( i, edge, m, d_randVec, d_csrRowPtrA, d_csrColIndA, d_misResult, 5 );
+    fillUniform( d_randVec, m);
+    cudaMemcpy( h_randVec, d_randVec, m*sizeof(typeVal), cudaMemcpyDeviceToHost );
+    //print_array( h_randVec, 40);
 
     // 10. Run MIS kernel on GPU
-    int delta = 0.25;
-    //spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_csrValA, d_misResult, delta, *context); 
+    float delta = 0.25;
+    spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_randVec, d_misResult, delta, *context); 
     //mis( edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, delta, *context);
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("performed %d steps in %f time\n", delta, elapsed);
+    printf("using step-size %f in %f ms\n", delta, elapsed);
     //printf("GPU MIS finished in %f msec. not including transpose\n", elapsed2);
 
-    cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrColIndA, m);
+    //cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrColIndA, m);
 
     // Compare with CPU MIS for errors
     /*cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
@@ -220,13 +221,13 @@ void runMis(int argc, char**argv) {
     verify( m, h_misResult, h_misResultCPU );
     print_array(h_misResult, m);*/
     
-    cudaFree(d_csrValA);
+    cudaFree(d_randVec);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
     cudaFree(d_cooRowIndA);
     cudaFree(d_misResult);
 
-    free(h_csrValA);
+    free(h_randVec);
     free(h_csrRowPtrA);
     free(h_csrColIndA);
     free(h_cooRowIndA);
