@@ -304,8 +304,17 @@ int main(int argc, char**argv) {
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     //print_array(h_csrRowPtrA,m+1);
 
-    int depth[10];
-    for(int i=0;i<10;i++) depth[i] = bfsCPU( i, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
+    int depth;
+    int max_depth = 0;
+    for(int i=0;i<m;i++) {
+        depth = bfsCPU( i, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, 1000 );
+        if( i%1000==0 )
+            printf("%d is the %d\n", i, max_depth);
+        if( depth> max_depth) {
+            max_depth = depth;
+            printf("%d is the new %d\n", i, max_depth);
+        }
+    }
 
     // Some testing code. To be turned into unit test.
     //int depth = 4;
@@ -313,6 +322,7 @@ int main(int argc, char**argv) {
     //depth++;
     //print_end_interesting(h_bfsResultCPU, m);
 
+/*
     GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
     float elapsed = 0.0f;
@@ -378,4 +388,5 @@ int main(int argc, char**argv) {
     //free(h_cscValA);
     //free(h_cscRowIndA);
     //free(h_cscColPtrA);
+    */
 }

@@ -231,6 +231,6 @@ void spsvBfs( const int vertex, const int edge, const int m, const int *h_csrRow
     free(h_bfsResult);
     free(h_csrRowDiff);
 
-    return traversed;
+    //return traversed;
 }
 
