@@ -49,14 +49,12 @@ int SimpleReferenceMis(
     //Perform MIS
     //
 
-    int flag = 0;
     CpuTimer cpu_timer;
     cpu_timer.Start();
    
     for( VertexId i=0; i<m; i++ ) {
         if( source_path[i]==-1 ) {
             source_path[i] = 1;
-            flag = 0;
             
             // Locate adjacency list 
             edges_begin = h_rowPtrA[i];
