@@ -225,24 +225,26 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
     gpu_timer.Start();
     int iter = 0;
     int total= 0;
+    float minimum = 1;
     cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( float minimum=1-delta; minimum>=0; minimum -= delta ) {
+    for( iter=1; iter<100; iter++ ) {
         
-        // Update iteration number
-        iter++;
-        //if( iter==3 ) break;
-        printf("Running iteration %d\n", iter);
+        // Update minimum number
+        if( minimum>=0 )
+            minimum -= delta;
 
         //1. Check which values are less than delta
         buildVector<<<NBLOCKS,NTHREADS>>>( m, minimum, d_randVec, d_misResult, d_inputVector );
         cudaMemcpy(h_csrVecInd, d_inputVector, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
+        //print_array(h_csrVecInd,40);
+
 
         //2. Compact dense vector into sparse
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+        printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
         
@@ -286,6 +288,12 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
         updateNeighbor<<<NBLOCKS,NTHREADS>>>( total, d_misResult, d_keys.Current(), d_vals.Current(), d_csrVecVal, d_randVec );
 
+        // 8. Error checking. If misResult is all 0s, something has gone wrong.
+        // Check using max reduce
+        mgpu::Reduce( d_misResult, m, INT_MIN, mgpu::maximum<int>(), (int*)0, &total, context );
+        printf( "The biggest number in MIS result is %d\n", total );
+        if( total==0 )
+            printf( "Error: no node generated\n" );
         cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
     
@@ -295,7 +303,10 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
 //    printf("\nGPU BFS finished in %f msec. \n", elapsed);
 //    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-    }}
+        }
+    else if( minimum<=(float)0 )
+        break;
+    }
 
     cudaProfilerStop();
     gpu_timer.Stop();

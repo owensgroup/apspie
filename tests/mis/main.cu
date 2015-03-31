@@ -175,7 +175,7 @@ void runMis(int argc, char**argv) {
     misCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_misResultCPU );
     print_end_interesting(h_misResultCPU, m);
 
-    // 9. Verify MIS on CPU.
+    // 9. Verify CPU-MIS by running BFS 1x on GPU.
     cudaMemcpy( d_misResult, h_misResultCPU, m*sizeof(int), cudaMemcpyHostToDevice );
     verifyMis( edge, m, d_misResult, d_csrRowPtrA, d_csrColIndA, d_cooRowIndA, *context );
     cudaMemcpy( h_misResult, d_cooRowIndA, m*sizeof(int), cudaMemcpyDeviceToHost );
@@ -208,16 +208,17 @@ void runMis(int argc, char**argv) {
     //cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     //print_array(h_csrColIndA, m);
 
-    // Compare with CPU MIS for errors
-    /*cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_misResult, h_misResultCPU );
-    print_array(h_misResult, m);
+    // 11. Verify GPU-MIS by running BFS 1x on GPU
+    cudaMemcpy( h_misResultCPU, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost );
+    verifyMis( edge, m, d_misResult, d_csrRowPtrA, d_csrColIndA, d_cooRowIndA, *context );
+    cudaMemcpy( h_misResult, d_cooRowIndA, m*sizeof(int), cudaMemcpyDeviceToHost );
+    unverify( m, h_misResult, h_misResultCPU );
 
     // Compare with SpMV for errors
-    cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
-    cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_misResult, h_misResultCPU );
-    print_array(h_misResult, m);*/
+    //cuspMis( 0, edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, depth, *context);
+    //cudaMemcpy(h_misResult,d_misResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    //verify( m, h_misResult, h_misResultCPU );
+    //print_array(h_misResult, m);
     
     cudaFree(d_randVec);
     cudaFree(d_csrRowPtrA);
