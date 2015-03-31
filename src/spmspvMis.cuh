@@ -229,11 +229,11 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( float minimum=1-delta; minimum>0; minimum -= delta ) {
+    for( float minimum=1-delta; minimum>=0; minimum -= delta ) {
         
         // Update iteration number
         iter++;
-        if( iter==3 ) break;
+        //if( iter==3 ) break;
         printf("Running iteration %d\n", iter);
 
         //1. Check which values are less than delta
@@ -261,11 +261,6 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         IntervalExpand( total, d_csrRowGood, d_keys.Current(), h_csrVecCount, d_vals.Current(), context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-        cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecInd, d_vals.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-
         // Reset dense flag array
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrTempVal, m );
 
@@ -276,41 +271,21 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
-        cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecInd, d_vals.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-
         //5. Gather the rand values
         gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
-
-        cudaMemcpy(h_csrVecInd, d_vals.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecVal, d_csrVecVal, total*sizeof(typeVal), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
 
         //6. Segmented Reduce By Key
         ReduceByKey( d_keys.Current(), d_csrVecVal, total, FLT_MIN, mgpu::maximum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
         //ReduceByKey( d_keys.Current(), d_vals.Current(), total, FLT_MIN, mgpu::maximum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
 
-        cudaMemcpy(h_csrVecInd, d_keys.Alternate(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecVal, d_csrSwapVal, m*sizeof(typeVal), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
-
-        printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
+        //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_csrSwapVal, d_csrTempVal );
-
-        cudaMemcpy(h_csrVecVal, d_csrTempVal, h_csrVecCount*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
 
         //7. Update MIS first, then update its neighbors
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
         updateNeighbor<<<NBLOCKS,NTHREADS>>>( total, d_misResult, d_keys.Current(), d_vals.Current(), d_csrVecVal, d_randVec );
 
-        cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
         cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
     
