@@ -308,6 +308,13 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         break;
     }
 
+    // 9. Error checking. If element of misResult is -1 something has gone wrong.
+    // CHeck using min reduce
+    mgpu::Reduce( d_misResult, m, INT_MAX, mgpu::minimum<int>(), (int*)0, &total, context );
+    printf( "The smallest number in MIS result is %d\n", total );
+    if( total==-1 )
+        printf( "Error: MIS has -1 in it\n" );
+
     cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
