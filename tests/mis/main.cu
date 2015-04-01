@@ -111,6 +111,67 @@ void fillUniform( float *d_A, int edge ) {
     curandGenerateUniform( prng, d_A, edge );
 }
 
+template<typename typeVal>
+int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
+
+    int realEdge = edge/2;
+    for( int i=0; i<realEdge; i++ ) {
+        h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
+        h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
+    }
+
+    print_array( h_csrColIndA, 40 );
+    print_array( h_cooRowIndA, 40 );
+    // Sort
+    struct arrayset work = { h_cooRowIndA, h_csrColIndA };
+    custom_sort(&work, edge);
+
+    //print_array( h_csrColIndA, 40 );
+    //print_array( h_cooRowIndA, 40 );
+
+    int curr = h_csrColIndA[0];
+    int last;
+    int curr_row = h_cooRowIndA[0];
+    int last_row;
+    if( curr_row == curr )
+        h_cooRowIndA[0] = -1;
+
+    // Check for self-loops and repetitions, mark with -1
+    for( int i=1; i<edge; i++ ) {
+        last = curr;
+        last_row = curr_row;
+        curr = h_cooRowIndA[i];
+        curr_row = h_csrColIndA[i];
+
+        // Self-loops
+        if( curr_row == curr )
+            h_cooRowIndA[i] = -1;
+        // Repetitions
+        else if( curr == last && curr_row == last_row )
+            h_cooRowIndA[i] = -1;
+    }
+
+    print_array( h_csrColIndA, 40 );
+    print_array( h_cooRowIndA, 40 );
+    // Remove self-loops and repetitions.
+    int shift = 0;
+    int back = 0;
+    for( int i=0; i<edge; i++ ) {
+        if(h_cooRowIndA[i] == -1) {
+            for( shift; back<=edge; shift++ ) {
+                back = i+shift;
+                if( h_cooRowIndA[back] != -1 ) {
+                    printf("Swapping %d with %d\n", i, back ); 
+                    h_csrColIndA[i] = h_csrColIndA[back];
+                    h_cooRowIndA[i] = h_cooRowIndA[back];
+                    h_cooRowIndA[back] = -1;
+                    break;
+    }}}}
+    print_array( h_csrColIndA, 40 );
+    print_array( h_cooRowIndA, 40 );
+    return edge-shift;
+}
+
 void runMis(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -149,6 +210,11 @@ void runMis(int argc, char**argv) {
 
     // 4. Read in graph from .mtx file
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_randVec );
+
+    // Double # of edges because symmetric/undirected
+    edge *= 2;
+    edge = makeSymmetric( edge, h_csrColIndA, h_cooRowIndA, h_randVec );
+    
     print_array( h_cooRowIndA, m );
 
     // 5. Allocate GPU memory

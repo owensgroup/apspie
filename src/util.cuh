@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sys/resource.h>
 #include <time.h>
+#include <stdlib.h>
 
 template<typename T>
 void print_end_interesting( T *array, int length ) {
@@ -302,6 +303,8 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
         h_cooRowInd[j]--;
         h_csrColInd[j]--;
 
+        printf("The first row is %d %d\n", h_csrColInd[j], h_cooRowInd[j]);
+
         // Finds max csr row.
         if( j!=0 ) {
             if( h_cooRowInd[j]==0 ) csr_first++;
@@ -376,4 +379,39 @@ void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *
 
     // Important: destroy handle
     cusparseDestroy(handle);
+}
+
+// Tuple sort
+struct arrayset {
+    int *values1;
+    int *values2;
+    //int *values3;
+};
+
+typedef struct pair {
+    int key, value;
+} Pair;
+
+int cmp(const void *x, const void *y){
+    int a = ((const Pair*)x)->key;
+    int b = ((const Pair*)y)->key;
+    return a < b ? -1 : a > b;
+}
+
+void custom_sort(struct arrayset *v, size_t size){
+    Pair key[size];
+    for(int i=0;i<size;++i){
+        key[i].key  = v->values1[i];
+        key[i].value=i;
+    }
+    qsort(key, size, sizeof(Pair), cmp);
+    int v1[size], v2[size];//, v3[size];
+    memcpy(v1, v->values1, size*sizeof(int));
+    memcpy(v2, v->values2, size*sizeof(int));
+    //memcpy(v3, v->values3, size*sizeof(int));
+    for(int i=0;i<size;++i){
+        v->values1[i] = v1[key[i].value];
+        v->values2[i] = v2[key[i].value];
+        //v->values3[i] = v3[key[i].value];
+    }
 }
