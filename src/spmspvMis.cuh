@@ -290,12 +290,12 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
 
         // 8. Error checking. If misResult is all 0s, something has gone wrong.
         // Check using max reduce
-        mgpu::Reduce( d_misResult, m, INT_MIN, mgpu::maximum<int>(), (int*)0, &total, context );
-        printf( "The biggest number in MIS result is %d\n", total );
-        if( total==0 )
-            printf( "Error: no node generated\n" );
-        cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
+        //mgpu::Reduce( d_misResult, m, INT_MIN, mgpu::maximum<int>(), (int*)0, &total, context );
+        //printf( "The biggest number in MIS result is %d\n", total );
+        //if( total==0 )
+        //    printf( "Error: no node generated\n" );
+        //cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
     
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
@@ -308,17 +308,17 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         break;
     }
 
+    cudaProfilerStop();
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("\nGPU MIS finished in %f msec. \n", elapsed);
+
     // 9. Error checking. If element of misResult is -1 something has gone wrong.
     // CHeck using min reduce
     mgpu::Reduce( d_misResult, m, INT_MAX, mgpu::minimum<int>(), (int*)0, &total, context );
     printf( "The smallest number in MIS result is %d\n", total );
     if( total==-1 )
         printf( "Error: MIS has -1 in it\n" );
-
-    cudaProfilerStop();
-    gpu_timer.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU MIS finished in %f msec. \n", elapsed);
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );

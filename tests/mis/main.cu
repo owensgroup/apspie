@@ -115,19 +115,18 @@ template<typename typeVal>
 int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
 
     int realEdge = edge/2;
+    
     for( int i=0; i<realEdge; i++ ) {
         h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
         h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
     }
 
-    print_array( h_csrColIndA, 40 );
-    print_array( h_cooRowIndA, 40 );
     // Sort
+    //struct arrayset *work = (arrayset*)malloc(edge*sizeof(arrayset));
+    //work->values1 = h_cooRowIndA;
+    //work->values2 = h_csrColIndA;
     struct arrayset work = { h_cooRowIndA, h_csrColIndA };
     custom_sort(&work, edge);
-
-    //print_array( h_csrColIndA, 40 );
-    //print_array( h_cooRowIndA, 40 );
 
     int curr = h_csrColIndA[0];
     int last;
@@ -140,35 +139,31 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
     for( int i=1; i<edge; i++ ) {
         last = curr;
         last_row = curr_row;
-        curr = h_cooRowIndA[i];
-        curr_row = h_csrColIndA[i];
+        curr = h_csrColIndA[i];
+        curr_row = h_cooRowIndA[i];
 
         // Self-loops
         if( curr_row == curr )
-            h_cooRowIndA[i] = -1;
+            h_csrColIndA[i] = -1;
         // Repetitions
         else if( curr == last && curr_row == last_row )
-            h_cooRowIndA[i] = -1;
+            h_csrColIndA[i] = -1;
     }
 
-    print_array( h_csrColIndA, 40 );
-    print_array( h_cooRowIndA, 40 );
     // Remove self-loops and repetitions.
     int shift = 0;
     int back = 0;
-    for( int i=0; i<edge; i++ ) {
-        if(h_cooRowIndA[i] == -1) {
+    for( int i=0; i+shift<edge; i++ ) {
+        if(h_csrColIndA[i] == -1) {
             for( shift; back<=edge; shift++ ) {
                 back = i+shift;
-                if( h_cooRowIndA[back] != -1 ) {
-                    printf("Swapping %d with %d\n", i, back ); 
+                if( h_csrColIndA[back] != -1 ) {
+                    //printf("Swapping %d with %d\n", i, back ); 
                     h_csrColIndA[i] = h_csrColIndA[back];
                     h_cooRowIndA[i] = h_cooRowIndA[back];
-                    h_cooRowIndA[back] = -1;
+                    h_csrColIndA[back] = -1;
                     break;
     }}}}
-    print_array( h_csrColIndA, 40 );
-    print_array( h_cooRowIndA, 40 );
     return edge-shift;
 }
 
@@ -185,7 +180,8 @@ void runMis(int argc, char**argv) {
     freopen(argv[1],"r",stdin);
     int source;
     int device;
-    if( parseArgs( argc, argv, source, device )==true ) {
+    float delta;
+    if( parseArgs( argc, argv, source, device, delta )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
@@ -195,6 +191,9 @@ void runMis(int argc, char**argv) {
     // 2. Reads in number of edges, number of nodes
     readEdge( m, n, edge, stdin );
     printf("Graph has %d nodes, %d edges\n", m, edge);
+
+    // Double # of edges because symmetric/undirected
+    edge *= 2;
 
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_randVec;
@@ -209,13 +208,10 @@ void runMis(int argc, char**argv) {
     h_misResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
-    readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_randVec );
-
-    // Double # of edges because symmetric/undirected
-    edge *= 2;
+    readMtx<typeVal>( edge/2, h_csrColIndA, h_cooRowIndA, h_randVec );
+    //print_array( h_cooRowIndA, 40 );
     edge = makeSymmetric( edge, h_csrColIndA, h_cooRowIndA, h_randVec );
-    
-    print_array( h_cooRowIndA, m );
+    printf("Undirected graph has %d edges\n", edge);
 
     // 5. Allocate GPU memory
     typeVal *d_randVec;
@@ -261,7 +257,6 @@ void runMis(int argc, char**argv) {
     //print_array( h_randVec, 40);
 
     // 10. Run MIS kernel on GPU
-    float delta = 0.25;
     spmspvMis( edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_randVec, d_misResult, delta, *context); 
     //mis( edge, m, d_csrRowPtrA, d_csrColIndA, d_misResult, delta, *context);
     gpu_timer.Stop();
