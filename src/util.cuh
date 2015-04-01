@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sys/resource.h>
 #include <time.h>
+#include <stdlib.h>
 
 template<typename T>
 void print_end_interesting( T *array, int length ) {
@@ -302,6 +303,8 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
         h_cooRowInd[j]--;
         h_csrColInd[j]--;
 
+        //printf("The first row is %d %d\n", h_csrColInd[j], h_cooRowInd[j]);
+
         // Finds max csr row.
         if( j!=0 ) {
             if( h_cooRowInd[j]==0 ) csr_first++;
@@ -328,10 +331,11 @@ void readMtx( int edge, int *h_csrColInd, int *h_cooRowInd, typeVal *h_csrVal ) 
     }
 }
 
-bool parseArgs( int argc, char**argv, int &source, int &device ) {
+bool parseArgs( int argc, char**argv, int &source, int &device, float &delta ) {
     bool error = false;
     source = 0;
     device = 0;
+    delta = 0.1;
 
     if( argc%2!=0 )
         return true;   
@@ -341,6 +345,8 @@ bool parseArgs( int argc, char**argv, int &source, int &device ) {
            source = atoi(argv[i+1]);
        else if( strstr(argv[i], "-device") != NULL )
            device = atoi(argv[i+1]);
+       else if( strstr(argv[i], "-delta") != NULL )
+           delta = atof(argv[i+1]);
     }
     return error;
 }
@@ -376,4 +382,48 @@ void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *
 
     // Important: destroy handle
     cusparseDestroy(handle);
+}
+
+// Tuple sort
+struct arrayset {
+    int *values1;
+    int *values2;
+    //int *values3;
+};
+
+typedef struct pair {
+    int key, key2, value;
+} Pair;
+
+int cmp(const void *x, const void *y){
+    int a = ((const Pair*)x)->key;
+    int b = ((const Pair*)y)->key;
+    int c = ((const Pair*)x)->key2;
+    int d = ((const Pair*)y)->key2;
+    if( a==b ) return c < d ? -1 : c > d;
+    else return a < b ? -1 : a > b;
+}
+
+void custom_sort(struct arrayset *v, size_t size){
+    //Pair key[size];
+    Pair *key = (Pair *)malloc(size*sizeof(Pair));
+    for(int i=0;i<size;++i){
+        key[i].key  = v->values1[i];
+        key[i].key2 = v->values2[i];
+        key[i].value=i;
+    }
+    qsort(key, size, sizeof(Pair), cmp);
+    //int v1[size], v2[size];
+    int *v1 = (int*)malloc(size*sizeof(int));
+    int *v2 = (int*)malloc(size*sizeof(int));
+    memcpy(v1, v->values1, size*sizeof(int));
+    memcpy(v2, v->values2, size*sizeof(int));
+    //memcpy(v3, v->values3, size*sizeof(int));
+    for(int i=0;i<size;++i){
+        v->values1[i] = v1[key[i].value];
+        v->values2[i] = v2[key[i].value];
+    }
+    free(key);
+    free(v1);
+    free(v2);
 }
