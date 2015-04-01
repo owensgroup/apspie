@@ -1,6 +1,7 @@
 
 
 ARCH="GEN_SM35"
+DELTA="-delta 0.05"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test ../../dataset/small/test_mis.mtx
@@ -17,11 +18,11 @@ fi
 for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 kron_g500-logn18 kron_g500-logn19 kron_g500-logn21
 do
     if [ "$ARCH" = "GEN_SM35" ] ; then
-        ./test /data/gunrock_dataset/large/$i/$i.mtx
+        ./test /data/gunrock_dataset/large/$i/$i.mtx $DELTA
     else
         if [ "$ARCH" = "GEN_SM40" ] ; then
-            ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
-            ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx
+            ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx $DELTA
+            ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx $DELTA
             break
         fi
     fi
