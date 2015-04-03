@@ -230,7 +230,7 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<100; iter++ ) {
+    for( iter=1; iter<150; iter++ ) {
         
         // Update minimum number
         if( minimum>=0 )
