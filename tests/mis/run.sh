@@ -1,7 +1,7 @@
 
 
-ARCH="GEN_SM35"
-DELTA="-delta 0.05"
+ARCH="GEN_SM15"
+DELTA="-delta 0.01"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test ../../dataset/small/test_mis.mtx
