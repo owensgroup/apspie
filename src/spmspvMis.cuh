@@ -230,7 +230,7 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<100; iter++ ) {
+    for( iter=1; iter<150; iter++ ) {
         
         // Update minimum number
         if( minimum>=0 )
@@ -263,6 +263,11 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         IntervalExpand( total, d_csrRowGood, d_keys.Current(), h_csrVecCount, d_vals.Current(), context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
+        //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
+        //cudaMemcpy(h_csrVecInd, d_vals.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
+
         // Reset dense flag array
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_csrTempVal, m );
 
@@ -272,6 +277,11 @@ void spmspvMis( const int edge, const int m, const int *h_csrRowPtr, const int *
         //LocalitySortKeys( d_keys.Current(), total, context );
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+
+        //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
+        //cudaMemcpy(h_csrVecInd, d_vals.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
 
         //5. Gather the rand values
         gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
