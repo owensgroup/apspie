@@ -121,7 +121,8 @@ void runBfs(int argc, char**argv) {
     freopen(argv[1],"r",stdin);
     int source;
     int device;
-    if( parseArgs( argc, argv, source, device )==true ) {
+    float delta;
+    if( parseArgs( argc, argv, source, device, delta )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
@@ -214,10 +215,10 @@ void runBfs(int argc, char**argv) {
     print_array(h_bfsResult, m);
 
     // Compare with SpMV for errors
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    //cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    //verify( m, h_bfsResult, h_bfsResultCPU );
+    //print_array(h_bfsResult, m);
     
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
