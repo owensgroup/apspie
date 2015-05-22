@@ -78,8 +78,77 @@ __global__ void updateNeighbor( const int total, int *d_misResult, const int *d_
     }
 }
 
+/*template< typename T >
+void spmspvCsr( const T *d_inputVector, const int edge, const int m, const int *d_csrRowPtr, const int *d_csrColInd, T *d_spmspvResult, mgpu::CudaContext& context ) {
+    int *h_csrVecInd = (int*)malloc(m*sizeof(int));
+
+    int *d_csrVecInd, *d_csrSwapInd;
+    cudaMalloc(&d_csrVecInd, edge*sizeof(int));
+    cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
+
+    int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff;
+    cudaMalloc(&d_csrRowGood, edge*sizeof(int));
+    cudaMalloc(&d_csrRowBad, m*sizeof(int));
+    cudaMalloc(&d_csrRowDiff, m*sizeof(int));
+
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+
+    int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
+
+    MGPU_MEM(int) ones = context.Fill( m, 1 );
+    MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
+
+    // Allocate device array
+    cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
+
+    int h_csrVecCount;
+    int total;
+
+    gpu_timer.Start();
+    
+    diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
+    mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+    streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
+
+    // Gather from CSR graph into one big array
+    IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+    mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
+    IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
+    IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+
+    //printf("The number of elements is %d\n", total);
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+
+    // Reset dense flag array
+    preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_spmspvResult, m );
+
+    // Sort step
+    //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+    //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
+    //LocalitySortKeys( d_keys.Current(), total, context );
+    //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+    //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
+
+    // Scatter into dense flag array
+    //IntervalScatter( total, d_keys.Current(), index->get(), total, ones->get(), d_spmspvResult, context );
+    scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_spmspvResult );
+    //cudaMemcpy(h_csrVecInd, d_spmspvResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+
+    cudaFree(d_csrRowGood);
+    cudaFree(d_csrRowBad);
+    cudaFree(d_csrRowDiff);
+}*/
+
 template<typename typeVal>
-void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, const typeVal *d_csrVal, int *d_mmResult, const int depth, mgpu::CudaContext& context ) {
+void spmspvMM( const int edge, const int m, const int *d_csrRowPtr, const int *d_csrColInd, const typeVal *d_randVec, int *d_misResult, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -124,16 +193,14 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
 
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
     int *d_inputVector;
-    cudaMalloc(&d_inputVector, m*sizeof(float));
+    cudaMalloc(&d_inputVector, m*sizeof(int));
 
-    for( int i=0; i<edge; i++ ) {
-        h_bfsValA[i] = 1;
-    }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
-
-    int *h_mmResult = (int*)malloc(m*sizeof(int));
-    for( int i=0;i<m;i++ ) h_mmmResult[i] = -1;
-    cudaMemcpy(d_mmResult, h_mmResult, m*sizeof(int), cudaMemcpyHostToDevice); 
+    int *h_misResult = (int*)malloc(m*sizeof(int));
+    for( int i=0;i<m;i++ ) h_misResult[i] = -1;
+    //h_misResult[1] = 1;
+    //h_misResult[3] = 1;
+    //h_misResult[4] = 1;
+    cudaMemcpy(d_misResult, h_misResult, m*sizeof(int), cudaMemcpyHostToDevice); 
 
     MGPU_MEM(int) ones = context.Fill( m, 1 );
     MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
@@ -158,19 +225,21 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
     gpu_timer.Start();
     int iter = 0;
     int total= 0;
-    float minimum = 1;
+    //float minimum = 1;
     cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<depth; iter++ ) {
+    for( iter=1; iter<150; iter++ ) {
         
         //2. Compact dense vector into sparse
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<float>(), (float*)0, &h_csrVecCount, d_sparseVector, context );
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
         printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
         
+        //IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_vals.Alternate(), context );
+
         //3. Gather from CSR graph into one big array              |     |  |
         // 1. Extracts the row lengths we are interested in e.g. 3  3  3  2  3  1
         // 2. Scans them, giving the offset from 0               0  3  6  8
@@ -179,13 +248,10 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-
 	// For Vals
+        // IntervalExpand( total, d_csrRowGood, d_vals.Alternate(), h_csrVecCount, d_vals.Current(), context );
         IntervalExpand( total, d_csrRowGood, d_keys.Current(), h_csrVecCount, d_vals.Current(), context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
-
-        // 4.b) For matrix multiplication
-        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrVal, d_goodVal );
 
         //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
         //print_array(h_csrVecInd,40);
@@ -218,7 +284,7 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_csrSwapVal, d_csrTempVal );
 
-        /*//7. Update MIS first, then update its neighbors
+        //7. Update MIS first, then update its neighbors
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
         updateNeighbor<<<NBLOCKS,NTHREADS>>>( total, d_misResult, d_keys.Current(), d_vals.Current(), d_csrVecVal, d_randVec );
 
@@ -229,7 +295,7 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
         //if( total==0 )
         //    printf( "Error: no node generated\n" );
         //cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);*/
+        //print_array(h_csrVecInd,40);
     
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
@@ -248,7 +314,7 @@ void spmspvMM( const int edge, const int m, const int *h_csrRowPtr, const int *d
     printf("\nGPU MIS finished in %f msec. \n", elapsed);
 
     // 9. Error checking. If element of misResult is -1 something has gone wrong.
-    // Check using min reduce
+    // CHeck using min reduce
     mgpu::Reduce( d_misResult, m, INT_MAX, mgpu::minimum<int>(), (int*)0, &total, context );
     printf( "The smallest number in MIS result is %d\n", total );
     if( total==-1 )
