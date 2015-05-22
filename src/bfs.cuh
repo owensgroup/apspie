@@ -3,7 +3,6 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
-#include "spmv.cuh"
 
 //#define NBLOCKS 16384
 #define NTHREADS 512
@@ -70,7 +69,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     for( int i=0; i<edge; i++ ) {
         h_bfsValA[i] = 1;
     }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);;
+    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
