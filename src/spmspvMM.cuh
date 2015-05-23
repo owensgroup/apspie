@@ -29,6 +29,13 @@ __global__ void preprocessFlag( typeVal *d_csrFlag, const int total ) {
         d_csrFlag[idx] = 0;
 }
 
+__global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
+        if( d_randVec[idx] != 0 ) d_randVecInd[idx] = 1;
+        else d_randVecInd[idx] = 0;
+    }
+}
+
 __global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, int *d_csrVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
         if( d_csrFlag[idx] ) d_csrVecInd[d_csrRowGood[idx]]=idx;
@@ -94,8 +101,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     int *h_csrVecInd;
     int *d_csrVecInd;
     int *d_csrSwapInd;
-    int *d_csrVecNei;
-    int *d_csrSwapNei;
     typeVal *h_csrVecVal;
     typeVal *d_csrVecVal;
     typeVal *d_csrSwapVal;
@@ -107,8 +112,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
-    cudaMalloc(&d_csrVecNei, edge*sizeof(int));
-    cudaMalloc(&d_csrSwapNei, edge*sizeof(int));
     cudaMalloc(&d_csrVecVal, edge*sizeof(typeVal));
     cudaMalloc(&d_csrSwapVal, edge*sizeof(typeVal));
 
@@ -130,13 +133,17 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    cub::DoubleBuffer<int> d_vals(d_csrVecNei, d_csrSwapNei);
-    //cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
+    //cub::DoubleBuffer<int> d_vals(d_csrVecNei, d_csrSwapNei);
+    cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
 
     // Allocate temporary storage
     size_t temp_storage_bytes = 93184;
     void *d_temp_storage = NULL;
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    // Allocate for d_randVecInd
+    int *d_randVecInd;
+    cudaMalloc(&d_randVecInd, m*sizeof(int));
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -150,15 +157,18 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
     //for( iter=1; iter<150; iter++ ) {
-        
+    
+        //1. Obtain dense bit vector from dense vector
+        bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d_randVecInd, m );
+    
         //2. Compact dense vector into sparse
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+        //    indices: d_csrRowGood
+        //     values: not necessary (will be expanded into d_vals.current() in step 3
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
         printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) 
-            streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
+            streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
         
-        //IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_vals.Alternate(), context );
-
         //3. Gather from CSR graph into one big array            |     |  |
         // 1. Extracts the row lengths we are interested in e.g. 3  3  3  2  3  1
         // 2. Scans them, giving the offset from 0               0  3  6  8
@@ -174,8 +184,8 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
         //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
         //print_array(h_csrVecInd,40);
-        //cudaMemcpy(h_csrVecInd, d_vals.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_vals.Current(), total*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
 
         // Reset dense flag array
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_misResult, m );
@@ -193,7 +203,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //print_array(h_csrVecInd,40);
 
         //5. Gather the rand values
-        gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
+        //gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
 
         //6. Segmented Reduce By Key
         ReduceByKey( d_keys.Current(), d_csrVecVal, total, FLT_MIN, mgpu::maximum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
