@@ -79,7 +79,7 @@ __global__ void updateNeighbor( const int total, int *d_misResult, const int *d_
 }
 
 template<typename typeVal>
-void spmspvMM( const int edge, const int m, const int *d_csrRowPtr, const int *d_csrColInd, const typeVal *d_randVec, typeVal *d_misResult, mgpu::CudaContext& context ) {
+void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -154,8 +154,8 @@ void spmspvMM( const int edge, const int m, const int *d_csrRowPtr, const int *d
         //2. Compact dense vector into sparse
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_inputVector, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
         printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
-        if( h_csrVecCount > 0 ) {
-        streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
+        if( h_csrVecCount > 0 ) 
+            streamCompact<<<NBLOCKS,NTHREADS>>>( d_inputVector, d_csrRowGood, d_keys.Current(), m );
         
         //IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_vals.Alternate(), context );
 

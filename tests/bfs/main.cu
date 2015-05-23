@@ -16,7 +16,7 @@
 
 #include <util.cuh>
 #include <bfs.cuh>
-#include <spmspvBfs.cuh>
+//#include <spmspvBfs.cuh>
 
 #include <string.h>
 
