@@ -3,6 +3,7 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
+#include "spmspvMM.cuh"
 
 //#define NBLOCKS 16384
 #define NTHREADS 512
@@ -79,8 +80,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     spmspvMM(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
 
-    //cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-    //print_array(h_spmvResult,m);
+    cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(h_spmvResult,m);
 
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
