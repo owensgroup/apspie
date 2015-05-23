@@ -76,8 +76,9 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     gpu_timer.Start();
     cudaProfilerStart();
     //SpmvKernel<float>(d_spmvSwap, d_csrColIndA, d_csrRowPtrA, d_bfsValA, d_spmvResult, m, edge, context);
-    spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-    
+    //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+    spmspvMM(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+
     //cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
     //print_array(h_spmvResult,m);
 
