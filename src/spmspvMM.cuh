@@ -31,7 +31,7 @@ __global__ void preprocessFlag( typeVal *d_csrFlag, const int total ) {
 
 __global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
-        if( d_randVec[idx] != 0 ) d_randVecInd[idx] = 1;
+        if( d_randVec[idx]>0.5 ) d_randVecInd[idx] = 1;
         else d_randVecInd[idx] = 0;
     }
 }
@@ -168,6 +168,12 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) 
             streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
+        cudaMemcpy(h_csrVecVal, d_randVec, total*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);
+        cudaMemcpy(h_csrVecInd, d_randVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
         
         //3. Gather from CSR graph into one big array            |     |  |
         // 1. Extracts the row lengths we are interested in e.g. 3  3  3  2  3  1
@@ -182,10 +188,10 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         IntervalExpand( total, d_csrRowGood, d_keys.Current(), h_csrVecCount, d_vals.Current(), context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
-        //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecVal, d_vals.Current(), total*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_vals.Current(), total*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);
 
         // Reset dense flag array
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_misResult, m );
