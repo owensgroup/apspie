@@ -84,6 +84,10 @@ __global__ void updateNeighbor( const int total, int *d_misResult, const int *d_
             d_misResult[key] = 0;
     }
 }
+template<typename typeVal>
+__global__ void elementMult( const int total, const typeVal *d_x, const typeVal*d_y, typeVal *d_result ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]*d_y[idx];
+} 
 
 template<typename typeVal>
 void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
@@ -163,7 +167,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //    indices: d_csrRowGood
         //     values: not necessary (will be expanded into d_vals.current() in step 3
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) 
             streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
         
@@ -172,7 +175,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //  -> d_csrRowBad
         // 2. Scans them, giving the offset from 0          0  3  6  8
         //  -> d_csrRowGood
-        // 3. Extracts the row indices we are interested in 0  3  6  9 11 14 15
+        // 3. Extracts the col indices we are interested in 0  6  9
         //  -> d_csrRowBad
         // 4. Extracts the neighbour lists
         //  -> d_keys.Current()
@@ -181,23 +184,27 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
+        printf("Running iteration %d, processing %d nodes frontier size: %d\n", iter, h_csrVecCount, total);
+
 	// Vector Portion
-        // 1. Gather the elements indexed by d_keys.Current()
-        // 2. Expand the elements to memory set by d_csrRowGood
-        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_vals.Alternate(), context );
-        IntervalExpand( total, d_csrRowGood, d_vals.Alternate(), h_csrVecCount, d_vals.Current(), context );
-        
+        // a) naive method
+        //   -IntervalExpand into frontier-length list
+        //      1. Gather the elements indexed by d_keys.Current()
+        //      2. Expand the elements to memory set by d_csrRowGood
+        //   -Element-wise multiplication with frontier
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_csrTempVal, context );
+        IntervalExpand( total, d_csrRowGood, d_csrTempVal, h_csrVecCount, d_vals.Alternate(), context );
+
         // Matrix Structure Portion
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
-        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrVal, d_vals.Current(), context );
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrVal, d_csrTempVal, context );
 
-        cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecVal, d_vals.Alternate(), total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
-        cudaMemcpy(h_csrVecVal, d_vals.Current(), total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
+        // Element-wise multiplication
+        elementMult<<<NBLOCKS, NTHREADS>>>( total, d_vals.Alternate(), d_csrTempVal, d_vals.Current() ); 
 
+        // b) custom kernel method (fewer memory reads)
+        // TODO
+        
         // Reset dense flag array
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_misResult, m );
 
@@ -217,8 +224,8 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
 
         //6. Segmented Reduce By Key
-        ReduceByKey( d_keys.Current(), d_csrVecVal, total, FLT_MIN, mgpu::maximum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
-        //ReduceByKey( d_keys.Current(), d_vals.Current(), total, FLT_MIN, mgpu::maximum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
+        //ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
+        ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_vals.Alternate(), d_keys.Alternate(), &h_csrVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
@@ -233,9 +240,9 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //mgpu::Reduce( d_misResult, m, INT_MIN, mgpu::maximum<int>(), (int*)0, &total, context );
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
-        //    printf( "Error: no node generated\n" );
-        //cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
+        //    printf( "Error: no node generated\n" );*/
+        cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
     
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
