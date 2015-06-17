@@ -54,13 +54,10 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
         h_spmvResult[i]=0;
         if( i==vertex ) {
             h_bfsResult[i]=0;
-            h_spmvResult[i]=1;
+            h_spmvResult[i]=i;
         }
     }
-    //std::cout << "This is m: " << m << std::endl;
-    //print_array(h_bfsResult,m);
-    cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_spmvSwap, h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
 
     // Generate values for BFS (csrValA where everything is 1)
     float *h_bfsValA, *d_bfsValA;

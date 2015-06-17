@@ -114,6 +114,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
     cudaMalloc(&d_csrVecVal, edge*sizeof(typeVal));
     cudaMalloc(&d_csrSwapVal, edge*sizeof(typeVal));
+    cudaMalloc(&d_csrTempVal, edge*sizeof(typeVal));
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
@@ -133,7 +134,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    //cub::DoubleBuffer<int> d_vals(d_csrVecNei, d_csrSwapNei);
     cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
 
     // Allocate temporary storage
@@ -156,8 +156,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    //for( iter=1; iter<150; iter++ ) {
-    
         //1. Obtain dense bit vector from dense vector
         bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d_randVecInd, m );
     
@@ -168,28 +166,35 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         printf("Running iteration %d, processing %d nodes.\n", iter, h_csrVecCount);
         if( h_csrVecCount > 0 ) 
             streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
-        cudaMemcpy(h_csrVecVal, d_randVec, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecVal,40);
-        cudaMemcpy(h_csrVecInd, d_randVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
-        cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
         
-        //3. Gather from CSR graph into one big array            |     |  |
-        // 1. Extracts the row lengths we are interested in e.g. 3  3  3  2  3  1
-        // 2. Scans them, giving the offset from 0               0  3  6  8
-        // 3. Extracts the row indices we are interested in      0  3  6  9 11 14 15
+        //3. Gather from CSR graph into one big array       |     |  |
+        // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
+        //  -> d_csrRowBad
+        // 2. Scans them, giving the offset from 0          0  3  6  8
+        //  -> d_csrRowGood
+        // 3. Extracts the row indices we are interested in 0  3  6  9 11 14 15
+        //  -> d_csrRowBad
         // 4. Extracts the neighbour lists
+        //  -> d_keys.Current()
+        //  -> d_vals.Current()
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
-	// For Vals
-        // IntervalExpand( total, d_csrRowGood, d_vals.Alternate(), h_csrVecCount, d_vals.Current(), context );
-        IntervalExpand( total, d_csrRowGood, d_keys.Current(), h_csrVecCount, d_vals.Current(), context );
+
+	// Vector Portion
+        // 1. Gather the elements indexed by d_keys.Current()
+        // 2. Expand the elements to memory set by d_csrRowGood
+        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_vals.Alternate(), context );
+        IntervalExpand( total, d_csrRowGood, d_vals.Alternate(), h_csrVecCount, d_vals.Current(), context );
+        
+        // Matrix Structure Portion
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrVal, d_vals.Current(), context );
 
         cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_vals.Alternate(), total*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);
         cudaMemcpy(h_csrVecVal, d_vals.Current(), total*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(h_csrVecVal,40);
 
