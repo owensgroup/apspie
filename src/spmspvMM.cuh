@@ -125,8 +125,8 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     cudaMalloc(&d_csrRowBad, m*sizeof(int));
     cudaMalloc(&d_csrRowDiff, m*sizeof(int));
 
-    GpuTimer gpu_timer;
-    float elapsed = 0.0f;
+    //GpuTimer gpu_timer;
+    //float elapsed = 0.0f;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
@@ -152,11 +152,11 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    gpu_timer.Start();
-    int iter = 0;
+    //gpu_timer.Start();
+    //int iter = 0;
     int total= 0;
     //float minimum = 1;
-    cudaProfilerStart();
+    //cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
@@ -184,7 +184,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        printf("Running iteration %d, processing %d nodes frontier size: %d\n", iter, h_csrVecCount, total);
+        printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
 	// Vector Portion
         // a) naive method
@@ -225,11 +225,11 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
         //6. Segmented Reduce By Key
         //ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
-        ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_vals.Alternate(), d_keys.Alternate(), &h_csrVecCount, (int*)0, context );
+        ReduceByKey( d_keys.Current(), d_vals.Current(), total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
-        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_csrSwapVal, d_misResult );
+        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_vals.Alternate(), d_misResult );
 
         /*//7. Update MIS first, then update its neighbors
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
@@ -241,8 +241,12 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
         //    printf( "Error: no node generated\n" );*/
-        cudaMemcpy(h_csrVecInd, d_misResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(h_csrVecInd,40);
+        //cudaMemcpy(h_csrVecInd, d_keys.Alternate(), m*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecInd,40);
+        //cudaMemcpy(h_csrVecVal, d_vals.Alternate(), m*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecVal,40);
+        //cudaMemcpy(h_csrVecVal, d_misResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(h_csrVecVal,40);
     
 //    printf("Running iteration %d.\n", iter);
 //    gpu_timer.Stop();
@@ -255,10 +259,10 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     //    break;
     //}*/
 
-    cudaProfilerStop();
-    gpu_timer.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU MIS finished in %f msec. \n", elapsed);
+    //cudaProfilerStop();
+    //gpu_timer.Stop();
+    //elapsed += gpu_timer.ElapsedMillis();
+    //printf("\nGPU MM finished in %f msec. \n", elapsed);
 
     // 9. Error checking. If element of misResult is -1 something has gone wrong.
     // CHeck using min reduce
