@@ -3,7 +3,7 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
-#include "spmv.cuh"
+#include "spmspvMM.cuh"
 
 //#define NBLOCKS 16384
 #define NTHREADS 512
@@ -29,7 +29,8 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
     //}
 }
 
-void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
+template< typename T >
+void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -53,13 +54,11 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
         h_spmvResult[i]=0;
         if( i==vertex ) {
             h_bfsResult[i]=0;
-            h_spmvResult[i]=1;
+            h_spmvResult[i]=i;
         }
     }
-    //std::cout << "This is m: " << m << std::endl;
-    //print_array(h_bfsResult,m);
-    cudaMemcpy(d_spmvSwap,h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_bfsResult,h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_spmvSwap, h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
 
     // Generate values for BFS (csrValA where everything is 1)
     float *h_bfsValA, *d_bfsValA;
@@ -69,26 +68,43 @@ void bfs( const int vertex, const int edge, const int m, const int *d_csrRowPtrA
     for( int i=0; i<edge; i++ ) {
         h_bfsValA[i] = 1;
     }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);;
+    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-    
+    //SpmvKernel<float>(d_spmvSwap, d_csrColIndA, d_csrRowPtrA, d_bfsValA, d_spmvResult, m, edge, context);
+    //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+    spmspvMM<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+
+    cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(h_spmvResult,m);
+
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
+    cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_bfsResult,m);
 
-    for( int i=2; i<depth; i++ ) {
+    for( int i=2; i<=depth; i++ ) {
     //for( int i=2; i<3; i++ ) {
         if( i%2==0 ) {
-            spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
+            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
+            spmspvMM<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
+    cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_bfsResult,m);
+            //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
+            //print_array(h_spmvResult,m);
         } else {
-            spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+            spmspvMM<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
+    cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_bfsResult,m);
+            //cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+            //print_array(h_spmvResult,m);
         }
     }
 
