@@ -2,6 +2,10 @@
 
 ARCH="GEN_SM20"
 
+if [ "$ARCH" = "GEN_SM15" ] ; then
+    ./test ../../dataset/small/test_cc.mtx -source 2
+fi
+
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx
     ./test ../../dataset/small/test_bc.mtx

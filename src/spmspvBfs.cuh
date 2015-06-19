@@ -199,7 +199,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
         //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
         //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
-        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        //cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
         //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_keys.Current(), iter, total );
