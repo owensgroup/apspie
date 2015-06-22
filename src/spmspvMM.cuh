@@ -157,18 +157,22 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     int total= 0;
     //float minimum = 1;
     //cudaProfilerStart();
+    //    cudaMemcpy(h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+    //  print_array(h_csrVecVal,40);
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-        //1. Obtain dense bit vector from dense vector
-        bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d_randVecInd, m );
+    //1. Obtain dense bit vector from dense vector
+    bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d_randVecInd, m );
     
-        //2. Compact dense vector into sparse
-        //    indices: d_csrRowGood
-        //     values: not necessary (will be expanded into d_vals.current() in step 3
+    //2. Compact dense vector into sparse
+    //    indices: d_csrRowGood
+    //     values: not necessary (will be expanded into d_vals.current() in step 3
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        if( h_csrVecCount > 0 ) 
-            streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
+        if( h_csrVecCount == 0 ) 
+            printf( "Error: no frontier\n" );
+        else {
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -184,7 +188,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
+        //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
 	// Vector Portion
         // a) naive method
@@ -273,7 +277,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
-
+    }
     cudaFree(d_csrRowGood);
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
