@@ -282,6 +282,10 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     cudaFree(d_csrRowBad);
     cudaFree(d_csrRowDiff);
     cudaFree(d_inputVector);
+    cudaFree(d_randVecInd);
+    cudaFree(d_csrVecVal);
+    cudaFree(d_csrSwapVal);
+    cudaFree(d_csrTempVal);
 
     cusparseDestroy(handle);
     cusparseDestroyMatDescr(descr);

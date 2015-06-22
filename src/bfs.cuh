@@ -19,7 +19,9 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
         //d_bfsResult[idx] = (d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0) ? iter:d_bfsResult[idx];
-        if( d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0 ) d_bfsResult[idx] = iter;
+        if( d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0 ) {
+            d_bfsResult[idx] = iter;
+        } else d_spmvResult[idx] = 0;
     }
     //int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -82,8 +84,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
-    for( int i=2; i<=depth; i++ ) {
-    //for( int i=2; i<3; i++ ) {
+    for( int i=2; i<depth; i++ ) {
+    //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
             spmspvMM<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
