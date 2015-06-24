@@ -193,8 +193,8 @@ void runBfs(int argc, char**argv) {
     gpu_timer2.Start();
 
     // 10. Run BFS kernel on GPU
-    //bfs<typeVal>( source, edge, m, d_csrValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context );
-    bfs<typeVal>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context );
+    bfs<typeVal>( source, edge, m, d_csrValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context );
+    //bfs<typeVal>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context );
 
     // 10. Run BFS kernel on GPU
     //spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 

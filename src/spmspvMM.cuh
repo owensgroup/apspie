@@ -125,8 +125,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     cudaMalloc(&d_csrRowBad, m*sizeof(int));
     cudaMalloc(&d_csrRowDiff, m*sizeof(int));
 
-    //GpuTimer gpu_timer;
-    //float elapsed = 0.0f;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
@@ -152,13 +150,13 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    //gpu_timer.Start();
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
     //int iter = 0;
     int total= 0;
     //float minimum = 1;
-    //cudaProfilerStart();
-    //    cudaMemcpy(h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-    //  print_array(h_csrVecVal,40);
+    cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
@@ -253,10 +251,10 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         //print_array(h_csrVecVal,40);
     
 //    printf("Running iteration %d.\n", iter);
-//    gpu_timer.Stop();
-//    elapsed = gpu_timer.ElapsedMillis();
-//    printf("\nGPU BFS finished in %f msec. \n", elapsed);
-//    gpu_timer.Start();
+    gpu_timer.Stop();
+    elapsed = gpu_timer.ElapsedMillis();
+    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     //    }
     //else if( minimum<=(float)0 )
