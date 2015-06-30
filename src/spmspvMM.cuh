@@ -253,7 +253,7 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
 //    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    printf("GPU BFS finished in %f msec. \n", elapsed);
     gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     //    }
