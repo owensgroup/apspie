@@ -23,26 +23,11 @@ __global__ void updateSparseBfs( int *d_bfsResult, const int *d_csrVecInd, const
     }
 }
 
-__global__ void diff( const int *d_csrRowPtr, int *d_csrRowDiff, const int m ) {
-
-    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<m; idx+=blockDim.x*gridDim.x) {
-        d_csrRowDiff[idx] = d_csrRowPtr[idx+1]-d_csrRowPtr[idx];
-    }
-}
- 
 __global__ void lookRightFloat( const int *d_csrSwapInd, const int total, float *d_csrFlagFloat) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
         if( d_csrSwapInd[idx]==d_csrSwapInd[idx+1] ) d_csrFlagFloat[idx]=(float)1;
         else d_csrFlagFloat[idx]=(float)0;
-    }
-}
-
-__global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrFlag) {
-    
-    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
-        if( d_csrSwapInd[idx]!=d_csrSwapInd[idx+1] ) d_csrFlag[idx]=0;
-        else d_csrFlag[idx]=1;
     }
 }
 
@@ -59,17 +44,6 @@ __global__ void updateBfsSeq( const int *d_csrVecInd, const int h_csrVecCount, i
 __global__ void preprocessFlag( int *d_csrFlag, const int total ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_csrFlag[idx] = 0;
-}
-
-__global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, int *d_csrVecInd, const int m ) {
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
-        if( d_csrFlag[idx] ) d_csrVecInd[d_csrRowGood[idx]]=idx;
-        //if( d_csrFlag[idx]==1 ) d_csrVecInd[d_csrRowGood[idx]]=idx;
-}
-
-__global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag ) {
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
 /*template< typename T >
@@ -211,10 +185,10 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
 
 //    printf("Running iteration %d.\n", iter);
-//    gpu_timer.Stop();
-//    elapsed = gpu_timer.ElapsedMillis();
-//    printf("\nGPU BFS finished in %f msec. \n", elapsed);
-//    gpu_timer.Start();
+    gpu_timer.Stop();
+    elapsed = gpu_timer.ElapsedMillis();
+    printf("GPU BFS finished in %f msec. \n", elapsed);
+    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
 //    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
 //    print_array(h_csrVecInd,40);
@@ -222,10 +196,10 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 //    print_array(h_csrVecInd,40);
     }
 
-    cudaProfilerStop();
-    gpu_timer.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+//    cudaProfilerStop();
+//    gpu_timer.Stop();
+//    elapsed += gpu_timer.ElapsedMillis();
+//    printf("\nGPU BFS finished in %f msec. \n", elapsed);
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
