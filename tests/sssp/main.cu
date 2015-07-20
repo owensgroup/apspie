@@ -11,27 +11,38 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-#include <deque>
+#include <queue>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 
 #include <util.cuh>
-#include <bfs.cuh>
-#include <spsvBfs.cuh>
+#include <sssp.cuh>
 
 #include <string.h>
 
 #define MARK_PREDECESSORS 0
 
-// A simple CPU-based reference BFS ranking implementation
+class CompareDist {
+public:
+    bool operator() ( const std::pair<int, float>& lhs, const std::pair<int, float>& rhs ) const {
+        return lhs.second < rhs.second;
+    }
+};
+
+// A simple CPU-based reference SSSP ranking implementation
 template<typename VertexId>
-int SimpleReferenceBfs(
-    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
-    VertexId                                *source_path,
+int SimpleReferenceSssp(
+    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA, const float *h_csrValA,
+    float                                   *source_path,
     VertexId                                *predecessor,
     VertexId                                src,
     VertexId                                stop)
 {
+    typedef std::vector<VertexId> node_id;
+
     //initialize distances
+    //  use -1 to represent infinity for source_path
+    //                      undefined for predecessor
     for (VertexId i = 0; i < m; ++i) {
         source_path[i] = -1;
         if (MARK_PREDECESSORS)
@@ -40,15 +51,17 @@ int SimpleReferenceBfs(
     source_path[src] = 0;
     VertexId search_depth = 0;
 
+    typedef std::pair<VertexId, float> Edge;
+
     // Initialize queue for managing previously-discovered nodes
-    std::deque<VertexId> frontier;
-    frontier.push_back(src);
+    std::priority_queue<std::pair<VertexId, float>, std::vector<std::pair<VertexId, float> >, CompareDist> frontier;
+    //frontier.push(src);
 
     //
-    //Perform BFS
+    //Perform SSSP
     //
 
-    CpuTimer cpu_timer;
+    /*CpuTimer cpu_timer;
     cpu_timer.Start();
     while (!frontier.empty()) {
         
@@ -86,31 +99,31 @@ int SimpleReferenceBfs(
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
-    printf("CPU BFS finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+    printf("CPU SSSP finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);*/
 
     return search_depth;
 }
 
-int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_bfsResultCPU, const int stop ) {
+int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, const float* h_csrValA, float *h_ssspResultCPU, const int stop ) {
 
     typedef int VertexId; // Use as the node identifier type
 
     VertexId *reference_check_preds = NULL;
 
-    int depth = SimpleReferenceBfs<VertexId>(
-        m, h_rowPtrA, h_colIndA,
-        h_bfsResultCPU,
+    int depth = SimpleReferenceSssp<VertexId>(
+        m, h_rowPtrA, h_colIndA, h_csrValA,
+        h_ssspResultCPU,
         reference_check_preds,
         src,
         stop);
 
-    //print_array(h_bfsResultCPU, m);
+    //print_array(h_ssspResultCPU, m);
     return depth;
 }
 
-void runBfs(int argc, char**argv) { 
+void runSssp(int argc, char**argv) { 
     int m, n, edge;
-    ContextPtr context = mgpu::CreateCudaDevice(0);
+    mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
     typedef float typeVal;
@@ -121,7 +134,8 @@ void runBfs(int argc, char**argv) {
     freopen(argv[1],"r",stdin);
     int source;
     int device;
-    if( parseArgs( argc, argv, source, device )==true ) {
+    float delta;
+    if( parseArgs( argc, argv, source, device, delta )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
@@ -135,14 +149,14 @@ void runBfs(int argc, char**argv) {
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_csrValA;
     int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
-    int *h_bfsResult, *h_bfsResultCPU;
+    float *h_ssspResult, *h_ssspResultCPU;
 
     h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
-    h_bfsResult = (int*)malloc((m)*sizeof(int));
-    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
+    h_ssspResult = (float*)malloc((m)*sizeof(float));
+    h_ssspResultCPU = (float*)malloc((m)*sizeof(float));
 
     // 4. Read in graph from .mtx file
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
@@ -153,8 +167,8 @@ void runBfs(int argc, char**argv) {
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
     typeVal *d_cscValA;
     int *d_cscRowIndA, *d_cscColPtrA;
-    int *d_bfsResult;
-    cudaMalloc(&d_bfsResult, m*sizeof(int));
+    float *d_ssspResult;
+    cudaMalloc(&d_ssspResult, m*sizeof(float));
 
     cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
@@ -173,14 +187,14 @@ void runBfs(int argc, char**argv) {
     // 7. Run COO -> CSR kernel
     coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
-    // 8. Run BFS on CPU. Need data in CSR form first.
+    // 8. Run SSSP on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
-    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-    print_end_interesting(h_bfsResultCPU, m);
+    depth = ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
+    print_end_interesting(h_ssspResultCPU, m);
 
     // Make two GPU timers
-    GpuTimer gpu_timer;
+    /*GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
     float elapsed = 0.0f;
     float elapsed2 = 0.0f;
@@ -191,33 +205,30 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     gpu_timer2.Start();
 
-    // 10. Run BFS kernel on GPU
-    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
+    // 10. Run SSSP kernel on GPU
+    //sssp<typeVal>( source, edge, m, d_csrValA, d_cscColPtrA, d_cscRowIndA, d_ssspResult, depth, *context );
+    sssp<typeVal>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context );
 
-    // 10. Run BFS kernel on GPU
-    spsvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
 
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
-    //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
+    //printf("GPU SSSP finished in %f msec. not including transpose\n", elapsed2);
 
     cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrColIndA, m);
 
-    // Compare with CPU BFS for errors
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    // Compare with CPU SSSP for errors
+    cudaMemcpy(h_ssspResult,d_ssspResult,m*sizeof(float),cudaMemcpyDeviceToHost);
+    verify( m, h_ssspResult, h_ssspResultCPU );
+    print_array(h_ssspResult, m);
 
     // Compare with SpMV for errors
-    bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
+    //cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
+    //verify( m, h_bfsResult, h_bfsResultCPU );
+    //print_array(h_bfsResult, m);
     
     cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
@@ -227,20 +238,20 @@ void runBfs(int argc, char**argv) {
     cudaFree(d_cscValA);
     cudaFree(d_cscRowIndA);
     cudaFree(d_cscColPtrA);
-    cudaFree(d_bfsResult);
+    cudaFree(d_ssspResult);
 
     free(h_csrValA);
     free(h_csrRowPtrA);
     free(h_csrColIndA);
     free(h_cooRowIndA);
-    free(h_bfsResult);
-    free(h_bfsResultCPU);
+    free(h_ssspResult);
+    free(h_ssspResultCPU);
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
-    //free(h_cscColPtrA);
+    //free(h_cscColPtrA);*/
 }
 
 int main(int argc, char**argv) {
-    runBfs(argc, argv);
+    runSssp(argc, argv);
 }    
