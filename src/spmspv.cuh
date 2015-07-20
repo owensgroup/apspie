@@ -90,7 +90,7 @@ __global__ void elementMult( const int total, const typeVal *d_x, const typeVal*
 } 
 
 template<typename typeVal>
-void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
+void spmspv( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
