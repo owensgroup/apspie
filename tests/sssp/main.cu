@@ -11,15 +11,22 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
-#include <deque>
+#include <queue>
 #include <cusparse.h>
 
 #include <util.cuh>
-#include <sssp.cuh>
+//#include <sssp.cuh>
 
 #include <string.h>
 
 #define MARK_PREDECESSORS 0
+
+class CompareDist {
+public:
+    bool operator() ( const std::pair<int, float>& lhs, const std::pair<int, float>& rhs ) const {
+        return lhs.second < rhs.second;
+    }
+};
 
 // A simple CPU-based reference SSSP ranking implementation
 template<typename VertexId>
@@ -30,6 +37,8 @@ int SimpleReferenceSSSP(
     VertexId                                src,
     VertexId                                stop)
 {
+    typedef std::vector<VertexId> node_id;
+
     //initialize distances
     //  use -1 to represent infinity for source_path
     //                      undefined for predecessor
@@ -41,15 +50,17 @@ int SimpleReferenceSSSP(
     source_path[src] = 0;
     VertexId search_depth = 0;
 
+    typedef std::pair<VertexId, float> Edge;
+
     // Initialize queue for managing previously-discovered nodes
-    std::deque<VertexId> frontier;
-    frontier.push_back(src);
+    std::priority_queue<std::pair<VertexId, float>, std::vector<std::pair<VertexId, float> >, CompareDist> frontier;
+    //frontier.push(src);
 
     //
     //Perform SSSP
     //
 
-    CpuTimer cpu_timer;
+    /*CpuTimer cpu_timer;
     cpu_timer.Start();
     while (!frontier.empty()) {
         
@@ -87,7 +98,7 @@ int SimpleReferenceSSSP(
     float elapsed = cpu_timer.ElapsedMillis();
     search_depth++;
 
-    printf("CPU SSSP finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+    printf("CPU SSSP finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);*/
 
     return search_depth;
 }
@@ -99,7 +110,7 @@ int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colI
     VertexId *reference_check_preds = NULL;
 
     int depth = SimpleReferenceSSSP<VertexId>(
-        m, h_rowPtrA, h_colIndA, h_csrValA
+        m, h_rowPtrA, h_colIndA, h_csrValA,
         h_ssspResultCPU,
         reference_check_preds,
         src,
@@ -143,8 +154,8 @@ void runSSSP(int argc, char**argv) {
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
-    h_ssspResult = (int*)malloc((m)*sizeof(float));
-    h_ssspResultCPU = (int*)malloc((m)*sizeof(float));
+    h_ssspResult = (float*)malloc((m)*sizeof(float));
+    h_ssspResultCPU = (float*)malloc((m)*sizeof(float));
 
     // 4. Read in graph from .mtx file
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
@@ -182,7 +193,7 @@ void runSSSP(int argc, char**argv) {
     print_end_interesting(h_ssspResultCPU, m);
 
     // Make two GPU timers
-    GpuTimer gpu_timer;
+    /*GpuTimer gpu_timer;
     GpuTimer gpu_timer2;
     float elapsed = 0.0f;
     float elapsed2 = 0.0f;
@@ -237,7 +248,7 @@ void runSSSP(int argc, char**argv) {
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
-    //free(h_cscColPtrA);
+    //free(h_cscColPtrA);*/
 }
 
 int main(int argc, char**argv) {
