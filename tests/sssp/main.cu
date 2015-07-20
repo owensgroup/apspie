@@ -31,7 +31,7 @@ public:
 
 // A simple CPU-based reference SSSP ranking implementation
 template<typename VertexId>
-int SimpleReferenceSSSP(
+int SimpleReferenceSssp(
     const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA, const float *h_csrValA,
     float                                   *source_path,
     VertexId                                *predecessor,
@@ -110,7 +110,7 @@ int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colI
 
     VertexId *reference_check_preds = NULL;
 
-    int depth = SimpleReferenceSSSP<VertexId>(
+    int depth = SimpleReferenceSssp<VertexId>(
         m, h_rowPtrA, h_colIndA, h_csrValA,
         h_ssspResultCPU,
         reference_check_preds,
@@ -121,7 +121,7 @@ int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colI
     return depth;
 }
 
-void runSSSP(int argc, char**argv) { 
+void runSssp(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
@@ -253,5 +253,5 @@ void runSSSP(int argc, char**argv) {
 }
 
 int main(int argc, char**argv) {
-    runSSSP(argc, argv);
+    runSssp(argc, argv);
 }    
