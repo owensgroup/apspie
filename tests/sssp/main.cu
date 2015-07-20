@@ -13,6 +13,7 @@
 #include <cuda.h>
 #include <queue>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 
 #include <util.cuh>
 //#include <sssp.cuh>
@@ -122,7 +123,7 @@ int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colI
 
 void runSSSP(int argc, char**argv) { 
     int m, n, edge;
-    ContextPtr context = mgpu::CreateCudaDevice(0);
+    mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
     typedef float typeVal;

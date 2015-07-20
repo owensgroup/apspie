@@ -2,17 +2,14 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
-#include <moderngpu.cuh>
 #include "spmspvMM.cuh"
 
 //#define NBLOCKS 16384
 #define NTHREADS 512
 
-using namespace mgpu;
-
 template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, CudaContext& context) {
-    SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+    mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {

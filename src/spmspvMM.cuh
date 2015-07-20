@@ -2,7 +2,6 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
-#include <moderngpu.cuh>
 #include <cub/cub.cuh>
 
 //#define NBLOCKS 16384
