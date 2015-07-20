@@ -16,7 +16,7 @@
 #include <moderngpu.cuh>
 
 #include <util.cuh>
-//#include <sssp.cuh>
+#include <sssp.cuh>
 
 #include <string.h>
 
