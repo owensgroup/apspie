@@ -13,6 +13,7 @@
 #include <cuda.h>
 #include <deque>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 
 #include <util.cuh>
 #include <bfs.cuh>
@@ -110,7 +111,7 @@ int bfsCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIn
 
 void runBfs(int argc, char**argv) { 
     int m, n, edge;
-    ContextPtr context = mgpu::CreateCudaDevice(0);
+    mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
     typedef float typeVal;

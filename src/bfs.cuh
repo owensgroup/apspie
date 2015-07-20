@@ -8,7 +8,7 @@
 #define NTHREADS 512
 
 template<typename T>
-void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, CudaContext& context) {
+void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
@@ -29,7 +29,7 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
 }
 
 template< typename T >
-void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, CudaContext& context) {
+void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);

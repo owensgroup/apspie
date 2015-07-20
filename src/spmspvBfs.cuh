@@ -30,7 +30,7 @@ __global__ void lookRightFloat( const int *d_csrSwapInd, const int total, float 
     }
 }
 
-void dense2csr( cusparseHandle_t handle, const int m, const cusparseMatDescr_t descr, const float *d_csrFlagFloat, const int *d_nnzPtr, float *d_csrFloat, int *d_csrRowUseless, int *d_csrFlagGood, CudaContext& context ) {
+void dense2csr( cusparseHandle_t handle, const int m, const cusparseMatDescr_t descr, const float *d_csrFlagFloat, const int *d_nnzPtr, float *d_csrFloat, int *d_csrRowUseless, int *d_csrFlagGood, mgpu::CudaContext& context ) {
     cusparseSdense2csr( handle, 1, m, descr, d_csrFlagFloat, 1, d_nnzPtr, d_csrFloat, d_csrRowUseless, d_csrFlagGood );
 }
 
@@ -76,7 +76,7 @@ void spmspvCsr( const int *d_csrColInd, const int edge, const int *d_csrRowPtr, 
     scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 }*/
 
-void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, CudaContext& context ) {
+void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrRowPtr, const int *d_csrRowPtr, const int *d_csrColInd, int *d_bfsResult, const int depth, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -155,13 +155,13 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
         // Compact dense vector into sparse
         if( iter>1 ) {
-            Scan<MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+            mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrFlag, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
             streamCompact<<<NBLOCKS,NTHREADS>>>( d_csrFlag, d_csrRowGood, d_keys.Current(), m );
         }
 
         // Gather from CSR graph into one big array
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
-        Scan<MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
 
