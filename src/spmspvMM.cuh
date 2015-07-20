@@ -217,11 +217,6 @@ void spmspvMM( const typeVal *d_randVec, const int edge, const int m, const type
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
-        //cudaMemcpy(h_csrVecInd, d_keys.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
-        //cudaMemcpy(h_csrVecInd, d_vals.Current(), total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
-
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
 
