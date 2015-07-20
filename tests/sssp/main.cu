@@ -24,13 +24,15 @@
 // A simple CPU-based reference SSSP ranking implementation
 template<typename VertexId>
 int SimpleReferenceSSSP(
-    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA,
-    VertexId                                *source_path,
+    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA, const float *h_csrValA,
+    float                                   *source_path,
     VertexId                                *predecessor,
     VertexId                                src,
     VertexId                                stop)
 {
     //initialize distances
+    //  use -1 to represent infinity for source_path
+    //                      undefined for predecessor
     for (VertexId i = 0; i < m; ++i) {
         source_path[i] = -1;
         if (MARK_PREDECESSORS)
@@ -90,14 +92,14 @@ int SimpleReferenceSSSP(
     return search_depth;
 }
 
-int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, int *h_ssspResultCPU, const int stop ) {
+int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, const float* h_csrValA, float *h_ssspResultCPU, const int stop ) {
 
     typedef int VertexId; // Use as the node identifier type
 
     VertexId *reference_check_preds = NULL;
 
     int depth = SimpleReferenceSSSP<VertexId>(
-        m, h_rowPtrA, h_colIndA,
+        m, h_rowPtrA, h_colIndA, h_csrValA
         h_ssspResultCPU,
         reference_check_preds,
         src,
@@ -176,7 +178,7 @@ void runSSSP(int argc, char**argv) {
     // 8. Run SSSP on CPU. Need data in CSR form first.
     cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
-    depth = ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResultCPU, depth );
+    depth = ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
     print_end_interesting(h_ssspResultCPU, m);
 
     // Make two GPU timers
