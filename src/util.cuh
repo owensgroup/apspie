@@ -42,7 +42,6 @@ struct CpuTimer {
 
 #if defined(CLOCK_PROCESS_CPUTIME_ID)
 
-
 /*boost::timer::cpu_timer::cpu_timer cpu_t;
 
     void Start()
@@ -59,6 +58,7 @@ struct CpuTimer {
     {
         return cpu_t.elapsed().wall/1000000.0;
     }*/
+
     double start;
     double stop;
 
@@ -127,7 +127,7 @@ struct CpuTimer {
  *
  */
 template <typename T>
-int CompareResults(T* computed, T* reference, int len, bool verbose = true)
+int CompareResults(const T* computed, const T* reference, const int len, const bool verbose = true)
 {
     int flag = 0;
     for (int i = 0; i < len; i++) {
@@ -156,6 +156,41 @@ int CompareResults(T* computed, T* reference, int len, bool verbose = true)
             //return flag;
         }
         if (computed[i] != reference[i] && flag > 0) flag+=1;
+    }
+    printf("\n");
+    if (flag == 0)
+        printf("CORRECT\n");
+    return flag;
+}
+
+template <>
+int CompareResults(const float* computed, const float* reference, const int len, const bool verbose )
+{
+    int flag = 0;
+    for (int i = 0; i < len; i++) {
+
+        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38)) {
+            printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
+            std::cout << computed[i];
+            printf(" != ");
+            std::cout << reference[i];
+
+            printf("\nresult[...");
+            for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                std::cout << computed[j];
+                printf(", ");
+            }
+            printf("...]");
+            printf("\nreference[...");
+            for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
+                std::cout << reference[j];
+                printf(", ");
+            }
+            printf("...]");
+            flag += 1;
+            //return flag;
+        }
+        if (computed[i] != reference[i] && flag > 0 && !(computed[i]==-1 && reference[i]>1e38)) flag+=1;
     }
     printf("\n");
     if (flag == 0)

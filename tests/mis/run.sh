@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM15"
+ARCH="GEN_SM35"
 DELTA="-delta 0.01"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
