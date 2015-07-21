@@ -62,7 +62,8 @@ int SimpleReferenceSssp(
     for (VertexId i = 0; i < m; ++i) {
         source_path[i] = -1;
         //Edge = std::make_pair(i, h_csrValA[i]);
-        frontier.push(std::pair<VertexId, value>(i, h_csrValA[i]));
+        if( i!=src )
+            frontier.push(std::pair<VertexId, value>(i, h_csrValA[i]));
         if (MARK_PREDECESSORS)
             predecessor[i] = -1;
     }
@@ -87,6 +88,7 @@ int SimpleReferenceSssp(
         // Set v as vertex index, d as distance
         VertexId v = dequeued_node.first;
         value d = dequeued_node.second;
+        //printf("Popped node: %d %f\n", v, d);
 
         // Locate adjacency list
         int edges_begin = h_rowPtrA[v];
@@ -96,11 +98,13 @@ int SimpleReferenceSssp(
         //   -necessary because we will be having redundant vertices in
         //   queue so we will only do work when we have the best one
         //   -source_path[v] == -1 means we haven't explored it before
-        if( source_path[v] == -1 || d <= source_path[v] ) {
+        if( source_path[v] != -1 || d <= source_path[v] ) {
             for( int edge = edges_begin; edge < edges_end; ++edge ) {
                 //Lookup neighbor and enqueue if undiscovered
                 VertexId neighbor = h_colIndA[edge];
                 value alt_dist = source_path[v] + h_csrValA[edge];
+                //printf("source: %d, target: %d, old_d: %f, new_d: %f\n", v, neighbor, source_path[neighbor], alt_dist);
+                //printf("edge: %d, weight: %f, path_weight: %f\n", edge, h_csrValA[edge], source_path[v]);
                 if( source_path[neighbor] == -1 || alt_dist < source_path[neighbor] ) {
                     source_path[neighbor] = alt_dist;
                     frontier.push(std::pair<VertexId,value>(neighbor,alt_dist));
