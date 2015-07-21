@@ -214,8 +214,8 @@ void runSssp(int argc, char**argv) {
     print_end_interesting(h_ssspResultCPU, m);
 
     // Verify SSSP CPU with BFS CPU.
-    bfsCPU<float>( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, depth);
-    verify<float>( m, h_ssspResult, h_ssspResultCPU );
+    bfsCPU<float>( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, 1000);
+    verify<float>( m, h_ssspResultCPU, h_ssspResult );
 
     // Make two GPU timers
     /*GpuTimer gpu_timer;
