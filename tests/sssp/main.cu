@@ -145,6 +145,77 @@ int ssspCPU( const int src, const int m, const int *h_rowPtrA, const int *h_colI
     return depth;
 }
 
+// A simple CPU-based reference SSSP ranking implementation
+template<typename VertexId, typename value>
+int BoostReferenceSssp(
+    const VertexId m, const VertexId *h_rowPtrA, const VertexId *h_colIndA, const value *h_csrValA,
+    value                                   *source_path,
+    VertexId                                *predecessor,
+    VertexId                                src,
+    VertexId                                stop)
+{
+    typedef std::pair<VertexId, value> Edge;
+
+    // Initialize queue for managing previously-discovered nodes
+    std::priority_queue<std::pair<VertexId, value>, std::vector<std::pair<VertexId, value> >, CompareDist> frontier;
+
+    //initialize distances
+    //  use -1 to represent infinity for source_path
+    //                      undefined for predecessor
+    for (VertexId i = 0; i < m; ++i) {
+        source_path[i] = -1;
+        //Edge = std::make_pair(i, h_csrValA[i]);
+        if( i!=src )
+            frontier.push(std::pair<VertexId, value>(i, h_csrValA[i]));
+        if (MARK_PREDECESSORS)
+            predecessor[i] = -1;
+    }
+    source_path[src] = 0;
+    frontier.push(std::pair<VertexId, value>(src, 0));
+    VertexId search_depth = 0;
+
+    //print_queue(frontier, 10);
+
+    //
+    //Perform SSSP
+    //
+
+    CpuTimer cpu_timer;
+    cpu_timer.Start();
+    while (!frontier.empty()) {
+        
+    }
+    
+    if (MARK_PREDECESSORS)
+        predecessor[src] = -1;
+
+    cpu_timer.Stop();
+    float elapsed = cpu_timer.ElapsedMillis();
+    search_depth++;
+
+    printf("CPU SSSP finished in %lf msec. Search depth is: %d\n", elapsed, search_depth);
+
+    return search_depth;
+}
+
+int ssspBoost( const int src, const int m, const int *h_rowPtrA, const int *h_colIndA, const float* h_csrValA, float *h_ssspResultCPU, const int stop ) {
+
+    typedef int VertexId; // Use as the node identifier type
+    typedef float value;
+
+    VertexId *reference_check_preds = NULL;
+
+    int depth = BoostReferenceSssp<VertexId, value>(
+        m, h_rowPtrA, h_colIndA, h_csrValA,
+        h_ssspResultCPU,
+        reference_check_preds,
+        src,
+        stop);
+
+    print_array(h_ssspResultCPU, m);
+    return depth;
+}
+
 void runSssp(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -218,7 +289,8 @@ void runSssp(int argc, char**argv) {
     print_end_interesting(h_ssspResultCPU, m);
 
     // Verify SSSP CPU with BFS CPU.
-    bfsCPU<float>( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, 1000);
+    //bfsCPU<float>( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, 1000);
+    bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResult, 1000);
     verify<float>( m, h_ssspResultCPU, h_ssspResult );
 
     // Make two GPU timers
