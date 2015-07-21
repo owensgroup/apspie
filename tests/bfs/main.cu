@@ -148,7 +148,7 @@ void runBfs(int argc, char**argv) {
 
     // 4. Read in graph from .mtx file
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
-    print_array( h_csrRowPtrA, m );
+    print_array( h_cooRowIndA, m );
 
     // 5. Allocate GPU memory
     typeVal *d_csrValA;

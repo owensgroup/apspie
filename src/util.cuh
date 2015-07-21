@@ -161,7 +161,8 @@ int CompareResults(T* computed, T* reference, int len, bool verbose = true)
 }
 
 // Verify the result
-void verify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ){
+template <typename value>
+void verify( const int m, const value *h_bfsResult, const value *h_bfsResultCPU ){
     if (h_bfsResultCPU != NULL) {
         printf("Label Validity: ");
         int error_num = CompareResults(h_bfsResult, h_bfsResultCPU, m, true);
