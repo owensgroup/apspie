@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 2.8)
 
 # packages                                                                                                                                                                                                 
 find_package(CUDA)
-#find_package(Boost 1.55 COMPONENTS system timer REQUIRED)
+find_package(Boost 1.55 COMPONENTS system timer REQUIRED)
 
 set( PROJ_NAME      "test" )
 set( PROJ_PATH      ${CMAKE_SOURCE_DIR})
@@ -40,13 +40,13 @@ set(CMAKE_EXE_LINKER_FLAGS "-lpthread")
 #add_custom_target( ptx ALL DEPENDS ${cuda_ptx_files} ${PROJ_HEADERS} main.cu SOURCES main.cu ${PROJ_HEADERS} )
 
 # boost compilation
-#include_directories( ${PROJ_INCLUDES} ${Boost_INCLUDE_DIRS})
-#cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
-#cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
-#target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} ${Boost_LIBRARIES})
-
-# standard compilation
-include_directories( ${PROJ_INCLUDES} )
+include_directories( ${PROJ_INCLUDES} ${Boost_INCLUDE_DIRS})
 cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
 cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
-target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY})
+target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} ${Boost_LIBRARIES})
+
+# standard compilation
+#include_directories( ${PROJ_INCLUDES} )
+#cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
+#cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
+#target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY})
