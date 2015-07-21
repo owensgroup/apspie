@@ -3,8 +3,9 @@
 #include <ctime>
 #include <iostream>
 #include <sys/resource.h>
-#include <time.h>
 #include <stdlib.h>
+#include <sys/time.h>
+//#include <boost/timer/timer.hpp>
 
 template<typename T>
 void print_end_interesting( T *array, int length ) {
@@ -37,47 +38,49 @@ void print_array( T *array, int length ) {
     std::cout << "\n";
 }
 
-timespec diff(timespec start, timespec end)
-{
-    timespec temp;
-	if ((end.tv_nsec-start.tv_nsec)<0) {
-            temp.tv_sec = end.tv_sec-start.tv_sec-1;
-	    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-	} else {
-	    temp.tv_sec = end.tv_sec-start.tv_sec;
-	    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-	}
-    return temp;
-}
-
 struct CpuTimer {
 
 #if defined(CLOCK_PROCESS_CPUTIME_ID)
 
-    timespec start;
-    timespec stop;
+
+/*boost::timer::cpu_timer::cpu_timer cpu_t;
 
     void Start()
     {
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        cpu_t.start();
     }
 
     void Stop()
     {
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+        cpu_t.stop();
     }
 
     float ElapsedMillis()
     {
-        timespec temp;
-        if ((stop.tv_nsec-start.tv_nsec)<0) {
-            temp.tv_sec = stop.tv_sec-start.tv_sec-1;
-            temp.tv_nsec = 1000000000+stop.tv_nsec-start.tv_nsec;
-        } else {
-            temp.tv_sec = stop.tv_sec-start.tv_sec;
-            temp.tv_nsec = stop.tv_nsec-start.tv_nsec;
-        }
-        return temp.tv_nsec/1000000.0;
+        return cpu_t.elapsed().wall/1000000.0;
+    }*/
+    double start;
+    double stop;
+
+    void Start()
+    {
+        static struct timeval tv;
+        static struct timezone tz;
+    	gettimeofday(&tv, &tz);
+        start = tv.tv_sec + 1.e-6*tv.tv_usec;
+    }
+
+    void Stop()
+    {
+        static struct timeval tv;
+        static struct timezone tz;
+        gettimeofday(&tv, &tz);
+        stop = tv.tv_sec + 1.e-6*tv.tv_usec;
+    }
+
+    double ElapsedMillis()
+    {
+        return 1000*(stop - start);
     }
 
 #else
@@ -161,7 +164,8 @@ int CompareResults(T* computed, T* reference, int len, bool verbose = true)
 }
 
 // Verify the result
-void verify( const int m, const int *h_bfsResult, const int *h_bfsResultCPU ){
+template <typename value>
+void verify( const int m, const value *h_bfsResult, const value *h_bfsResultCPU ){
     if (h_bfsResultCPU != NULL) {
         printf("Label Validity: ");
         int error_num = CompareResults(h_bfsResult, h_bfsResultCPU, m, true);
