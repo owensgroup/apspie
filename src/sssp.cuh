@@ -13,25 +13,19 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrVa
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
-template<typename result>
-__global__ void addResultSssp( result *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
+template<typename Value>
+__global__ void addResultSssp( Value *d_ssspResult, Value *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
-        //d_bfsResult[idx] = (d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0) ? iter:d_bfsResult[idx];
-        if( d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0 ) {
-            d_bfsResult[idx] = iter;
-        } else d_spmvResult[idx] = 0;
+        Value temp = fmin(d_spmvResult[idx],d_ssspResult[idx]);
+        d_ssspResult[idx] = temp;
+        d_spmvResult[idx] = temp;
+        //d_ssspResult[idx] = fmin(d_spmvResult[idx],d_ssspResult[idx]);
     }
-    //int tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    //while( tid<N ) {
-        //d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
-    //    tid += blockDim.x*gridDim.x;
-    //}
 }
 
-template< typename T, typename value >
-void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, value *d_ssspResult, const int depth, mgpu::CudaContext& context) {
+template< typename Value >
+void sssp( const int vertex, const int edge, const int m, const Value *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, Value *d_ssspResult, const int depth, mgpu::CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -45,20 +39,20 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     cudaMalloc(&d_spmvSwap, m*sizeof(float));
 
     // Generate initial vector using vertex
-    value *h_ssspResult;
+    Value *h_ssspResult;
     float *h_spmvResult;
-    h_ssspResult = (value*)malloc(m*sizeof(value));
+    h_ssspResult = (Value*)malloc(m*sizeof(Value));
     h_spmvResult = (float*)malloc(m*sizeof(float));
 
     for( int i=0; i<m; i++ ) {
-        h_ssspResult[i]=-1;
-        h_spmvResult[i]=0;
+        h_ssspResult[i]=1.70141e+38;
+        h_spmvResult[i]=1.70141e+38;
         if( i==vertex ) {
             h_ssspResult[i]=0;
-            h_spmvResult[i]=1;
+            h_spmvResult[i]=0;
         }
     }
-    cudaMemcpy(d_ssspResult, h_ssspResult, m*sizeof(value), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_ssspResult, h_ssspResult, m*sizeof(Value), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
 
     // Generate values for BFS (csrValA where everything is 1)
@@ -106,7 +100,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    printf("\nGPU SSSP finished in %f msec. \n", elapsed);
     //printf("The maximum frontier size was: %d.\n", frontier_max);
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
