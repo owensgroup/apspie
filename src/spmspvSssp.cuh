@@ -22,15 +22,15 @@ __global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrF
     }
 }
 
-template<typename typeVal>
-__global__ void preprocessFlag( typeVal *d_csrFlag, const int total ) {
+template<typename Value>
+__global__ void preprocessFlag( Value *d_csrFlag, const int total ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_csrFlag[idx] = 0;
+        d_csrFlag[idx] = 1.70141e+38;
 }
 
 __global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
-        if( d_randVec[idx]>0.5 ) d_randVecInd[idx] = 1;
+        if( d_randVec[idx]>-1 && d_randVec[idx]<1e38) d_randVecInd[idx] = 1;
         else d_randVecInd[idx] = 0;
     }
 }
@@ -45,20 +45,20 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-template<typename typeVal>
-__global__ void scatterFloat( const int total, const int *d_key, const typeVal *d_csrSwapVal, typeVal *d_temp ) {
+template<typename Value>
+__global__ void scatterFloat( const int total, const int *d_key, const Value *d_csrSwapVal, Value *d_temp ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_temp[d_key[idx]] = d_csrSwapVal[idx];
 }
 
-template<typename typeVal>
-__global__ void gather( const int total, const int *d_csrVecInd, const typeVal *d_randVec, typeVal *d_csrVecVal ) {
+template<typename Value>
+__global__ void gather( const int total, const int *d_csrVecInd, const Value *d_randVec, Value *d_csrVecVal ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_csrVecVal[idx] = d_randVec[d_csrVecInd[idx]];
 }
         
-template<typename typeVal>
-__global__ void buildVector( const int m, const float minimum, const typeVal *d_randVec, const int *d_misResult, int *d_inputVector ) {
+template<typename Value>
+__global__ void buildVector( const int m, const float minimum, const Value *d_randVec, const int *d_misResult, int *d_inputVector ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
         if( d_misResult[idx]==-1 && d_randVec[idx] > minimum )
             d_inputVector[idx] = 1;
@@ -67,15 +67,15 @@ __global__ void buildVector( const int m, const float minimum, const typeVal *d_
     }
 }
 
-template<typename typeVal>
-__global__ void updateMis( const int m, int *d_misResult, const typeVal *d_csrSwapVal, const typeVal *d_randVec, const int *d_inputVector) {
+template<typename Value>
+__global__ void updateMis( const int m, int *d_misResult, const Value *d_csrSwapVal, const Value *d_randVec, const int *d_inputVector) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
         if( d_inputVector[idx]==1 && d_randVec[idx] > d_csrSwapVal[idx] )
             d_misResult[idx] = 1;
 }
 
-template<typename typeVal>
-__global__ void updateNeighbor( const int total, int *d_misResult, const int *d_key, const int *d_ind, const typeVal *d_csrVecVal, const typeVal *d_randVec ) {
+template<typename Value>
+__global__ void updateNeighbor( const int total, int *d_misResult, const int *d_key, const int *d_ind, const Value *d_csrVecVal, const Value *d_randVec ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) {
         int key = d_key[idx];
         int ind = d_ind[idx];
@@ -83,13 +83,13 @@ __global__ void updateNeighbor( const int total, int *d_misResult, const int *d_
             d_misResult[key] = 0;
     }
 }
-template<typename typeVal>
-__global__ void elementMult( const int total, const typeVal *d_x, const typeVal*d_y, typeVal *d_result ) {
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]*d_y[idx];
+template<typename Value>
+__global__ void elementMult( const int total, const Value *d_x, const Value*d_y, Value *d_result ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]+d_y[idx];
 } 
 
-template<typename typeVal>
-void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
+template<typename Value>
+void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Value *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, Value *d_misResult, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -104,20 +104,20 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
     int *h_csrVecInd;
     int *d_csrVecInd;
     int *d_csrSwapInd;
-    typeVal *h_csrVecVal;
-    typeVal *d_csrVecVal;
-    typeVal *d_csrSwapVal;
-    typeVal *d_csrTempVal;
+    Value *h_csrVecVal;
+    Value *d_csrVecVal;
+    Value *d_csrSwapVal;
+    Value *d_csrTempVal;
     int h_csrVecCount;
 
     h_csrVecInd = (int *)malloc(edge*sizeof(int));
-    h_csrVecVal = (typeVal *)malloc(edge*sizeof(typeVal));
+    h_csrVecVal = (Value *)malloc(edge*sizeof(Value));
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
-    cudaMalloc(&d_csrVecVal, edge*sizeof(typeVal));
-    cudaMalloc(&d_csrSwapVal, edge*sizeof(typeVal));
-    cudaMalloc(&d_csrTempVal, edge*sizeof(typeVal));
+    cudaMalloc(&d_csrVecVal, edge*sizeof(Value));
+    cudaMalloc(&d_csrSwapVal, edge*sizeof(Value));
+    cudaMalloc(&d_csrTempVal, edge*sizeof(Value));
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
@@ -135,7 +135,7 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
+    cub::DoubleBuffer<Value> d_vals(d_csrVecVal, d_csrSwapVal);
 
     // Allocate temporary storage
     size_t temp_storage_bytes = 93184;
@@ -157,6 +157,10 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
     //float minimum = 1;
     cudaProfilerStart();
 
+    /*    cudaMemcpy(h_csrVecInd, d_, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);*/
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
     //1. Obtain dense bit vector from dense vector
@@ -185,7 +189,7 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
+        printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
 	// Vector Portion
         // a) naive method
@@ -216,20 +220,20 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
+        /*cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_vals.Current(), m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);*/
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_vals.Current(), d_randVec, d_csrVecVal );
 
         //6. Segmented Reduce By Key
         //ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
-        ReduceByKey( d_keys.Current(), d_vals.Current(), total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
+        ReduceByKey( d_keys.Current(), d_vals.Current(), total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_vals.Alternate(), d_misResult );
-
-        /*//7. Update MIS first, then update its neighbors
-        updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
-        updateNeighbor<<<NBLOCKS,NTHREADS>>>( total, d_misResult, d_keys.Current(), d_vals.Current(), d_csrVecVal, d_randVec );
 
         // 8. Error checking. If misResult is all 0s, something has gone wrong.
         // Check using max reduce
@@ -237,17 +241,18 @@ void spmspvSssp( const typeVal *d_randVec, const int edge, const int m, const ty
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
         //    printf( "Error: no node generated\n" );*/
-        //cudaMemcpy(h_csrVecInd, d_keys.Alternate(), m*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecInd,40);
-        //cudaMemcpy(h_csrVecVal, d_vals.Alternate(), m*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecVal,40);
+        /*cudaMemcpy(h_csrVecInd, d_keys.Alternate(), m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecInd,40);
+        cudaMemcpy(h_csrVecVal, d_vals.Alternate(), m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);
+        cudaMemcpy(h_csrVecVal, d_misResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(h_csrVecVal,40);
         //cudaMemcpy(h_csrVecVal, d_misResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(h_csrVecVal,40);
+        //print_array(h_csrVecVal,40);*/
     
-//    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
-    printf("GPU BFS finished in %f msec. \n", elapsed);
+    printf("GPU SSSP iteration finished in %f msec. \n", elapsed);
     gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     //    }

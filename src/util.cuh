@@ -169,7 +169,7 @@ int CompareResults(const float* computed, const float* reference, const int len,
     int flag = 0;
     for (int i = 0; i < len; i++) {
 
-        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38)) {
+        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1)) {
             printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
             std::cout << computed[i];
             printf(" != ");
