@@ -3,7 +3,7 @@
 ARCH="GEN_SM40"
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
-    ./test ../../dataset/small/test_cc.mtx
+    ./test ../../dataset/small/test_cc.mtx -undirected
     ./test ../../dataset/small/test_bc.mtx
     ./test ../../dataset/small/test_pr.mtx
     ./test ../../dataset/small/chesapeake.mtx
@@ -16,7 +16,7 @@ do
     else
         if [ "$ARCH" = "GEN_SM40" ] ; then
             ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
-            ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx
+            ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx -undirected
             break
         fi
     fi
