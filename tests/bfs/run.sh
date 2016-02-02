@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM40"
+ARCH="GEN_SM30"
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx -undirected
@@ -21,6 +21,10 @@ do
         fi
     fi
 done
+
+if [ "$ARCH" = "GEN_SM30" ] ; then
+    ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx -undirected
+fi
 
 for i in 2-bitcoin 6-roadnet 4-pld 
 do
