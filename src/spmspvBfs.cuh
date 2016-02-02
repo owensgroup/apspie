@@ -184,7 +184,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
 
-//    printf("Running iteration %d.\n", iter);
+/*    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("Iter %d: GPU BFS finished in %f msec. \n", iter, elapsed);
@@ -194,10 +194,10 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
     print_array(h_csrVecInd,40);
     cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
+    print_array(h_csrVecInd,40);*/
     }
 
-    printf("Edges traversed: %d\n", cumsum);
+//    printf("Edges traversed: %d\n", cumsum);
 //    cudaProfilerStop();
 //    gpu_timer.Stop();
 //    elapsed += gpu_timer.ElapsedMillis();

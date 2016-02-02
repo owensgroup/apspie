@@ -66,15 +66,31 @@ void runBfs(int argc, char**argv) {
     h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
+    CpuTimer cpu_timerRead;
+    CpuTimer cpu_timerMake;
+    CpuTimer cpu_timerBuild;
     if( undirected ) {
+        cpu_timerRead.Start();
         readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_csrValA );
-        edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        cpu_timerRead.Stop();
+        cpu_timerMake.Start();
+        //edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        cpu_timerMake.Stop();
         printf("Undirected graph has %d nodes, %d edges\n", m, edge);
     } else {
         readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_csrValA );
         printf("Directed graph has %d nodes, %d edges\n", m, edge);
     }
+    cpu_timerBuild.Start();
     buildMatrix<typeVal>( h_csrRowPtrA, h_csrColIndA, h_csrValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+    cpu_timerBuild.Stop();
+    float elapsedRead = cpu_timerRead.ElapsedMillis();
+    float elapsedMake = cpu_timerMake.ElapsedMillis();
+    float elapsedBuild= cpu_timerBuild.ElapsedMillis();
+    printf("readMtx: %f ms\n", elapsedRead);
+    printf("makeSym: %f ms\n", elapsedMake);
+    printf("buildMat: %f ms\n", elapsedBuild);
+
     print_array( h_cooRowIndA, m );
     print_array( h_cooColIndA, m );
     print_array( h_csrRowPtrA, m );

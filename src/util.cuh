@@ -42,23 +42,6 @@ struct CpuTimer {
 
 #if defined(CLOCK_PROCESS_CPUTIME_ID)
 
-/*boost::timer::cpu_timer::cpu_timer cpu_t;
-
-    void Start()
-    {
-        cpu_t.start();
-    }
-
-    void Stop()
-    {
-        cpu_t.stop();
-    }
-
-    float ElapsedMillis()
-    {
-        return cpu_t.elapsed().wall/1000000.0;
-    }*/
-
     double start;
     double stop;
 
