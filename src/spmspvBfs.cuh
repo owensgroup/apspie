@@ -139,6 +139,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     size_t temp_storage_bytes = 93184;
     void *d_temp_storage = NULL;
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
+    int cumsum = 0;
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -151,7 +152,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<depth; iter++ ) {
+    for( iter=1; iter<=depth; iter++ ) {
 
         // Compact dense vector into sparse
         if( iter>1 ) {
@@ -183,18 +184,20 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
 
-//    printf("Running iteration %d.\n", iter);
+/*    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
-    printf("GPU BFS finished in %f msec. \n", elapsed);
+    printf("Iter %d: GPU BFS finished in %f msec. \n", iter, elapsed);
     gpu_timer.Start();
-//    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
-//    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
-//    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
-//    print_array(h_csrVecInd,40);
+    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+    cumsum+=total;
+    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);
+    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_csrVecInd,40);*/
     }
 
+//    printf("Edges traversed: %d\n", cumsum);
 //    cudaProfilerStop();
 //    gpu_timer.Stop();
 //    elapsed += gpu_timer.ElapsedMillis();

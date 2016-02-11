@@ -111,62 +111,6 @@ void fillUniform( float *d_A, int edge ) {
     curandGenerateUniform( prng, d_A, edge );
 }
 
-template<typename typeVal>
-int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
-
-    int realEdge = edge/2;
-    
-    for( int i=0; i<realEdge; i++ ) {
-        h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
-        h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
-    }
-
-    // Sort
-    //struct arrayset *work = (arrayset*)malloc(edge*sizeof(arrayset));
-    //work->values1 = h_cooRowIndA;
-    //work->values2 = h_csrColIndA;
-    struct arrayset work = { h_cooRowIndA, h_csrColIndA };
-    custom_sort(&work, edge);
-
-    int curr = h_csrColIndA[0];
-    int last;
-    int curr_row = h_cooRowIndA[0];
-    int last_row;
-    if( curr_row == curr )
-        h_cooRowIndA[0] = -1;
-
-    // Check for self-loops and repetitions, mark with -1
-    for( int i=1; i<edge; i++ ) {
-        last = curr;
-        last_row = curr_row;
-        curr = h_csrColIndA[i];
-        curr_row = h_cooRowIndA[i];
-
-        // Self-loops
-        if( curr_row == curr )
-            h_csrColIndA[i] = -1;
-        // Repetitions
-        else if( curr == last && curr_row == last_row )
-            h_csrColIndA[i] = -1;
-    }
-
-    // Remove self-loops and repetitions.
-    int shift = 0;
-    int back = 0;
-    for( int i=0; i+shift<edge; i++ ) {
-        if(h_csrColIndA[i] == -1) {
-            for( shift; back<=edge; shift++ ) {
-                back = i+shift;
-                if( h_csrColIndA[back] != -1 ) {
-                    //printf("Swapping %d with %d\n", i, back ); 
-                    h_csrColIndA[i] = h_csrColIndA[back];
-                    h_cooRowIndA[i] = h_cooRowIndA[back];
-                    h_csrColIndA[back] = -1;
-                    break;
-    }}}}
-    return edge-shift;
-}
-
 void runMis(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
