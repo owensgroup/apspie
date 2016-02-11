@@ -91,12 +91,6 @@ __global__ void elementMult( const int total, const typeVal *d_x, const typeVal*
 template<typename typeVal>
 void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, mgpu::CudaContext& context ) {
 
-    cusparseHandle_t handle;
-    cusparseCreate(&handle);
-
-    cusparseMatDescr_t descr;
-    cusparseCreateMatDescr(&descr); 
-
     // h_csrVecInd - index to nonzero vector values
     // h_csrVecVal - for BFS, number of jumps from source
     //             - for SSSP, distance from source
@@ -130,8 +124,17 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     int *d_inputVector;
     cudaMalloc(&d_inputVector, m*sizeof(int));
 
-    MGPU_MEM(int) ones = context.Fill( m, 1 );
-    MGPU_MEM(int) index= context.FillAscending( m, 0, 1 );
+    int *h_ones = (int*)malloc(m*sizeof(int));
+    int *h_index = (int*)malloc(m*sizeof(int));
+    for( int i=0; i<m; i++ ) {
+        h_ones[i] = 1;
+        h_index[i] = i;
+    }
+    int *d_ones, *d_index;
+    cudaMalloc(&d_ones, m*sizeof(int));
+    cudaMalloc(&d_index, m*sizeof(int));
+    cudaMemcpy(d_ones, h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_index, h_index, m*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
@@ -181,9 +184,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         // 4. Extracts the neighbour lists
         //  -> d_keys.Current()
         //  -> d_vals.Current()
-        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
         //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
@@ -193,7 +196,7 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //      1. Gather the elements indexed by d_keys.Current()
         //      2. Expand the elements to memory set by d_csrRowGood
         //   -Element-wise multiplication with frontier
-        IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_randVec, d_csrTempVal, context );
+        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_randVec, d_csrTempVal, context );
         IntervalExpand( total, d_csrRowGood, d_csrTempVal, h_csrVecCount, d_vals.Alternate(), context );
 
         // Matrix Structure Portion
@@ -210,7 +213,7 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_misResult, m );
 
         //4. Sort step
-        //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), index->get(), ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
+        //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), d_index, ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
         //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
@@ -279,9 +282,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     cudaFree(d_csrSwapVal);
     cudaFree(d_csrTempVal);
 
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
-    
     free(h_csrVecInd);
 }
 

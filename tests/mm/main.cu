@@ -36,7 +36,8 @@ void runBfs(int argc, char**argv) {
     int source;
     int device;
     float delta;
-    if( parseArgs( argc, argv, source, device, delta )==true ) {
+    bool undirected = false;
+    if( parseArgs( argc, argv, source, device, delta, undirected )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
