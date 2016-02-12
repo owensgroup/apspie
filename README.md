@@ -8,9 +8,9 @@ apspie
      git submodule add https://github.com/NVlabs/cub.git
      git submodule add https://github.com/NVlabs/moderngpu.git
 3. Build individual algorithms:
-   bfs - Breadth First Search
-   mis - Maximal Independent Set
-   mm - Matrix Multiplication
+...bfs - Breadth First Search  
+...mis - Maximal Independent Set
+...mm - Matrix Multiplication
    sssp - Single Source Shortest Path
    tc - Triangle Counting
 
