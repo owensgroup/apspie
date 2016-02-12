@@ -141,12 +141,18 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         d->h_ones[i] = 1;
         d->h_index[i] = i;
     }
-    cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
+    print_array(d->h_index, 10);
+    /*for( int i=0; i<m; i++ ) {
+        (*d)->h_ones[i] = 1;
+        (*d)->h_index[i] = i;
+    }
+    print_array((*d)->h_index, 10);
+    cudaMemcpy((*d)->d_ones, (*d)->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);*/
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    GpuTimer gpu_timer;
+    /*GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     //int iter = 0;
@@ -224,7 +230,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d->d_csrSwapInd, d->d_csrSwapVal, d_mmResult );
 
-        /*//7. Update MIS first, then update its neighbors
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_mmResult, d_csrTempVal, d_randVec, d_inputVector);
         updateNeighbor<<<NBLOCKS,NTHREADS>>>( total, d_mmResult, d_csrVecInd, d_csrVecVal, d_csrVecVal, d_randVec );
 
@@ -242,10 +247,10 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //print_array(h_csrVecVal,40);
     
 //    printf("Running iteration %d.\n", iter);
-    gpu_timer.Stop();
-    elapsed = gpu_timer.ElapsedMillis();
-    printf("GPU BFS finished in %f msec. \n", elapsed);
-    gpu_timer.Start();
+//    gpu_timer.Stop();
+//    elapsed = gpu_timer.ElapsedMillis();
+//    printf("GPU BFS finished in %f msec. \n", elapsed);
+//    gpu_timer.Start();
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     //    }
     //else if( minimum<=(float)0 )
@@ -266,6 +271,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
-    }
+    //}
 }
 
