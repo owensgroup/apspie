@@ -1,8 +1,8 @@
 apspie
 ======
 
-1. git clone
-2. in base folder:  
+1. git clone https://github.com/owensgroup/apspie.git
+2. In base folder:  
      mkdir ext  
      cd ext  
      git submodule add https://github.com/NVlabs/cub.git  
@@ -14,6 +14,7 @@ apspie
    sssp - Single Source Shortest Path  
    tc - Triangle Counting  
 
+   From base folder:
    cd tests/[insert algorithm here]  
    vi CMakeLists.txt  
    cmake .  
