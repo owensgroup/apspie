@@ -89,12 +89,15 @@ __global__ void elementMult( const int total, const typeVal *d_x, const typeVal*
 } 
 
 template<typename typeVal>
-void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, d_scratch* d, mgpu::CudaContext& context ) {
+void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_misResult, struct d_scratch *d, mgpu::CudaContext& context ) {
 
     // h_csrVecInd - index to nonzero vector values
     // h_csrVecVal - for BFS, number of jumps from source
     //             - for SSSP, distance from source
     // h_csrVecCount - number of nonzero vector values
+    int h_csrVecCount;
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+
     int *h_csrVecInd;
     int *d_csrVecInd;
     int *d_csrSwapInd;
@@ -102,7 +105,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     typeVal *d_csrVecVal;
     typeVal *d_csrSwapVal;
     typeVal *d_csrTempVal;
-    int h_csrVecCount;
 
     h_csrVecInd = (int *)malloc(edge*sizeof(int));
     h_csrVecVal = (typeVal *)malloc(edge*sizeof(typeVal));
@@ -118,27 +120,26 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     cudaMalloc(&d_csrRowBad, m*sizeof(int));
     cudaMalloc(&d_csrRowDiff, m*sizeof(int));
 
-    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
     int *d_inputVector;
     cudaMalloc(&d_inputVector, m*sizeof(int));
 
     int *h_ones = (int*)malloc(m*sizeof(int));
     int *h_index = (int*)malloc(m*sizeof(int));
+    int *d_ones, *d_index;
+    cudaMalloc(&d_ones, m*sizeof(int));
+    cudaMalloc(&d_index, m*sizeof(int));
+
     for( int i=0; i<m; i++ ) {
         h_ones[i] = 1;
         h_index[i] = i;
     }
-    int *d_ones, *d_index;
-    cudaMalloc(&d_ones, m*sizeof(int));
-    cudaMalloc(&d_index, m*sizeof(int));
     cudaMemcpy(d_ones, h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_index, h_index, m*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate device array
-    cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
+    //cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
+    //cub::DoubleBuffer<typeVal> d_vals(d_csrVecVal, d_csrSwapVal);
 
     // Allocate temporary storage
     size_t temp_storage_bytes = 93184;
@@ -172,7 +173,7 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         if( h_csrVecCount == 0 ) 
             printf( "Error: no frontier\n" );
         else {
-        streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_csrVecInd, m );
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -184,27 +185,27 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         // 4. Extracts the neighbour lists
         //  -> d_keys.Current()
         //  -> d_vals.Current()
-        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_csrVecInd, d_index, h_csrVecCount, d_csrRowDiff, d_csrRowBad, context );
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
+        IntervalGather( h_csrVecCount, d_csrVecInd, d_index, h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
         //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
 	// Vector Portion
         // a) naive method
         //   -IntervalExpand into frontier-length list
-        //      1. Gather the elements indexed by d_keys.Current()
+        //      1. Gather the elements indexed by d_csrVecInd
         //      2. Expand the elements to memory set by d_csrRowGood
         //   -Element-wise multiplication with frontier
-        IntervalGather( h_csrVecCount, d_keys.Current(), d_index, h_csrVecCount, d_randVec, d_csrTempVal, context );
-        IntervalExpand( total, d_csrRowGood, d_csrTempVal, h_csrVecCount, d_vals.Alternate(), context );
+        IntervalGather( h_csrVecCount, d_csrVecInd, d_index, h_csrVecCount, d_randVec, d_csrTempVal, context );
+        IntervalExpand( total, d_csrRowGood, d_csrTempVal, h_csrVecCount, d_csrSwapVal, context );
 
         // Matrix Structure Portion
-        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_keys.Current(), context );
+        IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrColInd, d_csrVecInd, context );
         IntervalGather( total, d_csrRowBad, d_csrRowGood, h_csrVecCount, d_csrVal, d_csrTempVal, context );
 
         // Element-wise multiplication
-        elementMult<<<NBLOCKS, NTHREADS>>>( total, d_vals.Alternate(), d_csrTempVal, d_vals.Current() ); 
+        elementMult<<<NBLOCKS, NTHREADS>>>( total, d_csrSwapVal, d_csrTempVal, d_csrVecVal ); 
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -216,7 +217,8 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), d_index, ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
         //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
-        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
+        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_csrVecInd, d_csrSwapInd, d_csrVecVal, d_csrSwapVal, total );
+        //cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_keys, d_vals, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
@@ -224,11 +226,11 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
         //6. Segmented Reduce By Key
         //ReduceByKey( d_keys.Current(), d_vals.Current(), total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_csrSwapVal, &h_csrVecCount, (int*)0, context );
-        ReduceByKey( d_keys.Current(), d_vals.Current(), total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_keys.Alternate(), d_vals.Alternate(), &h_csrVecCount, (int*)0, context );
+        ReduceByKey( d_csrVecInd, d_csrVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_csrSwapInd, d_csrSwapVal, &h_csrVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
-        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_keys.Alternate(), d_vals.Alternate(), d_misResult );
+        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d_csrSwapInd, d_csrSwapVal, d_misResult );
 
         /*//7. Update MIS first, then update its neighbors
         updateMis<<<NBLOCKS,NTHREADS>>>( m, d_misResult, d_csrTempVal, d_randVec, d_inputVector);
