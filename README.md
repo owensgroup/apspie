@@ -14,7 +14,7 @@ apspie
    sssp - Single Source Shortest Path  
    tc - Triangle Counting  
 
-   From base folder:
+   From base folder:  
    cd tests/[insert algorithm here]  
    vi CMakeLists.txt  
    cmake .  
