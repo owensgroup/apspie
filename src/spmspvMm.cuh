@@ -99,6 +99,10 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     size_t temp_storage_bytes = 93184;
 
+
+        cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,3);
+
     /*int *h_csrVecInd;
     int *d_csrVecInd;
     int *d_csrSwapInd;
@@ -158,7 +162,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
     //1. Obtain dense bit vector from dense vector
     bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
-    
+        cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
+     
     //2. Compact dense vector into sparse
     //    indices: d_csrRowGood
     //     values: not necessary (will be expanded into d_csrVecVal in step 3
@@ -191,10 +197,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //      2. Expand the elements to memory set by d_csrRowGood
         //   -Element-wise multiplication with frontier
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_randVec, d->d_csrTempVal, context );
-        cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrTempVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
         IntervalExpand( total, d->d_csrRowGood, d->d_csrTempVal, h_csrVecCount, d->d_csrSwapVal, context );
 
         // Matrix Structure Portion
