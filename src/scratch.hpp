@@ -4,24 +4,24 @@
 //template <typename T>
 typedef struct scratch{
     //Device cudaMallocs
-    int *d_csrVecInd;
-    int *d_csrSwapInd;
-    float *d_csrVecVal;
-    float *d_csrSwapVal;
-    float *d_csrTempVal;
+    int *d_cscVecInd;
+    int *d_cscSwapInd;
+    float *d_cscVecVal;
+    float *d_cscSwapVal;
+    float *d_cscTempVal;
 
-    int *d_csrRowGood;
-    int *d_csrRowBad;
-    int *d_csrRowDiff;
+    int *d_cscColGood;
+    int *d_cscColBad;
+    int *d_cscColDiff;
     int *d_ones;
     int *d_index;
     void *d_temp_storage;
     int *d_randVecInd;
 
     //Host mallocs
-    int *h_csrVecInd;
-    float *h_csrVecVal;
-    int *h_csrRowDiff;
+    int *h_cscVecInd;
+    float *h_cscVecVal;
+    int *h_cscColDiff;
     int *h_ones;
     int *h_index;
 

@@ -7,25 +7,25 @@
 
 #define NTHREADS 512
 
-__global__ void diff( const int *d_csrRowPtr, int *d_csrRowDiff, const int m ) {
+__global__ void diff( const int *d_cscColPtr, int *d_cscColDiff, const int m ) {
 
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<m; idx+=blockDim.x*gridDim.x) {
-        d_csrRowDiff[idx] = d_csrRowPtr[idx+1]-d_csrRowPtr[idx];
+        d_cscColDiff[idx] = d_cscColPtr[idx+1]-d_cscColPtr[idx];
     }
 }
  
-__global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrFlag) {
+__global__ void lookRight( const int *d_cscSwapInd, const int total, int *d_cscFlag) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
-        if( d_csrSwapInd[idx]!=d_csrSwapInd[idx+1] ) d_csrFlag[idx]=0;
-        else d_csrFlag[idx]=1;
+        if( d_cscSwapInd[idx]!=d_cscSwapInd[idx+1] ) d_cscFlag[idx]=0;
+        else d_cscFlag[idx]=1;
     }
 }
 
 template<typename typeVal>
-__global__ void preprocessFlag( typeVal *d_csrFlag, const int total ) {
+__global__ void preprocessFlag( typeVal *d_cscFlag, const int total ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_csrFlag[idx] = 0;
+        d_cscFlag[idx] = 0;
 }
 
 __global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m ) {
@@ -35,26 +35,26 @@ __global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m )
     }
 }
 
-__global__ void streamCompact( const int *d_csrFlag, const int *d_csrRowGood, int *d_csrVecInd, const int m ) {
+__global__ void streamCompact( const int *d_cscFlag, const int *d_cscColGood, int *d_cscVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
-        if( d_csrFlag[idx] ) d_csrVecInd[d_csrRowGood[idx]]=idx;
+        if( d_cscFlag[idx] ) d_cscVecInd[d_cscColGood[idx]]=idx;
 }
 
-__global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag ) {
+__global__ void scatter( const int total, const int *d_cscVecInd, int *d_cscFlag ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_csrFlag[d_csrVecInd[idx]] = 1;
-}
-
-template<typename typeVal>
-__global__ void scatterFloat( const int total, const int *d_key, const typeVal *d_csrSwapVal, typeVal *d_temp ) {
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_temp[d_key[idx]] = d_csrSwapVal[idx];
+        d_cscFlag[d_cscVecInd[idx]] = 1;
 }
 
 template<typename typeVal>
-__global__ void gather( const int total, const int *d_csrVecInd, const typeVal *d_randVec, typeVal *d_csrVecVal ) {
+__global__ void scatterFloat( const int total, const int *d_key, const typeVal *d_cscSwapVal, typeVal *d_temp ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        d_csrVecVal[idx] = d_randVec[d_csrVecInd[idx]];
+        d_temp[d_key[idx]] = d_cscSwapVal[idx];
+}
+
+template<typename typeVal>
+__global__ void gather( const int total, const int *d_cscVecInd, const typeVal *d_randVec, typeVal *d_cscVecVal ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        d_cscVecVal[idx] = d_randVec[d_cscVecInd[idx]];
 }
         
 template<typename typeVal>
@@ -68,18 +68,18 @@ __global__ void buildVector( const int m, const float minimum, const typeVal *d_
 }
 
 template<typename typeVal>
-__global__ void updateMis( const int m, int *d_mmResult, const typeVal *d_csrSwapVal, const typeVal *d_randVec, const int *d_inputVector) {
+__global__ void updateMis( const int m, int *d_mmResult, const typeVal *d_cscSwapVal, const typeVal *d_randVec, const int *d_inputVector) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
-        if( d_inputVector[idx]==1 && d_randVec[idx] > d_csrSwapVal[idx] )
+        if( d_inputVector[idx]==1 && d_randVec[idx] > d_cscSwapVal[idx] )
             d_mmResult[idx] = 1;
 }
 
 template<typename typeVal>
-__global__ void updateNeighbor( const int total, int *d_mmResult, const int *d_key, const int *d_ind, const typeVal *d_csrVecVal, const typeVal *d_randVec ) {
+__global__ void updateNeighbor( const int total, int *d_mmResult, const int *d_key, const int *d_ind, const typeVal *d_cscVecVal, const typeVal *d_randVec ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) {
         int key = d_key[idx];
         int ind = d_ind[idx];
-        if( d_csrVecVal[idx]==d_randVec[ind] && d_mmResult[ind]==1 )
+        if( d_cscVecVal[idx]==d_randVec[ind] && d_mmResult[ind]==1 )
             d_mmResult[key] = 0;
     }
 }
@@ -89,42 +89,42 @@ __global__ void elementMult( const int total, const typeVal *d_x, const typeVal*
 } 
 
 template<typename typeVal>
-void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
+void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, typeVal *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
 
-    // h_csrVecInd - index to nonzero vector values
-    // h_csrVecVal - for BFS, number of jumps from source
+    // h_cscVecInd - index to nonzero vector values
+    // h_cscVecVal - for BFS, number of jumps from source
     //             - for SSSP, distance from source
-    // h_csrVecCount - number of nonzero vector values
-    int h_csrVecCount;
+    // h_cscVecCount - number of nonzero vector values
+    int h_cscVecCount;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     size_t temp_storage_bytes = 93184;
 
     /*printf("randVec:\n");
-    cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_csrVecVal,10);*/
+    cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(d->h_cscVecVal,10);*/
 
-    /*int *h_csrVecInd;
-    int *d_csrVecInd;
-    int *d_csrSwapInd;
-    typeVal *h_csrVecVal;
-    typeVal *d_csrVecVal;
-    typeVal *d_csrSwapVal;
-    typeVal *d_csrTempVal;
+    /*int *h_cscVecInd;
+    int *d_cscVecInd;
+    int *d_cscSwapInd;
+    typeVal *h_cscVecVal;
+    typeVal *d_cscVecVal;
+    typeVal *d_cscSwapVal;
+    typeVal *d_cscTempVal;
 
-    h_csrVecInd = (int *)malloc(edge*sizeof(int));
-    h_csrVecVal = (typeVal *)malloc(edge*sizeof(typeVal));
+    h_cscVecInd = (int *)malloc(edge*sizeof(int));
+    h_cscVecVal = (typeVal *)malloc(edge*sizeof(typeVal));
 
-    cudaMalloc(&d_csrVecInd, edge*sizeof(int));
-    cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
-    cudaMalloc(&d_csrVecVal, edge*sizeof(typeVal));
-    cudaMalloc(&d_csrSwapVal, edge*sizeof(typeVal));
-    cudaMalloc(&d_csrTempVal, edge*sizeof(typeVal));
+    cudaMalloc(&d_cscVecInd, edge*sizeof(int));
+    cudaMalloc(&d_cscSwapInd, edge*sizeof(int));
+    cudaMalloc(&d_cscVecVal, edge*sizeof(typeVal));
+    cudaMalloc(&d_cscSwapVal, edge*sizeof(typeVal));
+    cudaMalloc(&d_cscTempVal, edge*sizeof(typeVal));
 
-    int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff;
-    cudaMalloc(&d_csrRowGood, edge*sizeof(int));
-    cudaMalloc(&d_csrRowBad, m*sizeof(int));
-    cudaMalloc(&d_csrRowDiff, m*sizeof(int));
-    int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
+    int *d_cscColGood, *d_cscColBad, *d_cscColDiff;
+    cudaMalloc(&d_cscColGood, edge*sizeof(int));
+    cudaMalloc(&d_cscColBad, m*sizeof(int));
+    cudaMalloc(&d_cscColDiff, m*sizeof(int));
+    int *h_cscColDiff = (int*)malloc(m*sizeof(int));
 
     int *h_ones = (int*)malloc(m*sizeof(int));
     int *h_index = (int*)malloc(m*sizeof(int));
@@ -155,45 +155,45 @@ void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *
     bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
      
     //2. Compact dense vector into sparse
-    //    indices: d_csrRowGood
-    //     values: not necessary (will be expanded into d_csrVecVal in step 3
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d->d_csrRowGood, context );
-        if( h_csrVecCount == 0 ) 
+    //    indices: d_cscColGood
+    //     values: not necessary (will be expanded into d_cscVecVal in step 3
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
+        if( h_cscVecCount == 0 ) 
             printf( "Error: no frontier\n" );
         else {
-        streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_csrRowGood, d->d_csrVecInd, m );
+        streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_cscColGood, d->d_cscVecInd, m );
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
-        //  -> d_csrRowBad
+        //  -> d_cscColBad
         // 2. Scans them, giving the offset from 0          0  3  6  8
-        //  -> d_csrRowGood
+        //  -> d_cscColGood
         // 3. Extracts the col indices we are interested in 0  6  9
-        //  -> d_csrRowBad
+        //  -> d_cscColBad
         // 4. Extracts the neighbour lists
-        //  -> d_csrVecInd
-        //  -> d_csrVecVal
-        IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d->d_csrRowDiff, d->d_csrRowBad, context );
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_csrRowGood, context );
-        IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_csrRowPtr, d->d_csrRowBad, context );
+        //  -> d_cscVecInd
+        //  -> d_cscVecVal
+        IntervalGather( h_cscVecCount, d->d_cscVecInd, d->d_index, h_cscVecCount, d->d_cscColDiff, d->d_cscColBad, context );
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
+        IntervalGather( h_cscVecCount, d->d_cscVecInd, d->d_index, h_cscVecCount, d_cscColPtr, d->d_cscColBad, context );
 
-        //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
+        //printf("Processing %d nodes frontier size: %d\n", h_cscVecCount, total);
 
 	// Vector Portion
         // a) naive method
         //   -IntervalExpand into frontier-length list
-        //      1. Gather the elements indexed by d_csrVecInd
-        //      2. Expand the elements to memory set by d_csrRowGood
+        //      1. Gather the elements indexed by d_cscVecInd
+        //      2. Expand the elements to memory set by d_cscColGood
         //   -Element-wise multiplication with frontier
-        IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_randVec, d->d_csrTempVal, context );
-        IntervalExpand( total, d->d_csrRowGood, d->d_csrTempVal, h_csrVecCount, d->d_csrSwapVal, context );
+        IntervalGather( h_cscVecCount, d->d_cscVecInd, d->d_index, h_cscVecCount, d_randVec, d->d_cscTempVal, context );
+        IntervalExpand( total, d->d_cscColGood, d->d_cscTempVal, h_cscVecCount, d->d_cscSwapVal, context );
 
         // Matrix Structure Portion
-        IntervalGather( total, d->d_csrRowBad, d->d_csrRowGood, h_csrVecCount, d_csrColInd, d->d_csrVecInd, context );
-        IntervalGather( total, d->d_csrRowBad, d->d_csrRowGood, h_csrVecCount, d_csrVal, d->d_csrTempVal, context );
+        IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscRowInd, d->d_cscVecInd, context );
+        IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
 
         // Element-wise multiplication
-        elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_csrSwapVal, d->d_csrTempVal, d->d_csrVecVal );
+        elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -202,21 +202,21 @@ void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *
         preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_mmResult, m );
 
         //4. Sort step
-        //IntervalGather( ceil(h_csrVecCount/2.0), everyOther->get(), d_index, ceil(h_csrVecCount/2.0), d_csrRowGood, d_csrRowBad, context );
-        //SegSortKeysFromIndices( d_csrVecInd, total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
-        //LocalitySortKeys( d_csrVecInd, total, context );
-        cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_csrVecInd, d->d_csrSwapInd, d->d_csrVecVal, d->d_csrSwapVal, total );
-        //MergesortKeys(d_csrVecInd, total, mgpu::less<int>(), context);
+        //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
+        //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
+        //LocalitySortKeys( d_cscVecInd, total, context );
+        cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+        //MergesortKeys(d_cscVecInd, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
-        //gather<<<NBLOCKS,NTHREADS>>>( total, d_csrVecVal, d_randVec, d_csrVecVal );
+        //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        ReduceByKey( d->d_csrVecInd, d->d_csrVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_csrSwapInd, d->d_csrSwapVal, &h_csrVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
-        //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
+        //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
-        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_csrVecCount, d->d_csrSwapInd, d->d_csrSwapVal, d_mmResult );
+        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
 
         // 8. Error checking. If misResult is all 0s, something has gone wrong.
         // Check using max reduce
@@ -225,19 +225,19 @@ void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *
         //if( total==0 )
         //    printf( "Error: no node generated\n" );*/
         /*printf("scatterFloat:\n"); 
-        cudaMemcpy(d->h_csrVecInd, d->d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,h_csrVecCount);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,h_csrVecCount);
-        cudaMemcpy(d->h_csrVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,40);*/
+        cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_cscVecInd,h_cscVecCount);
+        cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_cscVecVal,h_cscVecCount);
+        cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_cscVecVal,40);*/
     
 //    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
     gpu_timer.Start();
-//    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+//    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
     //    }
     //else if( minimum<=(float)0 )
     //    break;
@@ -256,7 +256,9 @@ void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *
     //    printf( "Error: MIS has -1 in it\n" );
 
     // For future sssp
-    //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
+    //ssspSv( d_cscVecInd, edge, m, d_cscVal, d_cscColPtr, d_cscRowInd, d_spsvResult );
     } 
 }
 
+mXv<float>(d_cscRowIndB, d_cscValB, edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscRowIndC, d_cscValC, d, context) {
+}

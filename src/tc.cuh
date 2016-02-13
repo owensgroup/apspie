@@ -8,8 +8,8 @@
 #define NTHREADS 512
 
 template<typename T>
-void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
-    mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, T *d_spmvResult, mgpu::CudaContext& context) {
+    mgpu::SpmvCsrBinary(d_cscValA, d_cscRowIndA, edge, d_cscColPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
@@ -32,24 +32,24 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
 void allocScratch( d_scratch **d, const int edge, const int m ) {
 
     *d = (d_scratch *)malloc(sizeof(d_scratch));
-    cudaMalloc(&((*d)->d_csrVecInd), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_csrSwapInd), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_csrVecVal), edge*sizeof(float));
-    cudaMalloc(&((*d)->d_csrSwapVal), edge*sizeof(float));
-    cudaMalloc(&((*d)->d_csrTempVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscVecInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscSwapInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscVecVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscSwapVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscTempVal), edge*sizeof(float));
 
-    cudaMalloc(&((*d)->d_csrRowGood), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_csrRowBad), m*sizeof(int));
-    cudaMalloc(&((*d)->d_csrRowDiff), m*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColGood), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColBad), m*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColDiff), m*sizeof(int));
     cudaMalloc(&((*d)->d_ones), m*sizeof(int));
     cudaMalloc(&((*d)->d_index), m*sizeof(int));
     cudaMalloc(&((*d)->d_temp_storage), 93184);
     cudaMalloc(&((*d)->d_randVecInd), m*sizeof(int));
 
     //Host mallocs
-    (*d)->h_csrVecInd = (int*) malloc (edge*sizeof(int));
-    (*d)->h_csrVecVal = (float*) malloc (edge*sizeof(float));
-    (*d)->h_csrRowDiff = (int*) malloc (m*sizeof(int));
+    (*d)->h_cscVecInd = (int*) malloc (edge*sizeof(int));
+    (*d)->h_cscVecVal = (float*) malloc (edge*sizeof(float));
+    (*d)->h_cscColDiff = (int*) malloc (m*sizeof(int));
     (*d)->h_ones = (int*) malloc (m*sizeof(int));
     (*d)->h_index = (int*) malloc (m*sizeof(int));
 
@@ -59,14 +59,9 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
 }
 
 template< typename T >
-void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
+void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
-    /*cusparseHandle_t handle;
-    cusparseCreate(&handle);
-
-    cusparseMatDescr_t descr;
-    cusparseCreateMatDescr(&descr);*/
-
+    // Allocate scratch memory
     d_scratch *d;
     allocScratch( &d, edge, m );
 
@@ -92,11 +87,11 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
 
-    // Generate d_csrRowDiff
+    // Generate d_cscColDiff
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-    diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtrA, d->d_csrRowDiff, m);
+    diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, m);
 
-    // Generate values for BFS (csrValA where everything is 1)
+    // Generate values for BFS (cscValA where everything is 1)
     float *d_bfsValA;
     cudaMalloc(&d_bfsValA, edge*sizeof(float));
 
@@ -109,8 +104,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-    mXv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, d, context);
+    //spmv<float>(d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+    mXv<float>(d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
 
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
@@ -118,16 +113,16 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
-            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
-            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, d, context);
+            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResult,m);
         } else {
-            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, d, context);
+            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -149,4 +144,48 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
 
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
+}
+
+template< typename T >
+void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *h_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+
+    // Allocate scratch memory
+    d_scratch *d;
+    allocScratch( &d, edge, m );
+
+    // Generate d_ones, d_index
+    for( int i=0; i<m; i++ ) {
+        d->h_ones[i] = 1;
+        d->h_index[i] = i;
+    }
+    cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Generate d_cscColDiff
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+    diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, m);
+
+    // Initialize nnz cumulative
+    int *h_cscColPtrC = (int*) malloc (edge*sizeof(int));
+    h_cscColPtrC[0] = 1;
+    int total_nnz = 0;
+    int nnz;
+
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
+    cudaProfilerStart();
+
+    for( int i=0; i<m; i++ ) {
+        mXv<float>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
+        h_cscColPtrC[i+1] = nnz;
+        total_nnz += nnz;
+        //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(h_bfsResult,m);
+    }
+
+    cudaProfilerStop();
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("\nGPU mXm finished in %f msec. \n", elapsed);
 }
