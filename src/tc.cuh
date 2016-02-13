@@ -76,9 +76,12 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     cudaMalloc(&d_spmvSwap, m*sizeof(float));
 
     // Generate initial vector using vertex
+    // Generate d_ones, d_index
     for( int i=0; i<m; i++ ) {
         d->h_bfsResult[i]=-1;
         d->h_spmvResult[i]=0.0;
+        d->h_ones[i] = 1;
+        d->h_index[i] = i;
         if( i==vertex ) {
             d->h_bfsResult[i]=0;
             d->h_spmvResult[i]=1.0;
@@ -86,6 +89,12 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     }
     cudaMemcpy(d_bfsResult, d->h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Generate d_csrRowDiff
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+    diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtrA, d->d_csrRowDiff, m);
 
     // Generate values for BFS (csrValA where everything is 1)
     float *d_bfsValA;
@@ -103,7 +112,6 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
     spmspvMm<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, d, context);
 
-    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 

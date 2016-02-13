@@ -99,9 +99,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     size_t temp_storage_bytes = 93184;
 
-    printf("randVec:\n");
+    /*printf("randVec:\n");
     cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_csrVecVal,10);
+    print_array(d->h_csrVecVal,10);*/
 
     /*int *h_csrVecInd;
     int *d_csrVecInd;
@@ -140,15 +140,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     int *d_randVecInd;
     cudaMalloc(&d_randVecInd, m*sizeof(int));*/
 
-    // Initialize read-only arrays
-    for( int i=0; i<m; i++ ) {
-        d->h_ones[i] = 1;
-        d->h_index[i] = i;
-    }
-    printf("h_index:\n");
-    print_array(d->h_index, m);
-    cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
-
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
@@ -159,11 +150,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     int total= 0;
     //float minimum = 1;
     cudaProfilerStart();
-
-    diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d->d_csrRowDiff, m);
-    printf("diff:\n");
-    cudaMemcpy(d->h_csrVecInd, d->d_csrRowDiff, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(d->h_csrVecInd,m);
 
     //1. Obtain dense bit vector from dense vector
     bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
@@ -176,9 +162,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
             printf( "Error: no frontier\n" );
         else {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_csrRowGood, d->d_csrVecInd, m );
-        printf("streamCompact:\n");
-        cudaMemcpy(d->h_csrVecInd, d->d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,h_csrVecCount);
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -191,18 +174,8 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //  -> d_csrVecInd
         //  -> d_csrVecVal
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d->d_csrRowDiff, d->d_csrRowBad, context );
-        printf("Gather:\n");
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,h_csrVecCount);
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,h_csrVecCount);
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_csrRowPtr, d->d_csrRowBad, context );
-        printf("Scan:\n");
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
 
         //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
@@ -218,23 +191,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         // Matrix Structure Portion
         IntervalGather( total, d->d_csrRowBad, d->d_csrRowGood, h_csrVecCount, d_csrColInd, d->d_csrVecInd, context );
         IntervalGather( total, d->d_csrRowBad, d->d_csrRowGood, h_csrVecCount, d_csrVal, d->d_csrTempVal, context );
-        printf("MatrixStructurePortion:\n");
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,m);
-        cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,m);
 
         // Element-wise multiplication
         elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_csrSwapVal, d->d_csrTempVal, d->d_csrVecVal );
-        printf("elementMult:\n"); 
-        cudaMemcpy(d->h_csrVecInd, d->d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrTempVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrVecVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -254,11 +213,6 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
         //6. Segmented Reduce By Key
         ReduceByKey( d->d_csrVecInd, d->d_csrVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_csrSwapInd, d->d_csrSwapVal, &h_csrVecCount, (int*)0, context );
-        printf("ReduceByKey:\n"); 
-        cudaMemcpy(d->h_csrVecInd, d->d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
-        cudaMemcpy(d->h_csrVecVal, d->d_csrVecVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,total);
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
@@ -270,13 +224,13 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
         //    printf( "Error: no node generated\n" );*/
-        printf("scatterFloat:\n"); 
+        /*printf("scatterFloat:\n"); 
         cudaMemcpy(d->h_csrVecInd, d->d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_csrVecInd,h_csrVecCount);
         cudaMemcpy(d->h_csrVecVal, d->d_csrSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_csrVecVal,h_csrVecCount);
         cudaMemcpy(d->h_csrVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,40);
+        print_array(d->h_csrVecVal,40);*/
     
 //    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
