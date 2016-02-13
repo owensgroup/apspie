@@ -48,26 +48,34 @@ void runBfs(int argc, char**argv) {
     printf("Graph has %d nodes, %d edges\n", m, edge);
 
     // 3. Allocate memory depending on how many edges are present
-    typeVal *h_csrValA;
-    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
+    typeVal *h_csrValA, *h_cscValA, *h_cooValA;
+    int *h_csrRowPtrA, *h_csrColIndA;
+    int *h_cscRowIndA, *h_cscColPtrA;
+    int *h_cooRowIndA, *h_cooColIndA;
     int *h_bfsResult, *h_bfsResultCPU;
 
     h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    //h_cscValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    //h_cooValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
+    //h_cscColPtrA = (int*)malloc((m+1)*sizeof(int));
+    //h_cscRowIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
+    //h_cooColIndA = (int*)malloc(edge*sizeof(int));
     h_bfsResult = (int*)malloc((m)*sizeof(int));
     h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
+    // We are actually doing readMtx<typeVal>( edge, h_cooColIndA, h_cscRowIndA, h_cscValA );
     readMtx<typeVal>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
     print_array( h_cooRowIndA, m );
 
     // 5. Allocate GPU memory
-    typeVal *d_csrValA;
-    int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
-    typeVal *d_cscValA;
+    typeVal *d_csrValA, *d_cscValA, *d_cooValA;
+    int *d_csrRowPtrA, *d_csrColIndA;
     int *d_cscRowIndA, *d_cscColPtrA;
+    int *d_cooRowIndA, *d_cooColIndA;
     int *d_bfsResult;
     cudaMalloc(&d_bfsResult, m*sizeof(int));
 
@@ -75,7 +83,7 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndA, edge*sizeof(int));
     cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
-
+    //cudaMalloc(&d_cooColIndA, edge*sizeof(int));
     cudaMalloc(&d_cscValA, edge*sizeof(typeVal));
     cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
@@ -86,6 +94,7 @@ void runBfs(int argc, char**argv) {
     cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
 
     // 7. Run COO -> CSR kernel
+    // We are actually doing coo2csc( d_cooColIndA, edge, m, d_cscColPtrA )
     coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
     // 8. Run BFS on CPU. Need data in CSR form first.
@@ -153,7 +162,7 @@ void runBfs(int argc, char**argv) {
 
     //free(h_cscValA);
     //free(h_cscRowIndA);
-    //free(h_cscColPtrA);
+    //free(h_cscColPtrA);*/
 }
 
 int main(int argc, char**argv) {
