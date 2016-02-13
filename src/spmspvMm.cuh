@@ -145,6 +145,8 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         d->h_ones[i] = 1;
         d->h_index[i] = i;
     }
+    printf("h_index:\n");
+    print_array(d->h_index, m);
     cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
 
     // First iteration
@@ -159,6 +161,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d->d_csrRowDiff, m);
+    printf("diff:\n");
+    cudaMemcpy(d->h_csrVecInd, d->d_csrRowDiff, m*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(d->h_csrVecInd,m);
 
     //1. Obtain dense bit vector from dense vector
     bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
@@ -186,8 +191,18 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //  -> d_csrVecInd
         //  -> d_csrVecVal
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d->d_csrRowDiff, d->d_csrRowBad, context );
+        printf("Gather:\n");
+        cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,h_csrVecCount);
+        cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,h_csrVecCount);
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_csrRowPtr, d->d_csrRowBad, context );
+        printf("Scan:\n");
+        cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,total);
+        cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,total);
 
         //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
@@ -205,9 +220,9 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         IntervalGather( total, d->d_csrRowBad, d->d_csrRowGood, h_csrVecCount, d_csrVal, d->d_csrTempVal, context );
         printf("MatrixStructurePortion:\n");
         cudaMemcpy(d->h_csrVecInd, d->d_csrRowBad, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
+        print_array(d->h_csrVecInd,m);
         cudaMemcpy(d->h_csrVecInd, d->d_csrRowGood, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,total);
+        print_array(d->h_csrVecInd,m);
 
         // Element-wise multiplication
         elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_csrSwapVal, d->d_csrTempVal, d->d_csrVecVal );
