@@ -17,7 +17,6 @@
 
 #include <util.cuh>
 #include <bfs.cuh>
-//#include <spmspvMM.cuh>
 
 #include <testBfs.cpp>
 #include <string.h>

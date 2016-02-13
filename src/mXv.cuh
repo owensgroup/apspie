@@ -89,7 +89,7 @@ __global__ void elementMult( const int total, const typeVal *d_x, const typeVal*
 } 
 
 template<typename typeVal>
-void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
+void mXv( const typeVal *d_randVec, const int edge, const int m, const typeVal *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, typeVal *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
 
     // h_csrVecInd - index to nonzero vector values
     // h_csrVecVal - for BFS, number of jumps from source
