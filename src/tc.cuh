@@ -86,6 +86,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     }
     cudaMemcpy(d_bfsResult, d->h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->h_spmvResult, d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(d->h_spmvResult, m);
 
     // Generate values for BFS (csrValA where everything is 1)
     float *d_bfsValA;

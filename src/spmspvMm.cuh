@@ -161,7 +161,7 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
     
     //2. Compact dense vector into sparse
     //    indices: d_csrRowGood
-    //     values: not necessary (will be expanded into d_vals.current() in step 3
+    //     values: not necessary (will be expanded into d_csrVecVal in step 3
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d->d_csrRowGood, context );
         if( h_csrVecCount == 0 ) 
             printf( "Error: no frontier\n" );
@@ -191,6 +191,10 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //      2. Expand the elements to memory set by d_csrRowGood
         //   -Element-wise multiplication with frontier
         IntervalGather( h_csrVecCount, d->d_csrVecInd, d->d_index, h_csrVecCount, d_randVec, d->d_csrTempVal, context );
+        cudaMemcpy(d->h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
+        cudaMemcpy(d->h_csrVecVal, d->d_csrTempVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
         IntervalExpand( total, d->d_csrRowGood, d->d_csrTempVal, h_csrVecCount, d->d_csrSwapVal, context );
 
         // Matrix Structure Portion
@@ -199,6 +203,12 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
 
         // Element-wise multiplication
         elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_csrSwapVal, d->d_csrTempVal, d->d_csrVecVal ); 
+        cudaMemcpy(d->h_csrVecVal, d->d_csrSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
+        cudaMemcpy(d->h_csrVecVal, d->d_csrTempVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
+        cudaMemcpy(d->h_csrVecVal, d->d_csrVecVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -217,8 +227,11 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_csrVecVal, d_randVec, d_csrVecVal );
 
         //6. Segmented Reduce By Key
-        //ReduceByKey( d_csrVecInd, d_csrVecVal, total, 0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_csrSwapInd, d_csrSwapVal, &h_csrVecCount, (int*)0, context );
         ReduceByKey( d->d_csrVecInd, d->d_csrVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_csrSwapInd, d->d_csrSwapVal, &h_csrVecCount, (int*)0, context );
+        /*cudaMemcpy(d->h_csrVecInd, d->d_csrVecInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,total);
+        cudaMemcpy(d->h_csrVecVal, d->d_csrVecVal, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecVal,total);*/
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_csrVecCount, total);
 
@@ -230,12 +243,12 @@ void spmspvMm( const typeVal *d_randVec, const int edge, const int m, const type
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
         //    printf( "Error: no node generated\n" );*/
-        cudaMemcpy(d->h_csrVecInd, d->d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecInd,40);
+        /*cudaMemcpy(d->h_csrVecInd, d->d_csrSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_csrVecInd,h_csrVecCount);
         cudaMemcpy(d->h_csrVecVal, d->d_csrSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,40);
+        print_array(d->h_csrVecVal,h_csrVecCount);
         cudaMemcpy(d->h_csrVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_csrVecVal,40);
+        print_array(d->h_csrVecVal,40);*/
     
 //    printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
