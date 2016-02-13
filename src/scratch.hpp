@@ -20,7 +20,7 @@ typedef struct scratch{
 
     //Host mallocs
     int *h_csrVecInd;
-    int *h_csrVecVal;
+    float *h_csrVecVal;
     int *h_csrRowDiff;
     int *h_ones;
     int *h_index;

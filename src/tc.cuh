@@ -48,7 +48,7 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
 
     //Host mallocs
     (*d)->h_csrVecInd = (int*) malloc (edge*sizeof(int));
-    (*d)->h_csrVecVal = (int*) malloc (edge*sizeof(int));
+    (*d)->h_csrVecVal = (float*) malloc (edge*sizeof(float));
     (*d)->h_csrRowDiff = (int*) malloc (m*sizeof(int));
     (*d)->h_ones = (int*) malloc (m*sizeof(int));
     (*d)->h_index = (int*) malloc (m*sizeof(int));
@@ -78,23 +78,21 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     // Generate initial vector using vertex
     for( int i=0; i<m; i++ ) {
         d->h_bfsResult[i]=-1;
-        d->h_spmvResult[i]=0;
+        d->h_spmvResult[i]=0.0;
         if( i==vertex ) {
             d->h_bfsResult[i]=0;
-            d->h_spmvResult[i]=1;
+            d->h_spmvResult[i]=1.0;
         }
     }
     cudaMemcpy(d_bfsResult, d->h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->h_spmvResult, d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_spmvResult, m);
 
     // Generate values for BFS (csrValA where everything is 1)
     float *d_bfsValA;
     cudaMalloc(&d_bfsValA, edge*sizeof(float));
 
     for( int i=0; i<edge; i++ ) {
-        d->h_bfsValA[i] = 1;
+        d->h_bfsValA[i] = 1.0;
     }
     cudaMemcpy(d_bfsValA, d->h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
