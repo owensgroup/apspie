@@ -176,12 +176,15 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
     gpu_timer.Start();
     cudaProfilerStart();
 
-    for( int i=0; i<m; i++ ) {
+    //for( int i=0; i<m; i++ ) {
+    for( int i=0; i<1; i++ ) {
         mXv<float>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
         h_cscColPtrC[i+1] = nnz;
         total_nnz += nnz;
-        //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(h_bfsResult,m);
+        /*cudaMemcpy(d->h_bfsResult, d_cscRowIndC, m*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_bfsResult,m);
+        cudaMemcpy(d->h_spmvResult, d_cscValC, m*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_spmvResult,m);*/
     }
 
     cudaProfilerStop();
