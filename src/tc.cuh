@@ -167,8 +167,8 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
 
     // Initialize nnz cumulative
     int *h_cscColPtrC = (int*)malloc((m+1)*sizeof(int));
-    h_cscColPtrC[0] = 1;
     int total_nnz = 0;
+    h_cscColPtrC[0] = total_nnz;
     int nnz;
 
     GpuTimer gpu_timer;
@@ -176,18 +176,18 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
     gpu_timer.Start();
     cudaProfilerStart();
 
-    //for( int i=0; i<m; i++ ) {
-    for( int i=0; i<1; i++ ) {
+    for( int i=0; i<m; i++ ) {
+    //for( int i=0; i<2; i++ ) {
         nnz = h_cscColPtrB[i+1]-h_cscColPtrB[i];
-        printf("Reading %d elements in matrix B\n", nnz);
+        printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
         mXv<float>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
-        h_cscColPtrC[i+1] = nnz;
         total_nnz += nnz;
+        h_cscColPtrC[i+1] = total_nnz;
         printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
-        cudaMemcpy(d->h_bfsResult, d_cscRowIndC, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_bfsResult,m);
-        cudaMemcpy(d->h_spmvResult, d_cscValC, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_spmvResult,m);
+        cudaMemcpy(d->h_bfsResult, d_cscRowIndC, total_nnz*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_bfsResult,total_nnz);
+        cudaMemcpy(d->h_spmvResult, d_cscValC, total_nnz*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_spmvResult,total_nnz);
     }
 
     cudaProfilerStop();
