@@ -126,7 +126,7 @@ void runBfs(int argc, char**argv) {
     coo2csr( d_cooColIndA, edge, m, d_cscColPtrA );
     cudaMemcpy(d_cscValB, d_cscValA, edge*sizeof(typeVal), cudaMemcpyDeviceToDevice);
     cudaMemcpy(d_cscRowIndB, d_cscRowIndA, edge*sizeof(typeVal), cudaMemcpyDeviceToDevice);
-    cudaMemcpy(d_cscColPtrB, d_cscColPtrA, m*sizeof(typeVal), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_cscColPtrB, d_cscColPtrA, (m+1)*sizeof(typeVal), cudaMemcpyDeviceToDevice);
 
     // 8. Run BFS on CPU. Need data in CSR form first.
     cudaMemcpy(h_cscColPtrA,d_cscColPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
@@ -147,6 +147,8 @@ void runBfs(int argc, char**argv) {
     gpu_timer2.Start();
 
     // 10. Run BFS kernel on GPU
+    for( int i=0; i<m+1; i++ )
+        h_cscColPtrB[i] = h_cscColPtrA[i];
     mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, h_cscColPtrB, d_cscColPtrB, d_cscRowIndB, d_cscColPtrC, d_cscRowIndC, d_cscValC, *context);
     //bfs<typeVal>( source, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context );
 
