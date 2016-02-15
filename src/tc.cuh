@@ -7,9 +7,16 @@
 
 #define NTHREADS 512
 
+// Uses MGPU SpMV
 template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_cscValA, d_cscRowIndA, edge, d_cscColPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+}
+
+// Uses cuSPARSE SpGEMM
+template<typename T>
+void spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+    
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
@@ -169,26 +176,26 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
     int *h_cscColPtrC = (int*)malloc((m+1)*sizeof(int));
     int total_nnz = 0;
     h_cscColPtrC[0] = total_nnz;
-    int nnz;
+    int nnz = 0;
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
 
-    for( int i=0; i<m; i++ ) {
-    //for( int i=0; i<2; i++ ) {
+    //for( int i=0; i<m; i++ ) {
+    for( int i=0; i<2; i++ ) {
         nnz = h_cscColPtrB[i+1]-h_cscColPtrB[i];
-        //printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
+        printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
         if( nnz ) {
         mXv<float>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
         total_nnz += nnz;
         h_cscColPtrC[i+1] = total_nnz;
-        /*printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
+        printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
         cudaMemcpy(d->h_bfsResult, d_cscRowIndC, total_nnz*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_bfsResult,total_nnz);
         cudaMemcpy(d->h_spmvResult, d_cscValC, total_nnz*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_spmvResult,total_nnz);*/
+        print_array(d->h_spmvResult,total_nnz);
         }
     }
 
