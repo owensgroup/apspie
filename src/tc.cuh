@@ -60,8 +60,85 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
 
 // Uses cuSPARSE SpGEMM
 template<typename T>
-void spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC ) {
     
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    cusparseMatDescr_t descr;
+    cusparseCreateMatDescr(&descr);
+
+    const float alf = 1;
+    const float bet = 0;
+    const float *alpha = &alf;
+    const float *beta = &bet;
+
+    int baseC, nnzC;
+    int *nnzTotalDevHostPtr = &nnzC;
+    cudaMalloc( &d_cscColPtrC, (m+1)*sizeof(int));
+    cusparseSetPointerMode( handle, CUSPARSE_POINTER_MODE_HOST );
+
+    cusparseStatus_t status = cusparseXcsrgemmNnz( handle,
+                              CUSPARSE_OPERATION_NON_TRANSPOSE,
+                              CUSPARSE_OPERATION_NON_TRANSPOSE,
+                              m, m, m,
+                              descr, edge,
+                              d_cscColPtrA, d_cscRowIndA,
+                              descr, edge,
+                              d_cscColPtrB, d_cscRowIndB,
+                              descr,
+                              d_cscColPtrC, nnzTotalDevHostPtr );
+
+    if( NULL != nnzTotalDevHostPtr )
+        nnzC = *nnzTotalDevHostPtr;
+    else {
+        cudaMemcpy( &nnzC, d_cscColPtrC+m, sizeof(int), cudaMemcpyDeviceToHost );
+        cudaMemcpy( &baseC, d_cscColPtrC, sizeof(int), cudaMemcpyDeviceToHost );
+        nnzC -= baseC;
+    }
+    cudaMalloc( &d_cscRowIndC, nnzC*sizeof(int));
+    cudaMalloc( &d_cscValC, nnzC*sizeof(float));
+
+    status                  = cusparseScsrgemm( handle,                   
+                              CUSPARSE_OPERATION_NON_TRANSPOSE, 
+                              CUSPARSE_OPERATION_NON_TRANSPOSE, 
+                              m, m, m,
+                              descr, edge,
+                              d_cscValA, d_cscColPtrA, d_cscRowIndA, 
+                              descr, edge,
+                              d_cscValB, d_cscColPtrB, d_cscRowIndB,
+                              descr,
+                              d_cscValC, d_cscColPtrC, d_cscRowIndC );
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("spgemm multiplication successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+            printf("Error: Matrix type not supported.\n");
+    }
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
@@ -208,7 +285,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
 }
 
 template< typename T >
-void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *h_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *h_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
 
     // Allocate scratch memory
     d_scratch *d;

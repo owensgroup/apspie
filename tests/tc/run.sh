@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM25"
+ARCH="GEN_SM20"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test ../../dataset/small/test_cc.mtx -source 3 

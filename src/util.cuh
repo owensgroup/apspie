@@ -38,6 +38,24 @@ void print_array( T *array, int length ) {
     std::cout << "\n";
 }
 
+template<typename T>
+void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
+    if( length>20 ) length=20;
+    int count = 0;
+    for( int i=0; i<length; i++ ) {
+        int row_length = h_csrRowPtr[i+1]-h_csrRowPtr[i];
+        for( int j=0; j<length; j++ ) {
+            if( h_csrColInd[count] != j )
+                std::cout << "0 ";
+            else {
+                std::cout << h_csrColInd[count] << " ";
+                count++;
+            }
+        }
+        std::cout << std::endl;
+    }
+}
+
 struct CpuTimer {
 
 #if defined(CLOCK_PROCESS_CPUTIME_ID)
