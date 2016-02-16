@@ -60,7 +60,7 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
 
 // Uses cuSPARSE SpGEMM
 template<typename T>
-int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, T *d_cscValC, int *d_cscColPtrC, int *d_cscRowIndC ) {
+int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, T* &d_cscValC, int* &d_cscColPtrC, int* &d_cscRowIndC ) {
     
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -70,7 +70,7 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
 
     int baseC, nnzC;
     int *nnzTotalDevHostPtr = &nnzC;
-    cudaMalloc( &d_cscColPtrC, (m+1)*sizeof(int));
+    cudaMalloc((void**) &d_cscColPtrC, (m+1)*sizeof(int));
     cusparseSetPointerMode( handle, CUSPARSE_POINTER_MODE_HOST );
 
     cusparseStatus_t status = cusparseXcsrgemmNnz( handle,
@@ -116,16 +116,9 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
         cudaMemcpy( &baseC, d_cscColPtrC, sizeof(int), cudaMemcpyDeviceToHost );
         nnzC -= baseC;
     }
-    printf("Matrix C: %d nnz\n", nnzC);
-    cudaMalloc( &d_cscRowIndC, nnzC*sizeof(int));
-    cudaMalloc( &d_cscValC, nnzC*sizeof(T));
-
-    cudaMemcpy(d_cscValC, d_cscValA, edge*sizeof(T), cudaMemcpyDeviceToDevice);
-    cudaMemcpy(d_cscRowIndC, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToDevice);
-    cudaMemcpy(d_cscColPtrC, d_cscColPtrA, (m+1)*sizeof(int), cudaMemcpyDeviceToDevice);
-    int *h_cscColPtrC = (int*)malloc(edge*sizeof(int));
-    cudaMemcpy(h_cscColPtrC, d_cscColPtrC, edge*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_cscColPtrC, edge);
+    //printf("Matrix C: %d nnz\n", nnzC);
+    cudaMalloc((void**) &d_cscRowIndC, nnzC*sizeof(int));
+    cudaMalloc((void**) &d_cscValC, nnzC*sizeof(T));
 
     status                  = cusparseScsrgemm( handle,                   
                               CUSPARSE_OPERATION_NON_TRANSPOSE, 
