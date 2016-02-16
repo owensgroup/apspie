@@ -91,10 +91,10 @@ void runBfs(int argc, char**argv) {
     printf("makeSym: %f ms\n", elapsedMake);
     printf("buildMat: %f ms\n", elapsedBuild);
 
-    print_array( h_cooRowIndA, m );
+    /*print_array( h_cooRowIndA, m );
     print_array( h_cooColIndA, m );
     print_array( h_csrRowPtrA, m );
-    print_array( h_csrColIndA, m );
+    print_array( h_csrColIndA, m );*/
 
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
@@ -142,13 +142,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer2.Start();
 
     // 10. Run BFS kernel on GPU
-    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
-
-    // 10. Run BFS kernel on GPU
-    spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    //bfs( 0, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context);
+    bfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();

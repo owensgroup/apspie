@@ -2,7 +2,8 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
-#include "spmspvMm.cuh"
+#include "mXv.cuh"
+#include "scratch.hpp"
 
 //#define NBLOCKS 16384
 #define NTHREADS 512
@@ -29,13 +30,17 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
 }
 
 template< typename T >
-void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
+void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
-    /*cusparseHandle_t handle;
+    cusparseHandle_t handle;
     cusparseCreate(&handle);
 
     cusparseMatDescr_t descr;
-    cusparseCreateMatDescr(&descr);*/
+    cusparseCreateMatDescr(&descr);
+
+    // Allocate scratch memory
+    d_scratch *d;
+    allocScratch( &d, edge, m );
 
     // Allocate GPU memory for result
     float *d_spmvResult, *d_spmvSwap;
@@ -43,56 +48,61 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     cudaMalloc(&d_spmvSwap, m*sizeof(float));
 
     // Generate initial vector using vertex
-    int *h_bfsResult;
-    float *h_spmvResult;
-    h_bfsResult = (int*)malloc(m*sizeof(int));
-    h_spmvResult = (float*)malloc(m*sizeof(float));
-
+    // Generate d_ones, d_index
     for( int i=0; i<m; i++ ) {
-        h_bfsResult[i]=-1;
-        h_spmvResult[i]=0;
+        d->h_bfsResult[i]=-1;
+        d->h_spmvResult[i]=0.0;
+        d->h_ones[i] = 1;
+        d->h_index[i] = i;
         if( i==vertex ) {
-            h_bfsResult[i]=0;
-            h_spmvResult[i]=1;
+            d->h_bfsResult[i]=0;
+            d->h_spmvResult[i]=1.0;
         }
     }
-    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_spmvSwap, h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsResult, d->h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
 
-    // Generate values for BFS (csrValA where everything is 1)
-    float *h_bfsValA, *d_bfsValA;
-    h_bfsValA = (float*)malloc(edge*sizeof(float));
+    // Generate d_cscColDiff
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+    diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, m);
+
+    // Generate values for BFS (cscValA where everything is 1)
+    float *d_bfsValA;
     cudaMalloc(&d_bfsValA, edge*sizeof(float));
 
     for( int i=0; i<edge; i++ ) {
-        h_bfsValA[i] = 1;
+        d->h_bfsValA[i] = 1.0;
     }
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsValA, d->h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    //spmv<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-    spmspvMm<float>(d_spmvSwap, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
 
-    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-    //axpy(d_spmvSwap, d_bfsValA, m);
+    //spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+    //cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+    mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
     for( int i=2; i<depth; i++ ) {
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
-            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
-            spmspvMm<float>( d_spmvResult, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvSwap, context);
+            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+            //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
+            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResult,m);
         } else {
-            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
-            spmspvMm<float>( d_spmvSwap, edge, m, d_bfsValA, d_csrRowPtrA, d_csrColIndA, d_spmvResult, context);
+            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+            //cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -109,11 +119,9 @@ void bfs( const int vertex, const int edge, const int m, const T* d_csrValA, con
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
     // Important: destroy handle
-    //cusparseDestroy(handle);
-    //cusparseDestroyMatDescr(descr);
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
-    free(h_bfsResult);
-    free(h_spmvResult);
 }

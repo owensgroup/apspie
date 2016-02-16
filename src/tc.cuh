@@ -164,7 +164,6 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
     return nnzC;
 }
 
-
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
@@ -179,36 +178,6 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
         //d_bfsResult[tid] = (d_spmvResult[tid]>0.5 && d_bfsResult[tid]<0) ? iter : d_bfsResult[tid];
     //    tid += blockDim.x*gridDim.x;
     //}
-}
-
-//template< typename T >
-void allocScratch( d_scratch **d, const int edge, const int m ) {
-
-    *d = (d_scratch *)malloc(sizeof(d_scratch));
-    cudaMalloc(&((*d)->d_cscVecInd), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_cscSwapInd), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_cscVecVal), edge*sizeof(float));
-    cudaMalloc(&((*d)->d_cscSwapVal), edge*sizeof(float));
-    cudaMalloc(&((*d)->d_cscTempVal), edge*sizeof(float));
-
-    cudaMalloc(&((*d)->d_cscColGood), edge*sizeof(int));
-    cudaMalloc(&((*d)->d_cscColBad), m*sizeof(int));
-    cudaMalloc(&((*d)->d_cscColDiff), m*sizeof(int));
-    cudaMalloc(&((*d)->d_ones), m*sizeof(int));
-    cudaMalloc(&((*d)->d_index), m*sizeof(int));
-    cudaMalloc(&((*d)->d_temp_storage), 93184);
-    cudaMalloc(&((*d)->d_randVecInd), m*sizeof(int));
-
-    //Host mallocs
-    (*d)->h_cscVecInd = (int*) malloc (edge*sizeof(int));
-    (*d)->h_cscVecVal = (float*) malloc (edge*sizeof(float));
-    (*d)->h_cscColDiff = (int*) malloc (m*sizeof(int));
-    (*d)->h_ones = (int*) malloc (m*sizeof(int));
-    (*d)->h_index = (int*) malloc (m*sizeof(int));
-
-    (*d)->h_bfsResult = (int*) malloc (m*sizeof(int));
-    (*d)->h_spmvResult = (float*) malloc (m*sizeof(float));
-    (*d)->h_bfsValA = (float*) malloc (edge*sizeof(float));
 }
 
 template< typename T >
@@ -265,8 +234,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     cudaProfilerStart();
 
     //spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-    cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
-    //mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+    //cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+    mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
 
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
@@ -274,8 +243,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
-            cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
-            //mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
+            //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
+            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -283,8 +252,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
             //print_array(h_spmvResult,m);
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-            cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
-            //mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+            //cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);

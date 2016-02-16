@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 //#include <boost/timer/timer.hpp>
+#include "scratch.hpp"
 
 template<typename T>
 void print_end_interesting( T *array, int length ) {
@@ -579,4 +580,34 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
                     break;
     }}}}
     return edge-shift;
+}
+
+//template< typename T >
+void allocScratch( d_scratch **d, const int edge, const int m ) {
+
+    *d = (d_scratch *)malloc(sizeof(d_scratch));
+    cudaMalloc(&((*d)->d_cscVecInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscSwapInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscVecVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscSwapVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscTempVal), edge*sizeof(float));
+
+    cudaMalloc(&((*d)->d_cscColGood), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColBad), m*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColDiff), m*sizeof(int));
+    cudaMalloc(&((*d)->d_ones), m*sizeof(int));
+    cudaMalloc(&((*d)->d_index), m*sizeof(int));
+    cudaMalloc(&((*d)->d_temp_storage), 93184);
+    cudaMalloc(&((*d)->d_randVecInd), m*sizeof(int));
+
+    //Host mallocs
+    (*d)->h_cscVecInd = (int*) malloc (edge*sizeof(int));
+    (*d)->h_cscVecVal = (float*) malloc (edge*sizeof(float));
+    (*d)->h_cscColDiff = (int*) malloc (m*sizeof(int));
+    (*d)->h_ones = (int*) malloc (m*sizeof(int));
+    (*d)->h_index = (int*) malloc (m*sizeof(int));
+
+    (*d)->h_bfsResult = (int*) malloc (m*sizeof(int));
+    (*d)->h_spmvResult = (float*) malloc (m*sizeof(float));
+    (*d)->h_bfsValA = (float*) malloc (edge*sizeof(float));
 }

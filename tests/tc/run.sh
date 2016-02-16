@@ -17,7 +17,7 @@ fi
 for i in kron_g500-logn16 kron_g500-logn17 kron_g500-logn18 kron_g500-logn19 kron_g500-logn20 kron_g500-logn21
 do
 	if [ "$ARCH" = "GEN_SM25" ] ; then
-        ./test /data/gunrock_dataset/large/$i/$i.mtx
+        ./test /data/gunrock_dataset/large/$i/$i.mtx -undirected
     fi
 done
 
