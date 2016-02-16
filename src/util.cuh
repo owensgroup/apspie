@@ -40,15 +40,15 @@ void print_array( T *array, int length ) {
 
 template<typename T>
 void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
+    std::cout << "Matrix:\n";
     if( length>20 ) length=20;
-    int count = 0;
     for( int i=0; i<length; i++ ) {
-        int row_length = h_csrRowPtr[i+1]-h_csrRowPtr[i];
+        int count = h_csrRowPtr[i];
         for( int j=0; j<length; j++ ) {
             if( h_csrColInd[count] != j )
                 std::cout << "0 ";
             else {
-                std::cout << h_csrColInd[count] << " ";
+                std::cout << h_csrVal[count] << " ";
                 count++;
             }
         }

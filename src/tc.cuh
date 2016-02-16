@@ -60,18 +60,13 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
 
 // Uses cuSPARSE SpGEMM
 template<typename T>
-int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC ) {
+int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, T *d_cscValC, int *d_cscColPtrC, int *d_cscRowIndC ) {
     
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
     cusparseMatDescr_t descr;
     cusparseCreateMatDescr(&descr);
-
-    const float alf = 1;
-    const float bet = 0;
-    const float *alpha = &alf;
-    const float *beta = &bet;
 
     int baseC, nnzC;
     int *nnzTotalDevHostPtr = &nnzC;
@@ -89,6 +84,31 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
                               descr,
                               d_cscColPtrC, nnzTotalDevHostPtr );
 
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("nnz count successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+            printf("Error: Matrix type not supported.\n");
+    }
     if( NULL != nnzTotalDevHostPtr )
         nnzC = *nnzTotalDevHostPtr;
     else {
@@ -96,8 +116,16 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
         cudaMemcpy( &baseC, d_cscColPtrC, sizeof(int), cudaMemcpyDeviceToHost );
         nnzC -= baseC;
     }
+    printf("Matrix C: %d nnz\n", nnzC);
     cudaMalloc( &d_cscRowIndC, nnzC*sizeof(int));
-    cudaMalloc( &d_cscValC, nnzC*sizeof(float));
+    cudaMalloc( &d_cscValC, nnzC*sizeof(T));
+
+    cudaMemcpy(d_cscValC, d_cscValA, edge*sizeof(T), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_cscRowIndC, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_cscColPtrC, d_cscColPtrA, (m+1)*sizeof(int), cudaMemcpyDeviceToDevice);
+    int *h_cscColPtrC = (int*)malloc(edge*sizeof(int));
+    cudaMemcpy(h_cscColPtrC, d_cscColPtrC, edge*sizeof(int), cudaMemcpyDeviceToHost);
+    print_array(h_cscColPtrC, edge);
 
     status                  = cusparseScsrgemm( handle,                   
                               CUSPARSE_OPERATION_NON_TRANSPOSE, 
@@ -139,7 +167,10 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
     // Important: destroy handle
     cusparseDestroy(handle);
     cusparseDestroyMatDescr(descr);
+
+    return nnzC;
 }
+
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
@@ -335,4 +366,5 @@ int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtr
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU mXm finished in %f msec. \n", elapsed);
 
+    return total_nnz;
 }
