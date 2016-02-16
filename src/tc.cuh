@@ -22,9 +22,13 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
     const float *alpha = &alf;
     const float *beta = &bet;
 
-    cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ONE);
-
-    cusparseStatus_t status = cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, m, m, alpha, descr, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector, beta, d_spmvResult);
+    // For CUDA 5.0+
+    cusparseStatus_t status = cusparseScsrmv(handle,                   
+                              CUSPARSE_OPERATION_NON_TRANSPOSE, 
+                              m, m, edge, 
+                              alpha, descr, 
+                              d_csrValA, d_csrRowPtrA, d_csrColIndA, 
+                              d_inputVector, beta, d_spmvResult );
 
     switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
@@ -52,9 +56,6 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
             printf("Error: Matrix type not supported.\n");
     }
 
-    // Important: destroy handle
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
 }
 
 // Uses cuSPARSE SpGEMM
@@ -161,11 +162,11 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
+
     //spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
     cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
     //mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
 
-    //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
 
     for( int i=2; i<depth; i++ ) {
@@ -199,8 +200,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     //printf("The average frontier size was: %d.\n", frontier_sum/depth);
 
     // Important: destroy handle
-    //cusparseDestroy(handle);
-    //cusparseDestroyMatDescr(descr);
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 
     cudaFree(d_spmvResult);
     cudaFree(d_spmvSwap);
@@ -257,7 +258,4 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU mXm finished in %f msec. \n", elapsed);
 
-    // Important: destroy handle
-    cusparseDestroy(handle);
-    cusparseDestroyMatDescr(descr);
 }
