@@ -91,7 +91,8 @@ void runBfs(int argc, char**argv) {
 
     // 5. Allocate GPU memory
     typeVal *d_cscValA, *d_cscValB, *d_cscValC;
-    //int *d_csrRowPtrA, *d_csrColIndA;
+    typeVal *d_csrValA;
+    int *d_csrRowPtrA, *d_csrColIndA;
     int *d_cscRowIndA, *d_cscColPtrA;
     int *d_cscRowIndB, *d_cscColPtrB;
     int *d_cscRowIndC, *d_cscColPtrC;
@@ -99,9 +100,9 @@ void runBfs(int argc, char**argv) {
     int *d_bfsResult;
     cudaMalloc(&d_bfsResult, m*sizeof(int));
 
-    //cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
-    //cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
-    //cudaMalloc(&d_csrColIndA, edge*sizeof(int));
+    cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
+    cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
+    cudaMalloc(&d_csrColIndA, edge*sizeof(int));
     //cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cooColIndA, edge*sizeof(int));
     cudaMalloc(&d_cscValA, edge*sizeof(typeVal));
@@ -142,19 +143,15 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Start();
 
     // 9. Run CSR -> CSC kernel
-    //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    csr2csc<typeVal>( m, edge, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_csrValA, d_csrColIndA, d_csrRowPtrA );
     gpu_timer.Stop();
     gpu_timer2.Start();
 
     // 10. Run BFS kernel on GPU
     for( int i=0; i<m+1; i++ )
         h_cscColPtrB[i] = h_cscColPtrA[i];
-    /*printf("ColPtrB:\n");
-    print_array(h_cscColPtrB, m+1);
-    printf("RowIndB:\n");
-    print_array(h_cscRowIndB, edge);*/
-    mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, h_cscColPtrB, d_cscColPtrB, d_cscRowIndB, d_cscColPtrC, d_cscRowIndC, d_cscValC, *context);
-    //bfs<typeVal>( source, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context );
+    //mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, h_cscColPtrB, d_cscColPtrB, d_cscRowIndB, d_cscColPtrC, d_cscRowIndC, d_cscValC, *context);
+    bfs<typeVal>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context );
 
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();

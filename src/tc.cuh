@@ -9,13 +9,57 @@
 
 // Uses MGPU SpMV
 template<typename T>
-void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, T *d_spmvResult, mgpu::CudaContext& context) {
-    mgpu::SpmvCsrBinary(d_cscValA, d_cscRowIndA, edge, d_cscColPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
+    mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+}
+
+// Uses cuSPARSE SpMV
+template<typename T>
+void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, cusparseHandle_t handle, cusparseMatDescr_t descr ) {
+
+    const float alf = 1;
+    const float bet = 0;
+    const float *alpha = &alf;
+    const float *beta = &bet;
+
+    cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ONE);
+
+    cusparseStatus_t status = cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, m, m, alpha, descr, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_inputVector, beta, d_spmvResult);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            //printf("spmv multiplication successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+        case CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+            printf("Error: Matrix type not supported.\n");
+    }
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 }
 
 // Uses cuSPARSE SpGEMM
 template<typename T>
-void spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+void spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
     
 }
 
@@ -68,6 +112,12 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
 template< typename T >
 void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    cusparseMatDescr_t descr;
+    cusparseCreateMatDescr(&descr);
+
     // Allocate scratch memory
     d_scratch *d;
     allocScratch( &d, edge, m );
@@ -111,8 +161,9 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
-    //spmv<float>(d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-    mXv<float>(d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+    //spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+    cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+    //mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
 
     //axpy(d_spmvSwap, d_bfsValA, m);
     addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
@@ -121,7 +172,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
-            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
+            cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
+            //mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -129,7 +181,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
             //print_array(h_spmvResult,m);
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+            cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+            //mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -203,4 +256,8 @@ void mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPt
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU mXm finished in %f msec. \n", elapsed);
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
+    cusparseDestroyMatDescr(descr);
 }
