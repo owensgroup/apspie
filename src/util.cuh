@@ -13,7 +13,7 @@
 #include <algorithm>
 
 template<typename T>
-void print_end_interesting( T *array, int length ) {
+void print_end_interesting( T *array, int length=10 ) {
     int count=0;
     for( int j=length-1;j>=0; j-- ) {
         if( array[(int)j]!=-1) {
@@ -26,7 +26,7 @@ void print_end_interesting( T *array, int length ) {
 }
 
 template<typename T>
-void print_end( T *array, int length ) {
+void print_end( T *array, int length=10 ) {
     int start = length > 10 ? length-10 : 0;
     for( int j=start;j<length;j++ ) {
         std::cout << array[j] << " ";
@@ -35,7 +35,7 @@ void print_end( T *array, int length ) {
 }
 
 template<typename T>
-void print_array( T *array, int length ) {
+void print_array( T *array, int length=40 ) {
     if( length>40 ) length=40;
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
@@ -45,12 +45,15 @@ void print_array( T *array, int length ) {
 
 template<typename T>
 void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
-    std::cout << "Matrix:\n";
+    //print_array(h_csrRowPtr);
+    //print_array(h_csrColInd); 
+    //print_array(h_csrVal);
+    //std::cout << "Matrix:\n";
     if( length>20 ) length=20;
     for( int i=0; i<length; i++ ) {
         int count = h_csrRowPtr[i];
         for( int j=0; j<length; j++ ) {
-            if( h_csrColInd[count] != j )
+            if( count>=h_csrRowPtr[i+1] || h_csrColInd[count] != j )
                 std::cout << "0 ";
             else {
                 std::cout << h_csrVal[count] << " ";

@@ -30,6 +30,30 @@ int countDiag( const int edge, const int *h_cscRowIndA, const int* h_cooColIndA 
     return count;
 }
 
+template< typename T >
+void buildVal( const int edge, T *h_cscValA ) {
+    for( int i=0; i<edge; i++ )
+        h_cscValA[i] = 1.0;
+}
+
+template< typename T >
+void buildLower( const int m, const int edge_B, const int *h_cscColPtrA, const int *h_cscRowIndA, const T *h_cscValA, int *h_cscColPtrB, int *h_cscRowIndB, T *h_cscValB, bool lower=true ) {
+
+    int count = 0;
+    h_cscColPtrB[0] = count;
+    for( int i=0; i<m; i++ ) {
+        for( int j=h_cscColPtrA[i]; j<h_cscColPtrA[i+1]; j++ ) {
+            if( (lower==true && h_cscRowIndA[j] > i) || (lower==false && h_cscRowIndA[j] < i) ) {
+                printf("%d %d %d\n", i, j, count);
+                h_cscRowIndB[count] = h_cscRowIndA[j];
+                h_cscValB[count] = h_cscValA[j];
+                count++;
+            }
+        }
+        h_cscColPtrB[i+1] = count;
+    }
+}
+
 void runBfs(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -76,22 +100,6 @@ void runBfs(int argc, char**argv) {
     h_bfsResult = (int*)malloc((m)*sizeof(int));
     h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
-    // 3b. Allocate memory to second and third matrices
-    int edge_B, edge_C;
-    int m_B, m_C;
-    m_B = m;
-    m_C = m;
-
-    typeVal *h_cscValB, *h_cscValC;
-    int *h_cscRowIndB, *h_cscColPtrB;
-    int *h_cscRowIndC, *h_cscColPtrC;
-    //h_cscValB = (typeVal*)malloc(edge_B*sizeof(typeVal));
-    //h_cscValC = (typeVal*)malloc(edge_C*sizeof(typeVal));
-    //h_cscRowIndB = (int*)malloc(edge_B*sizeof(int));
-    //h_cscRowIndC = (int*)malloc(edge_C*sizeof(int));
-    //h_cscColPtrB = (int*)malloc(m_B*sizeof(int));
-    //h_cscColPtrC = (int*)malloc(m_C*sizeof(int));
-
     // 4. Read in graph from .mtx file
     // We are actually doing readMtx<typeVal>( edge, h_cooColIndA, h_cscRowIndA, h_cscValA );
     CpuTimer cpu_timerRead;
@@ -117,13 +125,31 @@ void runBfs(int argc, char**argv) {
 
     // 4b. Count diagonal
     int diag = countDiag( edge, h_cooRowIndA, h_cooColIndA ); 
-    edge_B = (edge-diag)/2;
-    edge_C = edge_B;
+    int edge_B = (edge-diag)/2;
+    int edge_C = edge_B;
     printf("Number of elements on diagonal: %d\n", diag);
     printf("Number of elements on L: %d\n", edge_B);
 
+    // 4c. Allocate memory to second and third matrices
+    int m_B = m;
+    int m_C = m;
+
+    typeVal *h_cscValB, *h_cscValC;
+    int *h_cscRowIndB, *h_cscColPtrB;
+    int *h_cscRowIndC, *h_cscColPtrC;
+    h_cscValB = (typeVal*)malloc(edge_B*sizeof(typeVal));
+    h_cscValC = (typeVal*)malloc(edge_C*sizeof(typeVal));
+    h_cscRowIndB = (int*)malloc(edge_B*sizeof(int));
+    h_cscRowIndC = (int*)malloc(edge_C*sizeof(int));
+    h_cscColPtrB = (int*)malloc(m_B*sizeof(int));
+    h_cscColPtrC = (int*)malloc(m_C*sizeof(int));
+
+    buildVal( edge, h_cscValA );
     buildLower( m, edge_B, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrB, h_cscRowIndB, h_cscValB );
-    buildUpper( m, edge_C, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrC, h_cscRowIndC, h_cscValC );
+    //print_matrix( h_cscValA, h_cscColPtrA, h_cscRowIndA, m );
+    //print_matrix( h_cscValB, h_cscColPtrB, h_cscRowIndB, m );
+    buildLower( m, edge_C, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrC, h_cscRowIndC, h_cscValC, false );
+    //print_matrix( h_cscValC, h_cscColPtrC, h_cscRowIndC, m );
 
     // 5. Allocate GPU memory
     typeVal *d_cscValA, *d_cscValB, *d_cscValC;
@@ -146,51 +172,45 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
     // 5b GPU memory for matrices B and C
-    //cudaMalloc(&d_cscValB, edge_B*sizeof(typeVal));
-    //cudaMalloc(&d_cscRowIndB, edge_B*sizeof(int));
-    //cudaMalloc(&d_cscColPtrB, (m_B+1)*sizeof(int));
-    //cudaMalloc(&d_cscValC, edge_C*sizeof(typeVal)); // Allocate C in mXm
-    //cudaMalloc(&d_cscRowIndC, edge_C*sizeof(int));
-    //cudaMalloc(&d_cscColPtrC, (m_C+1)*sizeof(int));
+    cudaMalloc(&d_cscValB, edge_B*sizeof(typeVal));
+    cudaMalloc(&d_cscRowIndB, edge_B*sizeof(int));
+    cudaMalloc(&d_cscColPtrB, (m_B+1)*sizeof(int));
+    cudaMalloc(&d_cscValC, edge_C*sizeof(typeVal)); // Allocate C in mXm
+    cudaMalloc(&d_cscRowIndC, edge_C*sizeof(int));
+    cudaMalloc(&d_cscColPtrC, (m_C+1)*sizeof(int));
 
     // 6. Copy data from host to device
     cudaMemcpy(d_cscValA, h_cscValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cscRowIndA, h_cscRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cscColPtrA, h_cscColPtrA, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
-    // 7. Run COO -> CSR kernel
-    // We are actually doing coo2csc( d_cooColIndA, edge, m, d_cscColPtrA )
-    //coo2csr( d_cooColIndA, edge, m, d_cscColPtrA );
+    // 6b Copy data from host to device for matrices B and C
+    cudaMemcpy(d_cscValB, h_cscValB, (edge_B)*sizeof(typeVal),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cscRowIndB, h_cscRowIndB, (edge_B)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cscColPtrB, h_cscColPtrB, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
-    // 8. Run BFS on CPU. Need data in CSR form first.
-    cudaMemcpy(h_cscColPtrA,d_cscColPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
-    int depth = 1000;
-    depth = bfsCPU( source, m, h_cscColPtrA, h_cscRowIndA, h_bfsResultCPU, depth );
-    print_end_interesting(h_bfsResultCPU, m);
+    cudaMemcpy(d_cscValC, h_cscValC, (edge_C)*sizeof(typeVal),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cscRowIndC, h_cscRowIndC, (edge_C)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_cscColPtrC, h_cscColPtrC, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
-    // Make two GPU timers
+    // 7. [insert CPU verification code here] 
+
+    // 8. Make GPU timers
     GpuTimer gpu_timer;
-    GpuTimer gpu_timer2;
     float elapsed = 0.0f;
-    float elapsed2 = 0.0f;
     gpu_timer.Start();
 
-    // 9. Run CSR -> CSC kernel
-    csr2csc<typeVal>( m, edge, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_csrValA, d_csrColIndA, d_csrRowPtrA );
-    gpu_timer.Stop();
-    gpu_timer2.Start();
+    // 9. Initialize product matrix D
+    
 
     // 10. Print two matrices
 
     // 11. Run spgemm
-    //mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, h_cscColPtrB, d_cscColPtrB, d_cscRowIndB, d_cscValC, d_cscColPtrC, d_cscRowIndC, *context);
-    //bfs<typeVal>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context );
-    //bfs<typeVal>( source, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context );
-    //edge_C = spgemm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, d_cscColPtrC, d_cscRowIndC );
+    //mXm<typeVal>( edge, m, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, h_cscColPtrC, d_cscColPtrC, d_cscRowIndC, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
+    edge_D = spgemm<typeVal>( edge, m, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValD, d_cscColPtrD, d_cscRowIndD );
 
-    gpu_timer2.Stop();
+    gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    elapsed2 += gpu_timer2.ElapsedMillis();
 
     printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
     printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
