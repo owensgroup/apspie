@@ -84,11 +84,11 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
 
     //spmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
     //cuspmv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
-    mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+    /*mXv<float>(d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
 
-    addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);
+    addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, 1, m);*/
 
-    for( int i=2; i<depth; i++ ) {
+    for( int i=1; i<depth; i++ ) {
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);

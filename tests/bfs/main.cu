@@ -70,16 +70,17 @@ void runBfs(int argc, char**argv) {
     CpuTimer cpu_timerMake;
     CpuTimer cpu_timerBuild;
     if( undirected ) {
+        printf("Old edge #: %d\n", edge);
         cpu_timerRead.Start();
         readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_csrValA );
         cpu_timerRead.Stop();
         cpu_timerMake.Start();
-        //edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
         cpu_timerMake.Stop();
-        printf("Undirected graph has %d nodes, %d edges\n", m, edge);
+        printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
     } else {
         readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_csrValA );
-        printf("Directed graph has %d nodes, %d edges\n", m, edge);
+        printf("\nDirected graph has %d nodes, %d edges\n", m, edge);
     }
     cpu_timerBuild.Start();
     buildMatrix<typeVal>( h_csrRowPtrA, h_csrColIndA, h_csrValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
