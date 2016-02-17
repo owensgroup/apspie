@@ -77,6 +77,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     }
     cudaMemcpy(d_bfsValA, d->h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
+    int cumsum = 0;
+    int sum = 0;
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
@@ -93,7 +95,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
-            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
+            sum = mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
@@ -102,21 +104,22 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
             //cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
-            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+            sum = mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResult,m);
         }
+        cumsum+=sum;
     }
 
     cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
-    //printf("The maximum frontier size was: %d.\n", frontier_max);
-    //printf("The average frontier size was: %d.\n", frontier_sum/depth);
+    printf("Traversed edges: %d\n", cumsum);
+    printf("Performance: %f GTEPS\n", (float)cumsum/(elapsed*1000000));
 
     // Important: destroy handle
     cusparseDestroy(handle);

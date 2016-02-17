@@ -8,6 +8,10 @@
 //#include <boost/timer/timer.hpp>
 #include "scratch.hpp"
 
+#include <vector>
+#include <utility>
+#include <algorithm>
+
 template<typename T>
 void print_end_interesting( T *array, int length ) {
     int count=0;
@@ -537,11 +541,16 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
     }
 
     // Sort
-    //struct arrayset *work = (arrayset*)malloc(edge*sizeof(arrayset));
-    //work->values1 = h_cooRowIndA;
-    //work->values2 = h_csrColIndA;
     struct arrayset work = { h_cooRowIndA, h_csrColIndA };
     custom_sort(&work, edge);
+    /*std::vector< std::pair<int, int> > pairs;
+    for( int i=0; i<edge; i++ )
+        pairs.push_back(std::make_pair( h_cooRowIndA[i], h_csrColIndA[i] ));
+    std::sort( pairs.begin(), pairs.end() );
+    for( int i=0; i<edge; i++ ) {
+        h_cooRowIndA[i] = pairs[i].first;
+        h_csrColIndA[i] = pairs[i].second;
+    }*/
 
     int curr = h_csrColIndA[0];
     int last;

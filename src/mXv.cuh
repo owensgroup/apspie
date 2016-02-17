@@ -89,7 +89,7 @@ __global__ void elementMult( const int total, const T *d_x, const T*d_y, T *d_re
 } 
 
 template<typename T>
-void mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, T *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
+int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, T *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
 
     // h_cscVecInd - index to nonzero vector values
     // h_cscVecVal - for BFS, number of jumps from source
@@ -121,9 +121,10 @@ void mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, co
     //    indices: d_cscColGood
     //     values: not necessary (will be expanded into d_cscVecVal in step 3
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
-        if( h_cscVecCount == 0 )
+        if( h_cscVecCount == 0 ) {
             printf( "Error: no frontier\n" );
-        else {
+            return 0;
+        } else {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_cscColGood, d->d_cscVecInd, m );
         
         //3. Gather from CSR graph into one big array       |     |  |
@@ -195,12 +196,13 @@ void mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, co
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,40);*/
     
-//    printf("Running iteration %d.\n", iter);
+    //printf("Running iteration %d.\n", iter);
     gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
     gpu_timer.Start();
-//    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
+    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
+    return total;
     //    }
     //else if( minimum<=(float)0 )
     //    break;
