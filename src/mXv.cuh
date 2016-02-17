@@ -197,11 +197,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         print_array(d->h_cscVecVal,40);*/
     
     //printf("Running iteration %d.\n", iter);
-    gpu_timer.Stop();
+    /*gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
     gpu_timer.Start();
-    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
+    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);*/
     return total;
     //    }
     //else if( minimum<=(float)0 )
@@ -240,13 +240,13 @@ void mXv( const int *d_randVecInd, const T *d_randVecVal, const int edge, const 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    GpuTimer gpu_timer;
-    float elapsed = 0.0f;
-    gpu_timer.Start();
+    //GpuTimer gpu_timer;
+    //float elapsed = 0.0f;
+    //gpu_timer.Start();
     //int iter = 0;
     int total= 0;
     //float minimum = 1;
-    cudaProfilerStart();
+    //cudaProfilerStart();
 
     // 1. We are given how many nonzeros exist in this column of B 
         h_cscVecCount = nnz;

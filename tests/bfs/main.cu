@@ -143,6 +143,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer2.Start();
 
     // 10. Run BFS kernel on GPU
+    //spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     bfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     gpu_timer2.Stop();
     elapsed += gpu_timer.ElapsedMillis();
