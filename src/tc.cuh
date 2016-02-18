@@ -312,7 +312,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
 }
 
 template< typename T >
-int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *h_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, int *d_cscColPtrC, int *d_cscRowIndC, T *d_cscValC, mgpu::CudaContext& context) {
+int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, const T* d_cscValB, const int *h_cscColPtrB, const int *d_cscColPtrB, const int *d_cscRowIndB, T *d_cscValC, int *d_cscColPtrC, int *d_cscRowIndC, mgpu::CudaContext& context) {
 
     // Allocate scratch memory
     d_scratch *d;
@@ -325,6 +325,9 @@ int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtr
     }
     cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc((void**) &d_cscColPtrC, (m+1)*sizeof(int));
+    cudaMalloc((void**) &d_cscRowIndC, 16*edge*sizeof(int));
+    cudaMalloc((void**) &d_cscValC, 16*edge*sizeof(T));
 
     // Generate d_cscColDiff
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
@@ -341,19 +344,19 @@ int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtr
     gpu_timer.Start();
     cudaProfilerStart();
 
-    //for( int i=0; i<m; i++ ) {
-    for( int i=0; i<2; i++ ) {
+    for( int i=0; i<m; i++ ) {
+    //for( int i=0; i<2; i++ ) {
         nnz = h_cscColPtrB[i+1]-h_cscColPtrB[i];
-        printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
+        //printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
         if( nnz ) {
-        mXv<float>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
+        mXv<T>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
         total_nnz += nnz;
         h_cscColPtrC[i+1] = total_nnz;
-        printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
-        cudaMemcpy(d->h_bfsResult, d_cscRowIndC, total_nnz*sizeof(int), cudaMemcpyDeviceToHost);
+        //printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
+        /*cudaMemcpy(d->h_bfsResult, d_cscRowIndC, total_nnz*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_bfsResult,total_nnz);
         cudaMemcpy(d->h_spmvResult, d_cscValC, total_nnz*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_spmvResult,total_nnz);
+        print_array(d->h_spmvResult,total_nnz);*/
         }
     }
 
@@ -361,6 +364,12 @@ int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtr
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU mXm finished in %f msec. \n", elapsed);
+
+    int *h_cscRowIndC = (int*)malloc(total_nnz*sizeof(int));
+    T *h_cscValC = (T*)malloc(total_nnz*sizeof(T));
+    cudaMemcpy(h_cscRowIndC, d_cscRowIndC, total_nnz*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscValC, d_cscValC, total_nnz*sizeof(T), cudaMemcpyDeviceToHost);
+    print_matrix(h_cscValC, h_cscColPtrC, h_cscRowIndC, m);
 
     return total_nnz;
 }

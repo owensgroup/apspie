@@ -210,25 +210,23 @@ void runBfs(int argc, char**argv) {
     // 10. Print two matrices
 
     // 11. Run spgemm
-    //mXm<typeVal>( edge, m, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, h_cscColPtrC, d_cscColPtrC, d_cscRowIndC, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
     // Must be UxL because we are using CSC matrices rather than specified CSR
     // input required by cuSPARSE
     int NT = 512;
     int NB = (m+NT-1)/NT;
     gpu_timer.Start();
-    edge_D = spgemm<typeVal>( edge, m, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValD, d_cscColPtrD, d_cscRowIndD );
+    
+    edge_D = mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValA, h_cscColPtrA, d_cscColPtrA, d_cscRowIndA, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
+    //edge_D = spgemm<typeVal>( edge, m, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValD, d_cscColPtrD, d_cscRowIndD );
     gpu_timer.Stop();
-    gpu_timer2.Start();
+    /*gpu_timer2.Start();
     ewiseMultTc<<<NB, NT>>>( edge, m, d_cscValD, d_cscColPtrD, d_cscRowIndD, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValA );
     gpu_timer2.Stop();
     gpu_timer3.Start();
-    //mgpu::Reduce<typeVal>( *d_cscValA, m, (typeVal) 0, mgpu::plus<typeVal>(), (typeVal*) 0, &n_tri, context ); 
-    //mgpu::Reduce<float*, float, mgpu::plus<float> >( (float*)d_cscValA, m, (float) 0, mgpu::plus<float>(), (float*) 0, &n_tri, context ); 
-    //mgpu::Scan<mgpu::MgpuScanTypeExc>( d_cscValA, m, (typeVal) 0, mgpu::plus<typeVal>(), (typeVal*)0, &n_tri, d_cscValB, context );
     typeVal n_tri = mgpu::Reduce( d_cscValA, m, *context ); 
-    gpu_timer3.Stop();
+    gpu_timer3.Stop();*/
     elapsed += gpu_timer.ElapsedMillis();
-    elapsed2 += gpu_timer2.ElapsedMillis();
+    /*elapsed2 += gpu_timer2.ElapsedMillis();
     elapsed3 += gpu_timer3.ElapsedMillis();
 
     printf("spgemm finished in %f msec.\n", elapsed);
@@ -244,7 +242,7 @@ void runBfs(int argc, char**argv) {
     h_cscValD = (typeVal*)malloc(edge_D*sizeof(typeVal));
     h_cscRowIndD = (int*)malloc(edge_D*sizeof(int));
     h_cscColPtrD = (int*)malloc(m_D*sizeof(int));
-    /*cudaMemcpy(h_cscRowIndD, d_cscRowIndD, edge_D*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscRowIndD, d_cscRowIndD, edge_D*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_cscColPtrD, d_cscColPtrD, (m_D+1)*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_cscValD, d_cscValD, edge_D*sizeof(float), cudaMemcpyDeviceToHost);
     printf("Matrix D: %dx%d with %d nnz\n", m, m, edge_D);

@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM15"
+ARCH="GEN_SM35"
 
 for i in delaunay_n24 rgg_n_2_24_s0
 do
