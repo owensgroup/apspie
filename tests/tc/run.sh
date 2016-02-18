@@ -1,10 +1,13 @@
 
 
-ARCH="GEN_SM20"
+ARCH="GEN_SM15"
 
-if [ "$ARCH" = "GEN_SM15" ] ; then
-    ./test ../../dataset/small/test_cc.mtx -source 3 
-fi
+for i in delaunay_n24 rgg_n_2_24_s0
+do
+    if [ "$ARCH" = "GEN_SM15" ] ; then
+        ./test /data/gunrock_dataset/large/$i/$i.mtx
+    fi
+done
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx

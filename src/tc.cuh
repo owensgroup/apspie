@@ -169,12 +169,33 @@ template< typename T >
 __global__ void ewiseMultTc( const int edge, const int m, const T *d_cscValD, const int *d_cscColPtrD, const int *d_cscRowIndD, const T *d_cscValC, const int *d_cscColPtrC, const int *d_cscRowIndC, T *d_cscVecVal ) {
     int stride = gridDim.x * blockDim.x;
     int tid = blockIdx.x*blockDim.x + threadIdx.x;
-    int count = 0;
-    int 
-    for (int i = tid; i < length; i += stride) {
-        
+    T count = 0;
+    int i, k;
+    int i_end, k_end;
+    int i_row, k_row;
+    for (int idx = tid; idx < m; idx += stride) {
+        i = d_cscColPtrC[idx];
+        k = d_cscColPtrD[idx];
+        i_end = d_cscColPtrC[idx+1];
+        k_end = d_cscColPtrD[idx+1];
+
+        i_row = d_cscRowIndC[i];
+        k_row = d_cscRowIndD[k];
+        while( i<i_end && k<k_end && k_row < idx ) {
+            int diff = i_row - k_row;
+            if( diff == 0 )
+                count += d_cscValD[k];
+            if( diff <= 0 ) {
+                i++;
+                i_row = d_cscRowIndC[i];
+            }
+            if( diff >= 0 ) {
+                k++;
+                k_row = d_cscRowIndD[k];
+            }
+        }
     }
-    d_csrVecVal[tid] = count;
+    d_cscVecVal[tid] = count;
 }
 
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
