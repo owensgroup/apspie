@@ -164,6 +164,19 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
     return nnzC;
 }
 
+// TODO: move TC code to here
+template< typename T >
+__global__ void ewiseMultTc( const int edge, const int m, const T *d_cscValD, const int *d_cscColPtrD, const int *d_cscRowIndD, const T *d_cscValC, const int *d_cscColPtrC, const int *d_cscRowIndC, T *d_cscVecVal ) {
+    int stride = gridDim.x * blockDim.x;
+    int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    int count = 0;
+    int 
+    for (int i = tid; i < length; i += stride) {
+        
+    }
+    d_csrVecVal[tid] = count;
+}
+
 __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {

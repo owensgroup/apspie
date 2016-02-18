@@ -48,7 +48,7 @@ void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length )
     //print_array(h_csrRowPtr);
     //print_array(h_csrColInd); 
     //print_array(h_csrVal);
-    //std::cout << "Matrix:\n";
+    std::cout << "Matrix:\n";
     if( length>20 ) length=20;
     for( int i=0; i<length; i++ ) {
         int count = h_csrRowPtr[i];
