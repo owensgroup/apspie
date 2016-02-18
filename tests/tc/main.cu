@@ -222,11 +222,10 @@ void runBfs(int argc, char**argv) {
     ewiseMultTc<<<NB, NT>>>( edge, m, d_cscValD, d_cscColPtrD, d_cscRowIndD, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValA );
     gpu_timer2.Stop();
     gpu_timer3.Start();
-    float n_tri;
     //mgpu::Reduce<typeVal>( *d_cscValA, m, (typeVal) 0, mgpu::plus<typeVal>(), (typeVal*) 0, &n_tri, context ); 
-    mgpu::Reduce<float*, float, mgpu::plus<float> >( (float*)d_cscValA, m, (float) 0, mgpu::plus<float>(), (float*) 0, &n_tri, context ); 
+    //mgpu::Reduce<float*, float, mgpu::plus<float> >( (float*)d_cscValA, m, (float) 0, mgpu::plus<float>(), (float*) 0, &n_tri, context ); 
     //mgpu::Scan<mgpu::MgpuScanTypeExc>( d_cscValA, m, (typeVal) 0, mgpu::plus<typeVal>(), (typeVal*)0, &n_tri, d_cscValB, context );
-    //typeVal n_tri = mgpu::Reduce<typeVal>( d_cscValA, m, context ); 
+    typeVal n_tri = mgpu::Reduce( d_cscValA, m, *context ); 
     gpu_timer3.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     elapsed2 += gpu_timer2.ElapsedMillis();
