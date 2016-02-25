@@ -54,6 +54,27 @@ void buildLower( const int m, const int edge_B, const int *h_cscColPtrA, const i
     }
 }
 
+long long squareDegree( const int m, int *h_cscColPtrA ) {
+    long long sum = 0;
+    long long deg = 0;
+    for( int i=0; i<m; i++ ) {
+        deg = h_cscColPtrA[i+1] - h_cscColPtrA[i];
+        sum += deg*deg;
+    }
+    return sum;
+}
+
+int maxDegree( const int m, int *h_cscColPtrA ) {
+    int max = 0;
+    int deg = 0;
+    for( int i=0; i<m; i++ ) {
+        deg = h_cscColPtrA[i+1] - h_cscColPtrA[i];
+        if( deg > max )
+            max = deg;
+    }
+    return max;
+}
+
 void runBfs(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
@@ -130,6 +151,8 @@ void runBfs(int argc, char**argv) {
     int edge_C = edge_B;
     printf("Number of elements on diagonal: %d\n", diag);
     printf("Number of elements on L: %d\n", edge_B);
+    printf("The max degree is: %d\n", maxDegree(m, h_cscColPtrA));
+    printf("Square degree sum is: %lld\n", squareDegree(m, h_cscColPtrA));
 
     // 4c. Allocate memory to second and third matrices
     int m_B = m;
@@ -216,17 +239,17 @@ void runBfs(int argc, char**argv) {
     int NB = (m+NT-1)/NT;
     gpu_timer.Start();
     
-    edge_D = mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValA, h_cscColPtrA, d_cscColPtrA, d_cscRowIndA, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
-    //edge_D = spgemm<typeVal>( edge, m, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValD, d_cscColPtrD, d_cscRowIndD );
+    //edge_D = mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValA, h_cscColPtrA, d_cscColPtrA, d_cscRowIndA, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
+    edge_D = spgemm<typeVal>( edge, m, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValD, d_cscColPtrD, d_cscRowIndD );
     gpu_timer.Stop();
-    /*gpu_timer2.Start();
+    gpu_timer2.Start();
     ewiseMultTc<<<NB, NT>>>( edge, m, d_cscValD, d_cscColPtrD, d_cscRowIndD, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValA );
     gpu_timer2.Stop();
     gpu_timer3.Start();
     typeVal n_tri = mgpu::Reduce( d_cscValA, m, *context ); 
-    gpu_timer3.Stop();*/
+    gpu_timer3.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    /*elapsed2 += gpu_timer2.ElapsedMillis();
+    elapsed2 += gpu_timer2.ElapsedMillis();
     elapsed3 += gpu_timer3.ElapsedMillis();
 
     printf("spgemm finished in %f msec.\n", elapsed);
@@ -234,6 +257,7 @@ void runBfs(int argc, char**argv) {
     printf("reduce finished in %f msec.\n", elapsed3);
     cudaMemcpy(h_cscValA, d_cscValA, m*sizeof(float), cudaMemcpyDeviceToHost);
     print_array(h_cscValA, m);
+    printf("total runtime: %f msec.\n", elapsed+elapsed2+elapsed3);
     printf("Number of triangles: %f\n", n_tri);
 
     // 11. Compare with CPU BFS for errors
@@ -246,7 +270,7 @@ void runBfs(int argc, char**argv) {
     cudaMemcpy(h_cscColPtrD, d_cscColPtrD, (m_D+1)*sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_cscValD, d_cscValD, edge_D*sizeof(float), cudaMemcpyDeviceToHost);
     printf("Matrix D: %dx%d with %d nnz\n", m, m, edge_D);
-    print_matrix( h_cscValD, h_cscColPtrD, h_cscRowIndD, m );*/
+    //print_matrix( h_cscValD, h_cscColPtrD, h_cscRowIndD, m );
 }
 
 int main(int argc, char**argv) {

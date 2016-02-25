@@ -32,7 +32,7 @@ void cuspmv( const T *d_inputVector, const int edge, const int m, const T *d_csr
 
     switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
-            //printf("spmv multiplication successful!\n");
+            printf("spmv multiplication successful!\n");
             break;
         case CUSPARSE_STATUS_NOT_INITIALIZED:
             printf("Error: Library not initialized.\n");
@@ -116,7 +116,7 @@ int spgemm( const int edge, const int m, const T* d_cscValA, const int *d_cscCol
         cudaMemcpy( &baseC, d_cscColPtrC, sizeof(int), cudaMemcpyDeviceToHost );
         nnzC -= baseC;
     }
-    //printf("Matrix C: %d nnz\n", nnzC);
+    //printf("Output matrix: %d nnz\n", nnzC);
     cudaMalloc((void**) &d_cscRowIndC, nnzC*sizeof(int));
     cudaMalloc((void**) &d_cscValC, nnzC*sizeof(T));
 
