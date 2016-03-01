@@ -70,16 +70,17 @@ void runBfs(int argc, char**argv) {
     CpuTimer cpu_timerMake;
     CpuTimer cpu_timerBuild;
     if( undirected ) {
+        printf("Old edge #: %d\n", edge);
         cpu_timerRead.Start();
         readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_csrValA );
         cpu_timerRead.Stop();
         cpu_timerMake.Start();
-        //edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
         cpu_timerMake.Stop();
-        printf("Undirected graph has %d nodes, %d edges\n", m, edge);
+        printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
     } else {
         readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_csrValA );
-        printf("Directed graph has %d nodes, %d edges\n", m, edge);
+        printf("\nDirected graph has %d nodes, %d edges\n", m, edge);
     }
     cpu_timerBuild.Start();
     buildMatrix<typeVal>( h_csrRowPtrA, h_csrColIndA, h_csrValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
@@ -91,10 +92,10 @@ void runBfs(int argc, char**argv) {
     printf("makeSym: %f ms\n", elapsedMake);
     printf("buildMat: %f ms\n", elapsedBuild);
 
-    print_array( h_cooRowIndA, m );
+    /*print_array( h_cooRowIndA, m );
     print_array( h_cooColIndA, m );
     print_array( h_csrRowPtrA, m );
-    print_array( h_csrColIndA, m );
+    print_array( h_csrColIndA, m );*/
 
     // 5. Allocate GPU memory
     typeVal *d_csrValA;
@@ -127,43 +128,20 @@ void runBfs(int argc, char**argv) {
     //cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
     depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_bfsResultCPU, depth );
-    print_end_interesting(h_bfsResultCPU, m);
-
-    // Make two GPU timers
-    GpuTimer gpu_timer;
-    GpuTimer gpu_timer2;
-    float elapsed = 0.0f;
-    float elapsed2 = 0.0f;
-    gpu_timer.Start();
 
     // 9. Run CSR -> CSC kernel
-    csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
-    gpu_timer.Stop();
-    gpu_timer2.Start();
+    //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
 
     // 10. Run BFS kernel on GPU
-    //bfs( i, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, 5 );
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, 5 );
-
-    // 10. Run BFS kernel on GPU
+    // Experiment 1: Optimized BFS using mXv (no Val array)
     spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-    //bfs( 0, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    //bfs( 0, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context);
-    gpu_timer2.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
-    elapsed2 += gpu_timer2.ElapsedMillis();
 
-    printf("CSR->CSC finished in %f msec\n", elapsed);
-    printf("BFS finished in %f msec performed %d iterations\n", elapsed2, depth-1);
-    //printf("GPU BFS finished in %f msec. not including transpose\n", elapsed2);
-
-    cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrColIndA, m);
-
+    // Experiment 2: Optimized BFS using mXv
+    //bfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     // Compare with CPU BFS for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );
-    print_array(h_bfsResult, m);
+    //print_array(h_bfsResult, m);
 
     // Compare with SpMV for errors
     //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);

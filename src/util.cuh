@@ -6,9 +6,14 @@
 #include <stdlib.h>
 #include <sys/time.h>
 //#include <boost/timer/timer.hpp>
+#include "scratch.hpp"
+
+#include <vector>
+#include <utility>
+#include <algorithm>
 
 template<typename T>
-void print_end_interesting( T *array, int length ) {
+void print_end_interesting( T *array, int length=10 ) {
     int count=0;
     for( int j=length-1;j>=0; j-- ) {
         if( array[(int)j]!=-1) {
@@ -21,7 +26,7 @@ void print_end_interesting( T *array, int length ) {
 }
 
 template<typename T>
-void print_end( T *array, int length ) {
+void print_end( T *array, int length=10 ) {
     int start = length > 10 ? length-10 : 0;
     for( int j=start;j<length;j++ ) {
         std::cout << array[j] << " ";
@@ -30,12 +35,33 @@ void print_end( T *array, int length ) {
 }
 
 template<typename T>
-void print_array( T *array, int length ) {
+void print_array( T *array, int length=40 ) {
     if( length>40 ) length=40;
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
     }
     std::cout << "\n";
+}
+
+template<typename T>
+void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
+    //print_array(h_csrRowPtr);
+    //print_array(h_csrColInd); 
+    //print_array(h_csrVal);
+    std::cout << "Matrix:\n";
+    if( length>20 ) length=20;
+    for( int i=0; i<length; i++ ) {
+        int count = h_csrRowPtr[i];
+        for( int j=0; j<length; j++ ) {
+            if( count>=h_csrRowPtr[i+1] || h_csrColInd[count] != j )
+                std::cout << "0 ";
+            else {
+                std::cout << h_csrVal[count] << " ";
+                count++;
+            }
+        }
+        std::cout << std::endl;
+    }
 }
 
 struct CpuTimer {
@@ -518,11 +544,16 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
     }
 
     // Sort
-    //struct arrayset *work = (arrayset*)malloc(edge*sizeof(arrayset));
-    //work->values1 = h_cooRowIndA;
-    //work->values2 = h_csrColIndA;
     struct arrayset work = { h_cooRowIndA, h_csrColIndA };
     custom_sort(&work, edge);
+    /*std::vector< std::pair<int, int> > pairs;
+    for( int i=0; i<edge; i++ )
+        pairs.push_back(std::make_pair( h_cooRowIndA[i], h_csrColIndA[i] ));
+    std::sort( pairs.begin(), pairs.end() );
+    for( int i=0; i<edge; i++ ) {
+        h_cooRowIndA[i] = pairs[i].first;
+        h_csrColIndA[i] = pairs[i].second;
+    }*/
 
     int curr = h_csrColIndA[0];
     int last;
@@ -561,4 +592,34 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
                     break;
     }}}}
     return edge-shift;
+}
+
+//template< typename T >
+void allocScratch( d_scratch **d, const int edge, const int m ) {
+
+    *d = (d_scratch *)malloc(sizeof(d_scratch));
+    cudaMalloc(&((*d)->d_cscVecInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscSwapInd), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscVecVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscSwapVal), edge*sizeof(float));
+    cudaMalloc(&((*d)->d_cscTempVal), edge*sizeof(float));
+
+    cudaMalloc(&((*d)->d_cscColGood), edge*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColBad), m*sizeof(int));
+    cudaMalloc(&((*d)->d_cscColDiff), m*sizeof(int));
+    cudaMalloc(&((*d)->d_ones), m*sizeof(int));
+    cudaMalloc(&((*d)->d_index), m*sizeof(int));
+    cudaMalloc(&((*d)->d_temp_storage), 93184);
+    cudaMalloc(&((*d)->d_randVecInd), m*sizeof(int));
+
+    //Host mallocs
+    (*d)->h_cscVecInd = (int*) malloc (edge*sizeof(int));
+    (*d)->h_cscVecVal = (float*) malloc (edge*sizeof(float));
+    (*d)->h_cscColDiff = (int*) malloc (m*sizeof(int));
+    (*d)->h_ones = (int*) malloc (m*sizeof(int));
+    (*d)->h_index = (int*) malloc (m*sizeof(int));
+
+    (*d)->h_bfsResult = (int*) malloc (m*sizeof(int));
+    (*d)->h_spmvResult = (float*) malloc (m*sizeof(float));
+    (*d)->h_bfsValA = (float*) malloc (edge*sizeof(float));
 }

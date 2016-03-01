@@ -1,10 +1,13 @@
 
 
-ARCH="GEN_SM35"
+ARCH="GEN_SM30"
 
-if [ "$ARCH" = "GEN_SM15" ] ; then
-    ./test ../../dataset/small/test_cc.mtx -source 3 
-fi
+for i in delaunay_n24 rgg_n_2_24_s0 coAuthorsCiteseer coPapersCiteseer coPapersDBLP road_central road_usa ldoor cage15
+do
+    if [ "$ARCH" = "GEN_SM15" ] ; then
+        ./test /data/gunrock_dataset/large/$i/$i.mtx
+    fi
+done
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx
@@ -21,12 +24,11 @@ do
     fi
 done
 
-for i in 579593	897318 666033 194754 796384 924094 932129 912391 344516
+for i in delaunay_n10 delaunay_n11 delaunay_n12 delaunay_n13 delaunay_n14 delaunay_n15 delaunay_n16 delaunay_n17 delaunay_n18 delaunay_n19 delaunay_n20 delaunay_n21 delaunay_n22 delaunay_n23 delaunay_n24
 do
-    if [ "$ARCH" = "GEN_SM30" ] ; then
-	    ./test /data/gunrock_dataset/large/kron_g500-logn20/kron_g500-logn20.mtx -source $i -undirected
-        ./test_bfs /data/gunrock_dataset/large/kron_g500-logn20/kron_g500-logn20.mtx -source $i -undirected
-	fi
+	if [ "$ARCH" = "GEN_SM30" ] ; then
+        ./test /data/gunrock_dataset/large/$i/$i.mtx -undirected
+    fi
 done
 
 for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M soc-LiveJournal1 kron_g500-logn21
@@ -37,6 +39,7 @@ do
         if [ "$ARCH" = "GEN_SM40" ] ; then
             ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
             ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx
+            ./test /data/gunrock_dataset/large/soc-orkut/soc-orkut.mtx
             break
         fi
     fi

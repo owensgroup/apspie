@@ -108,7 +108,9 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     cudaMalloc(&d_nnzPtr, 2*sizeof(int));
 
     GpuTimer gpu_timer;
+    GpuTimer gpu_timer2;
     float elapsed = 0.0f;
+    float elapsed2 = 0.0f;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
 
     int *h_csrRowDiff = (int*)malloc(m*sizeof(int));
@@ -144,11 +146,12 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    gpu_timer.Start();
+    //gpu_timer.Start();
+    gpu_timer2.Start();
     int iter = 1;
     int flag = 0;
     int total= 0;
-    cudaProfilerStart();
+    //cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
@@ -184,24 +187,25 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
 
-/*    printf("Running iteration %d.\n", iter);
-    gpu_timer.Stop();
+    //printf("Running iteration %d.\n", iter);
+    /*gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
-    printf("Iter %d: GPU BFS finished in %f msec. \n", iter, elapsed);
+    printf("GPU BFS finished in %f msec. \n", iter, elapsed);
     gpu_timer.Start();
-    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
+    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);*/
     cumsum+=total;
-    cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);
-    cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrVecInd,40);*/
+    //cudaMemcpy(h_csrVecInd, d_keys.Current(), m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
+    //cudaMemcpy(h_csrVecInd, d_temp_storage, m*sizeof(int), cudaMemcpyDeviceToHost);
+    //print_array(h_csrVecInd,40);
     }
 
-//    printf("Edges traversed: %d\n", cumsum);
 //    cudaProfilerStop();
-//    gpu_timer.Stop();
-//    elapsed += gpu_timer.ElapsedMillis();
-//    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    gpu_timer2.Stop();
+    elapsed2 += gpu_timer2.ElapsedMillis();
+    printf("\nGPU BFS finished in %f msec. \n", elapsed2);
+    printf("Traversed edges: %d\n", cumsum);
+    printf("Performance: %f GTEPS\n", (float)cumsum/(elapsed2*1000000));
 
     // For future sssp
     //ssspSv( d_csrVecInd, edge, m, d_csrVal, d_csrRowPtr, d_csrColInd, d_spsvResult );
