@@ -112,7 +112,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     //int iter = 0;
     int total= 0;
     //float minimum = 1;
-    cudaProfilerStart();
+    //cudaProfilerStart();
 
     //1. Obtain dense bit vector from dense vector
     bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );

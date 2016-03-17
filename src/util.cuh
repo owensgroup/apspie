@@ -619,7 +619,5 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
     (*d)->h_ones = (int*) malloc (m*sizeof(int));
     (*d)->h_index = (int*) malloc (m*sizeof(int));
 
-    (*d)->h_bfsResult = (int*) malloc (m*sizeof(int));
     (*d)->h_spmvResult = (float*) malloc (m*sizeof(float));
-    (*d)->h_bfsValA = (float*) malloc (edge*sizeof(float));
 }

@@ -134,10 +134,10 @@ void runBfs(int argc, char**argv) {
 
     // 10. Run BFS kernel on GPU
     // Experiment 1: Optimized BFS using mXv (no Val array)
-    spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    //spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
 
     // Experiment 2: Optimized BFS using mXv
-    //bfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    bfs( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     // Compare with CPU BFS for errors
     cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
     verify( m, h_bfsResult, h_bfsResultCPU );

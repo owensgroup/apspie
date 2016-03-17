@@ -43,6 +43,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     allocScratch( &d, edge, m );
 
     // Allocate GPU memory for result
+    int *h_bfsResult = (int*)malloc(m*sizeof(int));
     float *d_spmvResult, *d_spmvSwap;
     cudaMalloc(&d_spmvResult, m*sizeof(float));
     cudaMalloc(&d_spmvSwap, m*sizeof(float));
@@ -50,16 +51,16 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     // Generate initial vector using vertex
     // Generate d_ones, d_index
     for( int i=0; i<m; i++ ) {
-        d->h_bfsResult[i]=-1;
+        h_bfsResult[i]=-1;
         d->h_spmvResult[i]=0.0;
         d->h_ones[i] = 1;
         d->h_index[i] = i;
         if( i==vertex ) {
-            d->h_bfsResult[i]=0;
+            h_bfsResult[i]=0;
             d->h_spmvResult[i]=1.0;
         }
     }
-    cudaMemcpy(d_bfsResult, d->h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
@@ -67,15 +68,6 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     // Generate d_cscColDiff
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, m);
-
-    // Generate values for BFS (cscValA where everything is 1)
-    float *d_bfsValA;
-    cudaMalloc(&d_bfsValA, edge*sizeof(float));
-
-    for( int i=0; i<edge; i++ ) {
-        d->h_bfsValA[i] = 1.0;
-    }
-    cudaMemcpy(d_bfsValA, d->h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
 
     int cumsum = 0;
     int sum = 0;
@@ -89,7 +81,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
-            sum = mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
+            sum = mXv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwap, i, m);
             
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
@@ -99,7 +91,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
             //cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
-            sum = mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
+            sum = mXv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, context);
             addResult<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);

@@ -25,9 +25,7 @@ typedef struct scratch{
     int *h_ones;
     int *h_index;
 
-    int *h_bfsResult;
     float *h_spmvResult;
-    float *h_bfsValA;
 } d_scratch;
 
 #endif  // APSPIE_SRC_SCRATCH_HPP

@@ -157,6 +157,7 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
     //float minimum = 1;
     cudaProfilerStart();
 
+    for( iter=1; iter<depth; iter++ ) {
     /*    cudaMemcpy(h_csrVecInd, d_, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
         cudaMemcpy(h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
@@ -189,7 +190,7 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d_csrRowBad, h_csrVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d_csrRowGood, context );
         IntervalGather( h_csrVecCount, d_keys.Current(), index->get(), h_csrVecCount, d_csrRowPtr, d_csrRowBad, context );
 
-        printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
+        //printf("Processing %d nodes frontier size: %d\n", h_csrVecCount, total);
 
 	// Vector Portion
         // a) naive method
@@ -250,10 +251,10 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
         //cudaMemcpy(h_csrVecVal, d_misResult, m*sizeof(float), cudaMemcpyDeviceToHost);
         //print_array(h_csrVecVal,40);*/
     
-    gpu_timer.Stop();
+    /*gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU SSSP iteration finished in %f msec. \n", elapsed);
-    gpu_timer.Start();
+    gpu_timer.Start();*/
 //    printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     //    }
     //else if( minimum<=(float)0 )

@@ -146,12 +146,12 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
-    //gpu_timer.Start();
+    gpu_timer.Start();
     gpu_timer2.Start();
     int iter = 1;
     int flag = 0;
     int total= 0;
-    //cudaProfilerStart();
+    cudaProfilerStart();
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
