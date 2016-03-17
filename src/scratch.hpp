@@ -1,5 +1,5 @@
-#ifndef SCRATCH_HPP
-#define SCRATCH_HPP
+#ifndef APSPIE_SRC_SCRATCH_HPP
+#define APSPIE_SRC_SCRATCH_HPP
 
 //template <typename T>
 typedef struct scratch{
@@ -30,4 +30,4 @@ typedef struct scratch{
     float *h_bfsValA;
 } d_scratch;
 
-#endif
+#endif  // APSPIE_SRC_SCRATCH_HPP
