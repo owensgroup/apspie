@@ -54,7 +54,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
         d->h_index[i] = i;
         if( i==vertex ) {
             h_ssspResult[i]=0.0;
-            d->h_spmvResult[i]=1.0;
+            d->h_spmvResult[i]=0.0;
         }
     }
     cudaMemcpy(d_ssspResult, h_ssspResult, m*sizeof(T), cudaMemcpyHostToDevice);
@@ -84,8 +84,9 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
             addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
-            cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
-            print_array(h_spmvResult,m);
+            cudaMemcpy(d->h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
+            printf("spmvSwap:\n");
+            print_array(d->h_spmvResult,m);
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
 
@@ -94,8 +95,9 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
             addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
-            cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-            print_array(h_spmvResult,m);
+            cudaMemcpy(d->h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+            printf("spmvResult:\n");
+            print_array(d->h_spmvResult,m);
         }
         cumsum+=sum;
     }
