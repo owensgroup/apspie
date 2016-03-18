@@ -533,14 +533,19 @@ void custom_sort(struct arrayset *v, size_t size){
     free(v2);
 }
 
+// @brief This function doubles number of edges (by making it symmetric) and then checks
+//  for self-loops and repetitions, removing them if detected
+//
+// @return The correct number of edges 
 template<typename typeVal>
-int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
+int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_cooValA ) {
 
     int realEdge = edge/2;
     
     for( int i=0; i<realEdge; i++ ) {
         h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
         h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
+        h_cooValA[realEdge+i] = h_cooValA[i];
     }
 
     // Sort
@@ -588,6 +593,7 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
                     //printf("Swapping %d with %d\n", i, back ); 
                     h_csrColIndA[i] = h_csrColIndA[back];
                     h_cooRowIndA[i] = h_cooRowIndA[back];
+                    h_cooValA[i] = h_cooValA[back];
                     h_csrColIndA[back] = -1;
                     break;
     }}}}

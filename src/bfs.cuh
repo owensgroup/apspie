@@ -60,6 +60,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
             d->h_spmvResult[i]=1.0;
         }
     }
+	//print_array(d->h_spmvResult, 40);
     cudaMemcpy(d_bfsResult, h_bfsResult, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);

@@ -101,6 +101,9 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
     /*printf("randVec:\n");
     cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
+    print_array(d->h_cscVecVal,10);
+    printf("cscVal:\n");
+    cudaMemcpy(d->h_cscVecVal, d_cscVal, m*sizeof(float), cudaMemcpyDeviceToHost);
     print_array(d->h_cscVecVal,10);*/
 
     // First iteration
@@ -120,11 +123,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     //2. Compact dense vector into sparse
     //    indices: d_cscColGood
     //     values: not necessary (will be expanded into d_cscVecVal in step 3
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
-        if( h_cscVecCount == 0 ) {
-            printf( "Error: no frontier\n" );
-            return 0;
-        } else {
+    mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
+    if( h_cscVecCount == 0 ) {
+        printf( "Error: no frontier\n" );
+        return 0;
+    } else {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_cscColGood, d->d_cscVecInd, m );
         
         //3. Gather from CSR graph into one big array       |     |  |

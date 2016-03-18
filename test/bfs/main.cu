@@ -72,14 +72,14 @@ void runBfs(int argc, char**argv) {
     if( undirected ) {
         printf("Old edge #: %d\n", edge);
         cpu_timerRead.Start();
-        readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_csrValA );
+        readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_cooValA );
         cpu_timerRead.Stop();
         cpu_timerMake.Start();
         edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
         cpu_timerMake.Stop();
         printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
     } else {
-        readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_csrValA );
+        readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
         printf("\nDirected graph has %d nodes, %d edges\n", m, edge);
     }
     cpu_timerBuild.Start();
