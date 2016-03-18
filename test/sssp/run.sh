@@ -3,7 +3,7 @@
 ARCH="GEN_SM15"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
-    ./test ../../dataset/small/test_cc.mtx 
+    ./test /data/gunrock_dataset/large/ak2010/ak2010.mtx 
 fi
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
@@ -12,6 +12,21 @@ if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_pr.mtx
     ./test ../../dataset/small/chesapeake.mtx
 fi
+
+
+for i in kron_g500-logn16 kron_g500-logn17 kron_g500-logn18 kron_g500-logn19 kron_g500-logn20 kron_g500-logn21
+do
+	if [ "$ARCH" = "GEN_SM25" ] ; then
+        ./test /data/gunrock_dataset/large/$i/$i.mtx
+    fi
+done
+
+for i in 579593	897318 666033 194754 796384 924094 932129 912391 344516
+do
+    if [ "$ARCH" = "GEN_SM30" ] ; then
+	    ./test /data/gunrock_dataset/large/kron_g500-logn20/kron_g500-logn20.mtx -source $i -undirected
+	fi
+done
 
 for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M soc-LiveJournal1 kron_g500-logn21
 do

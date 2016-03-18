@@ -79,8 +79,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     cudaProfilerStart();
 
     for( int i=1; i<depth; i++ ) {
-    //for( int i=2; i<5; i++ ) {
-        printf("Iteration %d\n", i);
+        //printf("Iteration %d\n", i);
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);

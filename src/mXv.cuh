@@ -23,14 +23,27 @@ __global__ void lookRight( const int *d_cscSwapInd, const int total, int *d_cscF
 }
 
 template<typename T>
-__global__ void preprocessFlag( T *d_cscFlag, const int total ) {
+__global__ void zeroArray( T *d_cscFlag, const int total ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_cscFlag[idx] = 0;
+}
+
+template<typename T>
+__global__ void zeroArrayMinPlus( T *d_csrFlag, const int total ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        d_csrFlag[idx] = 1.70141e+38;
 }
 
 __global__ void bitify( const float *d_randVec, int *d_randVecInd, const int m ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
         if( d_randVec[idx]>0.5 ) d_randVecInd[idx] = 1;
+        else d_randVecInd[idx] = 0;
+    }
+}
+
+__global__ void bitifyMinPlus( const float *d_randVec, int *d_randVecInd, const int m ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
+        if( d_randVec[idx]>-1 && d_randVec[idx]<1e38) d_randVecInd[idx] = 1;
         else d_randVecInd[idx] = 0;
     }
 }
@@ -128,7 +141,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     //cudaProfilerStart();
 
     //1. Obtain dense bit vector from dense vector
-    bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
+    //
+    // op=1 Arithmetic semiring (any nonzero = 1)
+    // op=2 MinPlus semiring (any value < 1e+38 = 1)
+    if( op==1 ) bitify<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
+    else if( op==2 ) bitifyMinPlus<<<NBLOCKS,NTHREADS>>>( d_randVec, d->d_randVecInd, m );
      
     //2. Compact dense vector into sparse
     //    indices: d_cscColGood
@@ -169,12 +186,6 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscRowInd, d->d_cscVecInd, context );
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
 
-        printf("pre-ewiseMult:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
-        cudaMemcpy(d->h_cscVecVal, d->d_cscTempVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
-
         // Element-wise multiplication
         //
         // op=1  arithmetic semiring
@@ -182,14 +193,15 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         if( op==1 ) ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 	    else if( op==2 ) ewiseMultMinPlus<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 
-        printf("post-ewiseMult:\n");
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
         // b) custom kernel method (fewer memory reads)
         // TODO
         
         // Reset dense flag array
-        preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_mmResult, m );
+        //
+        // op=1 Set all to Arithmetic semiring zero (0)
+        // op=2 Set all to MinPlus semiring zero (1.70141e+38)
+        if( op==1 ) zeroArray<<<NBLOCKS,NTHREADS>>>( d_mmResult, m );
+        else if( op==2 ) zeroArrayMinPlus<<<NBLOCKS,NTHREADS>>>( d_mmResult, m );
 
         //4. Sort step
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
@@ -197,13 +209,6 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //LocalitySortKeys( d_cscVecInd, total, context );
         cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         //MergesortKeys(d_cscVecInd, total, mgpu::less<int>(), context);
-
-        printf("post-sort:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
-        printf("post-sort:\n");
-        cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -217,13 +222,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
         else if( op==2 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
-        printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
-        printf("post-reduce:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
-        printf("post-reduce:\n");
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
         //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
