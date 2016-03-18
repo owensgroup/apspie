@@ -47,15 +47,15 @@ int SimpleReferenceSssp(
    //  use -1 to represent infinity for source_path
    //                      undefined for predecessor
    for (VertexId i = 0; i < m; ++i) {
-       source_path[i] = -1;
+       source_path[i] = -1.0;
        //Edge = std::make_pair(i, h_csrValA[i]);
        if( i!=src )
            frontier.push(std::pair<VertexId, Value>(i, h_csrValA[i]));
        if (MARK_PREDECESSORS)
            predecessor[i] = -1;
    }
-   source_path[src] = 0;
-   frontier.push(std::pair<VertexId, Value>(src, 0));
+   source_path[src] = 0.0;
+   frontier.push(std::pair<VertexId, Value>(src, 0.0));
    VertexId search_depth = 0;
 
    //print_queue(frontier, 10);
@@ -85,14 +85,14 @@ int SimpleReferenceSssp(
        //   -necessary because we will be having redundant vertices in
        //   queue so we will only do work when we have the best one
        //   -source_path[v] == -1 means we haven't explored it before
-       if( source_path[v] != -1 || d <= source_path[v] ) {
+       if( source_path[v] != -1.0 || d <= source_path[v] ) {
            for( int edge = edges_begin; edge < edges_end; ++edge ) {
                //Lookup neighbor and enqueue if undiscovered
                VertexId neighbor = h_colIndA[edge];
                Value alt_dist = source_path[v] + h_csrValA[edge];
                //printf("source: %d, target: %d, old_d: %f, new_d: %f\n", v, neighbor, source_path[neighbor], alt_dist);
                //printf("edge: %d, weight: %f, path_weight: %f\n", edge, h_csrValA[edge], source_path[v]);
-               if( source_path[neighbor] == -1 || alt_dist < source_path[neighbor] ) {
+               if( source_path[neighbor] == -1.0 || alt_dist < source_path[neighbor] ) {
                    source_path[neighbor] = alt_dist;
                    frontier.push(std::pair<VertexId,Value>(neighbor,alt_dist));
                    if(MARK_PREDECESSORS) 

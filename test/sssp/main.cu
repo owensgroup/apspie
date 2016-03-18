@@ -128,7 +128,8 @@ void runSssp(int argc, char**argv) {
     //cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
     ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
-    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResultCPU, depth );
+    //ssspBoost( source, m, edge, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
+    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, depth );
 
     // 9. Run CSR -> CSC kernel
     //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );

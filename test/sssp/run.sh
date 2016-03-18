@@ -1,12 +1,17 @@
 
 
-ARCH="GEN_SM15"
+ARCH="GEN_SM25"
+
+if [ "$ARCH" = "GEN_SM10" ] ; then
+    ./test ../../dataset/small/weighted.mtx
+fi
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test /data/gunrock_dataset/large/ak2010/ak2010.mtx 
 fi
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
+	./test ../../dataset/small/weighted.mtx
     ./test ../../dataset/small/test_cc.mtx
     ./test ../../dataset/small/test_bc.mtx
     ./test ../../dataset/small/test_pr.mtx

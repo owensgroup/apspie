@@ -16,10 +16,11 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscVa
 }
 
 template<typename T>
-__global__ void addResultSssp( T *d_ssspResult, T *d_spmvResult, const int iter, const int length ) {
+__global__ void addResultSssp( T *d_ssspResult, T *d_spmvResult, T *d_spmvSwap, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
         T temp = fmin(d_spmvResult[idx],d_ssspResult[idx]);
+        d_spmvSwap[idx] -= temp;
         d_ssspResult[idx] = temp;
         d_spmvResult[idx] = temp;
         //d_ssspResult[idx] = fmin(d_spmvResult[idx],d_ssspResult[idx]);
@@ -69,19 +70,21 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     // Keep a count of edges traversed
     int cumsum = 0;
     int sum = 0;
+    float change = 0;
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
     cudaProfilerStart();
 
-    for( int i=1; i<depth; i++ ) {
-    //for( int i=2; i<5; i++ ) {
+    //for( int i=1; i<depth; i++ ) {
+    for( int i=1; i<100; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
 
             // op=2 MinPlus semiring
             sum = mXv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, 2, context);
-            addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvSwap, i, m);
+            addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvSwap, d_spmvResult,i, m);
+            mgpu::Reduce( d_spmvResult, m, (float)0, mgpu::plus<float>(), (float*)0, &change, context );
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
             //cudaMemcpy(d->h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
@@ -92,13 +95,16 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
 
             // op=2 MinPlus semiring
             sum = mXv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, 2, context);
-            addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvResult, i, m);
+            addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvResult, d_spmvSwap, i, m);
+            mgpu::Reduce( d_spmvSwap, m, (float)0, mgpu::plus<float>(), (float*)0, &change, context );
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
             //cudaMemcpy(d->h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
             //printf("spmvResult:\n");
             //print_array(d->h_spmvResult,m);
         }
+        printf("Change in iter %d: %f\n", i, change);
+        if( change<1.0 ) break;
         cumsum+=sum;
     }
 
