@@ -110,7 +110,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
             //printf("spmvResult:\n");
             //print_array(d->h_spmvResult,m);
         }
-        printf("Change in iter %d: %f\n", i, change);
+        //printf("Change in iter %d: %f\n", i, change);
         if( change<1.0 ) break;
         cumsum+=sum;
     }
