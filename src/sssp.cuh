@@ -15,6 +15,11 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscVa
     mgpu::SpmvCsrBinary(d_cscValA, d_cscRowIndA, edge, d_cscColPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
+/*template<typename T>
+void spmvMinPlus( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
+    mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)9999.0, mgpu::plus<T>(), mgpu::minimum<T>(), context);
+}*/
+
 template<typename T>
 __global__ void addResultSssp( T *d_ssspResult, T *d_spmvResult, T *d_spmvSwap, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
@@ -49,8 +54,8 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     // Generate initial vector using vertex
     // Generate d_ones, d_index
     for( int i=0; i<m; i++ ) {
-        h_ssspResult[i]=1.70141e+38;
-        d->h_spmvResult[i]=1.70141e+38;
+        h_ssspResult[i]=1.7e+38;
+        d->h_spmvResult[i]=1.7e+38;
         d->h_ones[i] = 1;
         d->h_index[i] = i;
         if( i==vertex ) {
@@ -80,6 +85,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     for( int i=1; i<100; i++ ) {
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+            //spmvMinPlus<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
 
             // op=2 MinPlus semiring
             sum = mXv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, 2, context);
@@ -92,6 +98,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
             //print_array(d->h_spmvResult,m);
         } else {
             //spmv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+            //spmvMinPlus<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
 
             // op=2 MinPlus semiring
             sum = mXv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, 2, context);

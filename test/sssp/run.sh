@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM25"
+ARCH="GEN_SM35"
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
     ./test ../../dataset/small/weighted.mtx
@@ -18,11 +18,13 @@ if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/chesapeake.mtx
 fi
 
-
+if [ "$ARCH" = "GEN_SM25" ] ; then
+    ./test /data/gunrock_dataset/large/kron_g500-logn19/kron_g500-logn19.mtx -source 1 -undirected
+fi
 for i in kron_g500-logn16 kron_g500-logn17 kron_g500-logn18 kron_g500-logn19 kron_g500-logn20 kron_g500-logn21
 do
-	if [ "$ARCH" = "GEN_SM25" ] ; then
-        ./test /data/gunrock_dataset/large/$i/$i.mtx
+    if [ "$ARCH" = "GEN_SM25" ] ; then
+        ./test /data/gunrock_dataset/large/$i/$i.mtx -undirected
     fi
 done
 

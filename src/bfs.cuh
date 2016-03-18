@@ -81,8 +81,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
     for( int i=1; i<depth; i++ ) {
         //printf("Iteration %d\n", i);
         if( i%2==0 ) {
-            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
-            //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
+            //spmv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+            //cuspmv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
             sum = mXv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, 1, context);
@@ -93,8 +93,8 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
             //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResult,m);
         } else {
-            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-            //cuspmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
+            //spmv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+            //cuspmv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, handle, descr);
 
             // op=1 Arithmetic semiring
             sum = mXv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, 1, context);

@@ -97,6 +97,17 @@ __global__ void updateNeighbor( const int total, int *d_mmResult, const int *d_k
     }
 }
 
+__device__ void fatomicMin( float *addr, float val ) {
+    if( *addr<=val ) return;
+    int *const int_addr = (int*)addr;
+    int old = *int_addr, temp;
+    do {
+        temp = old;
+        if( __int_as_float(temp) <= val ) break;
+        old = atomicCAS(int_addr, temp, __float_as_int(val));
+    } while( old!=temp );
+}
+
 // @brief ewiseMult for arithmetic mult semiring
 template<typename T>
 __global__ void ewiseMult( const int total, const T *d_x, const T*d_y, T *d_result ) {
@@ -135,7 +146,6 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     GpuTimer gpu_timer;
     float elapsed = 0.0f;
     gpu_timer.Start();
-    //int iter = 0;
     int total= 0;
     //float minimum = 1;
     //cudaProfilerStart();
@@ -205,7 +215,9 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         // b) custom kernel method (fewer memory reads)
         // TODO
-        
+        scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        /*scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
+
         // Reset dense flag array
         //
         // op=1 Set all to Arithmetic semiring zero (0)
@@ -234,8 +246,8 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //
         // op=1  arithmetic semiring
         // op=2  min-plus semiring
-        /*if( op==1 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
-        else if( op==2 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );*/
+        //if( op==1 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
+        //else if( op==2 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
         if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
         else if( op==2 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
@@ -247,7 +259,6 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,40);*/
 
-        //scatterFloat<<<NBLOCKS,NTHREADS>>>( total, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
         //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
 
@@ -264,13 +275,12 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         print_array(d->h_cscVecVal,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,40);*/
-    
-    //printf("Running iteration %d.\n", iter);
-    /*gpu_timer.Stop();
+    */
+    gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", elapsed);
     gpu_timer.Start();
-    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);*/
+    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
     return total;
     //    }
     //else if( minimum<=(float)0 )

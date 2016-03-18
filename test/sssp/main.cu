@@ -132,7 +132,7 @@ void runSssp(int argc, char**argv) {
     depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, depth );
 
     // 9. Run CSR -> CSC kernel
-    //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
 
     // 10. Run SSSP kernel on GPU
     // Experiment 1: Optimized SSSP using mXv (no Val array)
