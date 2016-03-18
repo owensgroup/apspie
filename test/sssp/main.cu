@@ -11,22 +11,23 @@
 #include <stdio.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include <deque>
 #include <cusparse.h>
-#include <moderngpu.cuh>
 
+#include <moderngpu.cuh>
 #include <util.cuh>
 #include <sssp.cuh>
 
-#include <string.h>
 #include <testBfs.cpp>
 #include <testSssp.cpp>
+#include <string.h>
 
 void runSssp(int argc, char**argv) { 
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
-    typedef float Value;
+    typedef float typeVal;
 
     // File i/o
     // 1. Open file from command-line 
@@ -44,102 +45,114 @@ void runSssp(int argc, char**argv) {
     printf("Testing %s from source %d\n", argv[1], source);
     
     // 2. Reads in number of edges, number of nodes
+    //    Note: Need to double # of edges in case of undirected, because this affects
+    //          how much to allocate
     readEdge( m, n, edge, stdin );
-    printf("Graph has %d nodes, %d edges\n", m, edge);
+    if( undirected ) 
+        edge=2*edge;
 
     // 3. Allocate memory depending on how many edges are present
-    Value *h_csrValA;
-    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA;
+    typeVal *h_csrValA, *h_cooValA;
+    int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA, *h_cooColIndA;
     float *h_ssspResult, *h_ssspResultCPU;
 
-    h_csrValA    = (Value*)malloc(edge*sizeof(Value));
-    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
+    h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_cooValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    h_cooColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
     h_ssspResult = (float*)malloc((m)*sizeof(float));
     h_ssspResultCPU = (float*)malloc((m)*sizeof(float));
 
     // 4. Read in graph from .mtx file
-    readMtx<Value>( edge, h_csrColIndA, h_cooRowIndA, h_csrValA );
-    print_array( h_cooRowIndA, m );
+    CpuTimer cpu_timerRead;
+    CpuTimer cpu_timerMake;
+    CpuTimer cpu_timerBuild;
+    if( undirected ) {
+        printf("Old edge #: %d\n", edge);
+        cpu_timerRead.Start();
+        readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        cpu_timerRead.Stop();
+        cpu_timerMake.Start();
+        edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        cpu_timerMake.Stop();
+        printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
+    } else {
+        readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        printf("\nDirected graph has %d nodes, %d edges\n", m, edge);
+    }
+    cpu_timerBuild.Start();
+    buildMatrix<typeVal>( h_csrRowPtrA, h_csrColIndA, h_csrValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+    cpu_timerBuild.Stop();
+    float elapsedRead = cpu_timerRead.ElapsedMillis();
+    float elapsedMake = cpu_timerMake.ElapsedMillis();
+    float elapsedBuild= cpu_timerBuild.ElapsedMillis();
+    printf("readMtx: %f ms\n", elapsedRead);
+    printf("makeSym: %f ms\n", elapsedMake);
+    printf("buildMat: %f ms\n", elapsedBuild);
+
+    /*print_array( h_cooRowIndA, m );
+    print_array( h_cooColIndA, m );
+    print_array( h_csrRowPtrA, m );
+    print_array( h_csrColIndA, m );*/
 
     // 5. Allocate GPU memory
-    Value *d_csrValA;
+    typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
-    Value *d_cscValA;
+    typeVal *d_cscValA;
     int *d_cscRowIndA, *d_cscColPtrA;
     float *d_ssspResult;
     cudaMalloc(&d_ssspResult, m*sizeof(float));
 
-    cudaMalloc(&d_csrValA, edge*sizeof(Value));
+    cudaMalloc(&d_csrValA, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrA, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndA, edge*sizeof(int));
-    cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
+    //cudaMalloc(&d_cooRowIndA, edge*sizeof(int));
 
-    cudaMalloc(&d_cscValA, edge*sizeof(Value));
+    cudaMalloc(&d_cscValA, edge*sizeof(typeVal));
     cudaMalloc(&d_cscRowIndA, edge*sizeof(int));
     cudaMalloc(&d_cscColPtrA, (m+1)*sizeof(int));
 
     // 6. Copy data from host to device
-    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(Value),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrValA, h_csrValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, h_csrColIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_cooRowIndA, h_cooRowIndA, (edge)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrRowPtrA, h_csrRowPtrA, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
     // 7. Run COO -> CSR kernel
-    coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
+    //coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
     // 8. Run SSSP on CPU. Need data in CSR form first.
-    cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    //cudaMemcpy(h_cooRowIndA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    //verify( m, h_cooRowIndA, h_csrRowPtrA );
+    //cudaMemcpy(h_csrRowPtrA,d_csrRowPtrA,(m+1)*sizeof(int),cudaMemcpyDeviceToHost);
     int depth = 1000;
     ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
-    print_end_interesting(h_ssspResultCPU, m);
-
-    // Verify SSSP CPU with BFS CPU.
-    depth = bfsCPU<float>( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, 1000);
-    //ssspBoost( source, m, edge, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResult, 1000);
-    //verify<float>( m, h_ssspResultCPU, h_ssspResult );
-
-    // Make two GPU timers
-    GpuTimer gpu_timer;
-    GpuTimer gpu_timer2;
-    float elapsed = 0.0f;
-    float elapsed2 = 0.0f;
-    gpu_timer.Start();
+    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResultCPU, depth );
 
     // 9. Run CSR -> CSC kernel
-    csr2csc<Value>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
-    gpu_timer.Stop();
-    gpu_timer2.Start();
+    //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
 
     // 10. Run SSSP kernel on GPU
-    //sssp<Value>( source, edge, m, d_csrValA, d_cscColPtrA, d_cscRowIndA, d_ssspResult, depth, *context );
-    sssp<Value>( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context );
+    // Experiment 1: Optimized SSSP using mXv (no Val array)
+    //spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context); 
 
-    gpu_timer2.Stop();
-    elapsed += gpu_timer.ElapsedMillis();
-    elapsed2 += gpu_timer2.ElapsedMillis();
-
-    printf("CSR->CSC finished in %f msec. performed %d iterations\n", elapsed, depth-1);
-    //printf("GPU SSSP finished in %f msec. not including transpose\n", elapsed2);
-
-    cudaMemcpy(h_csrColIndA, d_csrColIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
-    print_array(h_csrColIndA, m);
-
+    // Experiment 2: Optimized SSSP using mXv
+    sssp( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context); 
     // Compare with CPU SSSP for errors
     cudaMemcpy(h_ssspResult,d_ssspResult,m*sizeof(float),cudaMemcpyDeviceToHost);
-    verify<float>( m, h_ssspResult, h_ssspResultCPU );
-    print_array(h_ssspResult, m);
+    verify( m, h_ssspResult, h_ssspResultCPU );
+    //print_array(h_ssspResult, m);
 
     // Compare with SpMV for errors
-    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_bfsResult, depth, *context);
-    //cudaMemcpy(h_bfsResult,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    //verify<int>( m, h_bfsResult, h_bfsResultCPU );
-    //print_array(h_bfsResult, m);
+    //bfs( 0, edge, m, d_cscColPtrA, d_cscRowIndA, d_ssspResult, depth, *context);
+    //cudaMemcpy(h_ssspResult,d_ssspResult,m*sizeof(float),cudaMemcpyDeviceToHost);
+    //verify( m, h_ssspResult, h_ssspResultCPU );
+    //print_array(h_ssspResult, m);
     
-    cudaFree(d_csrValA);
+    /*cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
-    cudaFree(d_cooRowIndA);
 
     cudaFree(d_cscValA);
     cudaFree(d_cscRowIndA);
@@ -149,13 +162,11 @@ void runSssp(int argc, char**argv) {
     free(h_csrValA);
     free(h_csrRowPtrA);
     free(h_csrColIndA);
+    free(h_cooValA);
     free(h_cooRowIndA);
+    free(h_cooColIndA);
     free(h_ssspResult);
-    free(h_ssspResultCPU);
-
-    //free(h_cscValA);
-    //free(h_cscRowIndA);
-    //free(h_cscColPtrA);*/
+    free(h_ssspResultCPU);*/
 }
 
 int main(int argc, char**argv) {

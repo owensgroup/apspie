@@ -169,11 +169,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscRowInd, d->d_cscVecInd, context );
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
 
-        printf("pre-ewiseMult:\n");
+        /*printf("pre-ewiseMult:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         cudaMemcpy(d->h_cscVecVal, d->d_cscTempVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        print_array(d->h_cscVecVal,40);*/
 
         // Element-wise multiplication
         //
@@ -182,9 +182,9 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         if( op==1 ) ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 	    else if( op==2 ) ewiseMultMinPlus<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 
-        printf("post-ewiseMult:\n");
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        //printf("post-ewiseMult:\n");
+        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,40);
         // b) custom kernel method (fewer memory reads)
         // TODO
         
@@ -198,12 +198,12 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         //MergesortKeys(d_cscVecInd, total, mgpu::less<int>(), context);
 
-        printf("post-sort:\n");
+        /*printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        print_array(d->h_cscVecVal,40);*/
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -212,17 +212,18 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //
         // op=1  arithmetic semiring
         // op=2  min-plus semiring
-        if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
+        if( op==1 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
         else if( op==2 ) ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
+        //if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
         //else if( op==2 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
-        printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
+        /*printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        print_array(d->h_cscVecVal,40);*/
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
 
