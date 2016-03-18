@@ -19,7 +19,7 @@ __global__ void addResult( int *d_bfsResult, float *d_spmvResult, const int iter
         //d_bfsResult[idx] = (d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0) ? iter:d_bfsResult[idx];
         if( d_spmvResult[idx]>0.5 && d_bfsResult[idx]<0 ) {
             d_bfsResult[idx] = iter;
-        } else d_spmvResult[idx] = 0;
+        } else d_spmvResult[idx] = 0.0;
     }
     //int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -80,6 +80,7 @@ void bfs( const int vertex, const int edge, const int m, const T* d_cscValA, con
 
     for( int i=1; i<depth; i++ ) {
     //for( int i=2; i<5; i++ ) {
+        printf("Iteration %d\n", i);
         if( i%2==0 ) {
             //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);

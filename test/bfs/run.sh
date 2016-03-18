@@ -3,7 +3,7 @@
 ARCH="GEN_SM35"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
-    ./test ../../dataset/small/test_cc.mtx -source 3 
+    ./test ../../dataset/small/test_cc.mtx 
 fi
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
