@@ -2,7 +2,7 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
-#include "spmspvSssp.cuh"
+//#include "spmspvSssp.cuh"
 #include "scratch.hpp"
 #include "mXv.cuh"
 
@@ -16,7 +16,7 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_cscVa
 }
 
 template<typename T>
-__global__ void addResultSssp( T *d_ssspResult, Value *d_spmvResult, const int iter, const int length ) {
+__global__ void addResultSssp( T *d_ssspResult, T *d_spmvResult, const int iter, const int length ) {
     const int STRIDE = gridDim.x * blockDim.x;
     for (int idx = (blockIdx.x * blockDim.x) + threadIdx.x; idx < length; idx += STRIDE) {
         T temp = fmin(d_spmvResult[idx],d_ssspResult[idx]);
@@ -27,7 +27,7 @@ __global__ void addResultSssp( T *d_ssspResult, Value *d_spmvResult, const int i
 }
 
 template< typename T >
-void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, Value *d_ssspResult, const int depth, mgpu::CudaContext& context) {
+void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, T *d_ssspResult, const int depth, mgpu::CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -66,13 +66,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, m);
 
-    // Generate values for BFS (cscValA where everything is 1)
-    float *d_bfsValA;
-    cudaMalloc(&d_bfsValA, edge*sizeof(float));
-
-    for( int i=0; i<edge; i++ ) d->h_bfsValA[i] = 1.0;
-    cudaMemcpy(d_bfsValA, h_bfsValA, edge*sizeof(float), cudaMemcpyHostToDevice);
-
+    // Keep a count of edges traversed
     int cumsum = 0;
     int sum = 0;
     GpuTimer gpu_timer;
@@ -83,21 +77,25 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     for( int i=1; i<depth; i++ ) {
     //for( int i=2; i<5; i++ ) {
         if( i%2==0 ) {
-            //spmv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
-            mXv<float>( d_spmvResult, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+            //spmv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
+
+            // op=2 MinPlus semiring
+            sum = mXv<float>( d_spmvResult, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, d, 2, context);
             addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvSwap, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
-            //cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
-            //print_array(h_spmvResult,m);
+            cudaMemcpy(h_spmvResult,d_spmvSwap, m*sizeof(float), cudaMemcpyDeviceToHost);
+            print_array(h_spmvResult,m);
         } else {
-            //spmv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
-            mXv<float>( d_spmvSwap, edge, m, d_bfsValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+            //spmv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, context);
+
+            // op=2 MinPlus semiring
+            sum = mXv<float>( d_spmvSwap, edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvResult, d, 2, context);
             addResultSssp<<<NBLOCKS,NTHREADS>>>( d_ssspResult, d_spmvResult, i, m);
             //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_bfsResult,m);
-            //cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-            //print_array(h_spmvResult,m);
+            cudaMemcpy(h_spmvResult,d_spmvResult, m*sizeof(float), cudaMemcpyDeviceToHost);
+            print_array(h_spmvResult,m);
         }
         cumsum+=sum;
     }

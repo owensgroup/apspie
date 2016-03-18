@@ -83,13 +83,23 @@ __global__ void updateNeighbor( const int total, int *d_mmResult, const int *d_k
             d_mmResult[key] = 0;
     }
 }
+
+// @brief ewiseMult for arithmetic mult semiring
 template<typename T>
-__global__ void elementMult( const int total, const T *d_x, const T*d_y, T *d_result ) {
+__global__ void ewiseMult( const int total, const T *d_x, const T*d_y, T *d_result ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]*d_y[idx];
 } 
 
+// @brief ewiseMult for min-plus semiring
 template<typename T>
-int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, T *d_mmResult, d_scratch *d, mgpu::CudaContext& context ) {
+__global__ void ewiseMultMinPlus( const int total, const T *d_x, const T*d_y, T *d_result ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]+d_y[idx];
+} 
+
+// @brief mXv for dense vector d_randVec
+//
+template<typename T>
+int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, T *d_mmResult, d_scratch *d, const int op, mgpu::CudaContext& context ) {
 
     // h_cscVecInd - index to nonzero vector values
     // h_cscVecVal - for BFS, number of jumps from source
@@ -160,7 +170,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
 
         // Element-wise multiplication
-        elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
+        //
+        // op=1  arithmetic semiring
+        // op=2  min-plus semiring
+        if( op==1 ) ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
+	    else if( op==2 ) ewiseMultMinPlus<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -179,7 +193,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
+        //
+        // op=1  arithmetic semiring
+        // op=2  min-plus semiring
+        if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
+        else if( op==2 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
@@ -225,8 +243,10 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     } 
 }
 
+// @brief mXv for sparse vector d_randVecInd, d_randVecVal
+//
 template<typename T>
-void mXv( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
+void mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
 
     // h_cscVecInd - index to nonzero vector values
     // h_cscVecVal - for BFS, number of jumps from source
@@ -293,7 +313,7 @@ void mXv( const int *d_randVecInd, const T *d_randVecVal, const int edge, const 
         IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
 
         // Element-wise multiplication
-        elementMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
+        ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
         /*printf("elementMul:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,total);

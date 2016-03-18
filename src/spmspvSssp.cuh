@@ -22,8 +22,8 @@ __global__ void lookRight( const int *d_csrSwapInd, const int total, int *d_csrF
     }
 }
 
-template<typename Value>
-__global__ void preprocessFlag( Value *d_csrFlag, const int total ) {
+template<typename T>
+__global__ void preprocessFlag( T *d_csrFlag, const int total ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_csrFlag[idx] = 1.70141e+38;
 }
@@ -45,20 +45,20 @@ __global__ void scatter( const int total, const int *d_csrVecInd, int *d_csrFlag
         d_csrFlag[d_csrVecInd[idx]] = 1;
 }
 
-template<typename Value>
-__global__ void scatterFloat( const int total, const int *d_key, const Value *d_csrSwapVal, Value *d_temp ) {
+template<typename T>
+__global__ void scatterFloat( const int total, const int *d_key, const T *d_csrSwapVal, Value *d_temp ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_temp[d_key[idx]] = d_csrSwapVal[idx];
 }
 
-template<typename Value>
-__global__ void gather( const int total, const int *d_csrVecInd, const Value *d_randVec, Value *d_csrVecVal ) {
+template<typename T>
+__global__ void gather( const int total, const int *d_csrVecInd, const T *d_randVec, Value *d_csrVecVal ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         d_csrVecVal[idx] = d_randVec[d_csrVecInd[idx]];
 }
         
-template<typename Value>
-__global__ void buildVector( const int m, const float minimum, const Value *d_randVec, const int *d_misResult, int *d_inputVector ) {
+template<typename T>
+__global__ void buildVector( const int m, const float minimum, const T *d_randVec, const int *d_misResult, int *d_inputVector ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x ) {
         if( d_misResult[idx]==-1 && d_randVec[idx] > minimum )
             d_inputVector[idx] = 1;
@@ -67,15 +67,15 @@ __global__ void buildVector( const int m, const float minimum, const Value *d_ra
     }
 }
 
-template<typename Value>
-__global__ void updateMis( const int m, int *d_misResult, const Value *d_csrSwapVal, const Value *d_randVec, const int *d_inputVector) {
+template<typename T>
+__global__ void updateMis( const int m, int *d_misResult, const T *d_csrSwapVal, const Value *d_randVec, const int *d_inputVector) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<m; idx+=blockDim.x*gridDim.x )
         if( d_inputVector[idx]==1 && d_randVec[idx] > d_csrSwapVal[idx] )
             d_misResult[idx] = 1;
 }
 
-template<typename Value>
-__global__ void updateNeighbor( const int total, int *d_misResult, const int *d_key, const int *d_ind, const Value *d_csrVecVal, const Value *d_randVec ) {
+template<typename T>
+__global__ void updateNeighbor( const int total, int *d_misResult, const int *d_key, const int *d_ind, const T *d_csrVecVal, const Value *d_randVec ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) {
         int key = d_key[idx];
         int ind = d_ind[idx];
@@ -83,13 +83,13 @@ __global__ void updateNeighbor( const int total, int *d_misResult, const int *d_
             d_misResult[key] = 0;
     }
 }
-template<typename Value>
-__global__ void elementMult( const int total, const Value *d_x, const Value*d_y, Value *d_result ) {
+template<typename T>
+__global__ void elementMult( const int total, const T *d_x, const Value*d_y, Value *d_result ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]+d_y[idx];
 } 
 
-template<typename Value>
-void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Value *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, Value *d_misResult, mgpu::CudaContext& context ) {
+template<typename T>
+void spmspvSssp( const T *d_randVec, const int edge, const int m, const Value *d_csrVal, const int *d_csrRowPtr, const int *d_csrColInd, Value *d_misResult, mgpu::CudaContext& context ) {
 
     cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -104,20 +104,20 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
     int *h_csrVecInd;
     int *d_csrVecInd;
     int *d_csrSwapInd;
-    Value *h_csrVecVal;
-    Value *d_csrVecVal;
-    Value *d_csrSwapVal;
-    Value *d_csrTempVal;
+    T *h_csrVecVal;
+    T *d_csrVecVal;
+    T *d_csrSwapVal;
+    T *d_csrTempVal;
     int h_csrVecCount;
 
     h_csrVecInd = (int *)malloc(edge*sizeof(int));
-    h_csrVecVal = (Value *)malloc(edge*sizeof(Value));
+    h_csrVecVal = (T *)malloc(edge*sizeof(Value));
 
     cudaMalloc(&d_csrVecInd, edge*sizeof(int));
     cudaMalloc(&d_csrSwapInd, edge*sizeof(int));
-    cudaMalloc(&d_csrVecVal, edge*sizeof(Value));
-    cudaMalloc(&d_csrSwapVal, edge*sizeof(Value));
-    cudaMalloc(&d_csrTempVal, edge*sizeof(Value));
+    cudaMalloc(&d_csrVecVal, edge*sizeof(T));
+    cudaMalloc(&d_csrSwapVal, edge*sizeof(T));
+    cudaMalloc(&d_csrTempVal, edge*sizeof(T));
 
     int *d_csrRowGood, *d_csrRowBad, *d_csrRowDiff;
     cudaMalloc(&d_csrRowGood, edge*sizeof(int));
@@ -135,7 +135,7 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
 
     // Allocate device array
     cub::DoubleBuffer<int> d_keys(d_csrVecInd, d_csrSwapInd);
-    cub::DoubleBuffer<Value> d_vals(d_csrVecVal, d_csrSwapVal);
+    cub::DoubleBuffer<T> d_vals(d_csrVecVal, d_csrSwapVal);
 
     // Allocate temporary storage
     size_t temp_storage_bytes = 93184;
@@ -157,7 +157,6 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
     //float minimum = 1;
     cudaProfilerStart();
 
-    for( iter=1; iter<depth; iter++ ) {
     /*    cudaMemcpy(h_csrVecInd, d_, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(h_csrVecInd,40);
         cudaMemcpy(h_csrVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
@@ -170,10 +169,10 @@ void spmspvSssp( const Value *d_randVec, const int edge, const int m, const Valu
     //2. Compact dense vector into sparse
     //    indices: d_csrRowGood
     //     values: not necessary (will be expanded into d_vals.current() in step 3
-        mgpu::Scan<mgpu::MgpuScanTypeExc>( d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
-        if( h_csrVecCount == 0 ) 
+    mgpu::Scan<mgpu::MgpuScanTypeExc>( d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_csrVecCount, d_csrRowGood, context );
+    if( h_csrVecCount == 0 ) 
             printf( "Error: no frontier\n" );
-        else {
+    else {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d_randVecInd, d_csrRowGood, d_keys.Current(), m );
         
         //3. Gather from CSR graph into one big array       |     |  |

@@ -349,7 +349,7 @@ int mXm( const int edge, const int m, const T* d_cscValA, const int *d_cscColPtr
         nnz = h_cscColPtrB[i+1]-h_cscColPtrB[i];
         //printf("Reading %d elements in matrix B: %d to %d\n", nnz, h_cscColPtrB[i], h_cscColPtrB[i+1]);
         if( nnz ) {
-        mXv<T>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
+        mXvSparse<T>(&d_cscRowIndB[h_cscColPtrB[i]], &d_cscValB[h_cscColPtrB[i]], edge, m, nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, &d_cscRowIndC[total_nnz], &d_cscValC[total_nnz], d, context);
         total_nnz += nnz;
         h_cscColPtrC[i+1] = total_nnz;
         //printf("mXv iteration %d: ColPtrC at %d\n", i, total_nnz);
