@@ -62,6 +62,7 @@ void runBfs(int argc, char**argv) {
     // Test whether number of MPI processes matches number passed into commandline
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &size);
+    //printf("My rank is %d\n", rank);
     if( size!=multi ) {
         printf( "Assigned node count %d != %d desired node count!\n");
         exit( EXIT_FAILURE );
@@ -139,9 +140,9 @@ void runBfs(int argc, char**argv) {
     int new_n, new_m;
     new_n = m/multi+1;
     if( rank==multi-1 ) {
-        new_m = edge - h_csrRowPtrA[rank*m];
+        new_m = edge - h_csrRowPtrA[rank*new_n];
     } else {
-        new_m = h_csrRowPtrA[(rank+1)*m]-h_csrRowPtrA[rank*m];
+        new_m = h_csrRowPtrA[(rank+1)*new_n]-h_csrRowPtrA[rank*new_n];
     }
 
     typeVal *d_csrValA;
@@ -182,24 +183,33 @@ void runBfs(int argc, char**argv) {
     int *d_csrColIndTest;
     int *d_rank;
     int *d_displs;
+    int *d_new_m;
+    cudaMalloc(&d_new_m, sizeof(int));
     cudaMalloc(&d_rank, multi*sizeof(int));
     cudaMalloc(&d_displs, multi*sizeof(int));
     cudaMalloc(&d_csrValTest, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrTest, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndTest, edge*sizeof(int));
+    cudaMemcpy(&d_new_m, &new_m, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_displs, h_displs, multi*sizeof(int), cudaMemcpyHostToDevice);
-    MPI_Gather(&new_m, 1, MPI_INT, d_rank, 1, MPI_INT, 1, MPI_COMM_WORLD);
-    cudaMemcpy(h_rank, d_rank, multi*sizeof(int), cudaMemcpyDeviceToHost);
+    printf("%d: %d col, %d nnz\n", rank, new_n, new_m);
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    MPI_Gather(&d_new_m, 1, MPI_INT, d_rank, 1, MPI_INT, 1, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0)cudaMemcpy(h_rank, d_rank, multi*sizeof(int), cudaMemcpyDeviceToHost);
+    if(rank==0)print_array(h_rank, 40);
     for( int i=0; i<multi; i++ ) {
         int valid_rank;
-        if( i!=multi-1 ) valid_rank = h_csrRowPtrA[(i+1)*m]-h_csrRowPtrA[i*m];
-        else valid_rank = edge - h_csrRowPtrA[rank*m];
-        if( valid_rank != h_rank[i]) printf("Error %d: %d != %d\n", i, valid_rank, h_rank[i]);
+        if( i!=multi-1 ) valid_rank = h_csrRowPtrA[(i+1)*new_n]-h_csrRowPtrA[i*new_n];
+        else valid_rank = edge - h_csrRowPtrA[rank*new_n];
+        if(rank==0)printf("%d: %d\n", i, valid_rank);
+        if( valid_rank != h_rank[i] && rank==0 ) printf("Error %d: %d != %d\n", i, valid_rank, h_rank[i]);
     }
 
     MPI_Gatherv(d_csrValA, new_m, MPI_FLOAT, d_csrValTest, d_rank, d_displs, MPI_INT, 0, MPI_COMM_WORLD);
-    cudaMemcpy(h_csrValTest, d_csrValTest, m*sizeof(typeVal),cudaMemcpyDeviceToHost);
-    verify( m, h_csrValTest, h_csrValA );
+    if(rank==0)cudaMemcpy(h_csrValTest, d_csrValTest, m*sizeof(typeVal),cudaMemcpyDeviceToHost);
+    if(rank==0)verify( m, h_csrValTest, h_csrValA );
     /*cudaMemcpy(&h_csrColIndA[h_csrRowPtrA[rank*new_n]], d_csrColIndA, (new_m)*sizeof(int),cudaMemcpyDeviceToHost);
     if( rank==multi-1 ) {
         cudaMemcpy(&h_csrRowPtrA[rank*new_n], d_csrRowPtrA, (m-rank*new_n+1)*sizeof(int),cudaMemcpyDeviceToHost);
