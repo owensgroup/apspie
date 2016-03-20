@@ -228,8 +228,8 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         // b) custom kernel method (fewer memory reads)
         // TODO
-        scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
-        /*scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
+        //scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
 
         //4. Sort step
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
@@ -238,12 +238,12 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
-        printf("post-sort:\n");
+        /*printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        print_array(d->h_cscVecVal,40);*/
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -257,13 +257,13 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         if( op==1 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
         else if( op==2 ) ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)1.70141e+38, mgpu::minimum<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
 
-        printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
+        /*printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        print_array(d->h_cscVecVal,40);*/
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
         //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
@@ -274,14 +274,14 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //printf( "The biggest number in MIS result is %d\n", total );
         //if( total==0 )
         //    printf( "Error: no node generated\n" );
-        printf("scatterFloat:\n"); 
+       /* printf("scatterFloat:\n"); 
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
-    */
+        print_array(d->h_cscVecVal,40);*/
+    
     //gpu_timer.Stop();
     //elapsed = gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec. \n", elapsed);
