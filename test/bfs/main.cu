@@ -9,20 +9,26 @@
  
 #include <cstdlib>
 #include <stdio.h>
-#include <cuda_runtime_api.h>
-#include <cuda.h>
-#include <deque>
-#include <cusparse.h>
+#include <string.h>
 
+#include <deque>
+
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+#include <cusparse.h>
 #include <moderngpu.cuh>
+#include <mpi.h>
+
 #include <util.cuh>
 #include <bfs.cuh>
 #include <spmspvBfs.cuh>
-
 #include <testBfs.cpp>
-#include <string.h>
 
 void runBfs(int argc, char**argv) { 
+    // Initialize MPI
+    MPI_Init( &argc, &argv );
+    int direct, rank, size;
+
     int m, n, edge;
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
@@ -36,14 +42,31 @@ void runBfs(int argc, char**argv) {
     int source;
     int device;
     float delta;
-    bool undirected = false;
-    if( parseArgs( argc, argv, source, device, delta, undirected )==true ) {
+    bool undirected;
+    int multi;
+    if( parseArgs( argc, argv, source, device, delta, undirected, multi )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
     //cudaSetDevice(device);
     printf("Testing %s from source %d\n", argv[1], source);
-    
+
+    // Ensure that RDMA ENABLED CUDA is set correctly
+    direct = getenv("MPICH_RDMA_ENABLED_CUDA")==NULL?0:atoi(getenv ("MPICH_RDMA_ENABLED_CUDA"));
+    if(direct != 1){
+        printf ("MPICH_RDMA_ENABLED_CUDA not enabled!\n");
+        exit (EXIT_FAILURE);
+    }
+
+    // Get MPI rank and size
+    // Test whether number of MPI processes matches number passed into commandline
+    MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+    MPI_Comm_size (MPI_COMM_WORLD, &size);
+    if( size!=multi ) {
+        printf( "Assigned node count %d != %d desired node count!\n");
+        exit( EXIT_FAILURE );
+    }
+
     // 2. Reads in number of edges, number of nodes
     //    Note: Need to double # of edges in case of undirected, because this affects
     //          how much to allocate
@@ -166,6 +189,8 @@ void runBfs(int argc, char**argv) {
     free(h_cooColIndA);
     free(h_bfsResult);
     free(h_bfsResultCPU);*/
+
+    MPI_Finalize();
 }
 
 int main(int argc, char**argv) {
