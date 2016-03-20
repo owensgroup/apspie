@@ -1,7 +1,7 @@
 cd $MEMBERWORK/csc103
 date
 
-ARCH="GEN_SM35"
+ARCH="GEN_SM15"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     aprun -n2 -N1 ./test dataset/small/test_cc.mtx -multi 2
