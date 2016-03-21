@@ -139,12 +139,12 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     size_t temp_storage_bytes = 93184;
 
-    /*printf("randVec:\n");
+    printf("randVec:\n");
     cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
     print_array(d->h_cscVecVal,10);
     printf("cscVal:\n");
     cudaMemcpy(d->h_cscVecVal, d_cscVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_cscVecVal,10);*/
+    print_array(d->h_cscVecVal,10);
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -228,8 +228,8 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         // b) custom kernel method (fewer memory reads)
         // TODO
-        scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
-        /*scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
+        //scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
 
         //4. Sort step
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
@@ -281,7 +281,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         print_array(d->h_cscVecVal,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,40);
-    */
+    
     //gpu_timer.Stop();
     //elapsed = gpu_timer.ElapsedMillis();
     //printf("GPU BFS finished in %f msec. \n", elapsed);
