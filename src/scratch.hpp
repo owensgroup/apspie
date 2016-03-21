@@ -24,8 +24,6 @@ typedef struct scratch{
     int *h_cscColDiff;
     int *h_ones;
     int *h_index;
-
-    float *h_spmvResult;
 } d_scratch;
 
 #endif  // APSPIE_SRC_SCRATCH_HPP

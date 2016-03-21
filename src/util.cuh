@@ -628,6 +628,4 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
     (*d)->h_cscColDiff = (int*) malloc (m*sizeof(int));
     (*d)->h_ones = (int*) malloc (m*sizeof(int));
     (*d)->h_index = (int*) malloc (m*sizeof(int));
-
-    (*d)->h_spmvResult = (float*) malloc (m*sizeof(float));
 }

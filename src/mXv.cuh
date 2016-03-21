@@ -76,7 +76,13 @@ __device__ void fatomicMin( float *addr, float val ) {
 }
 
 template<typename T>
-__global__ void scatterAtomic( const int total, const int *d_key, const T *d_cscSwapVal, T *d_temp ) {
+__global__ void scatterAtomicAdd( const int total, const int *d_key, const T *d_cscSwapVal, T *d_temp ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        atomicAdd( &d_temp[d_key[idx]], d_cscSwapVal[idx] );
+}
+
+template<typename T>
+__global__ void scatterAtomicMin( const int total, const int *d_key, const T *d_cscSwapVal, T *d_temp ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
         fatomicMin( &d_temp[d_key[idx]], d_cscSwapVal[idx] );
 }
@@ -228,8 +234,9 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         // b) custom kernel method (fewer memory reads)
         // TODO
-        //scatterAtomic<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
-        //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        if( op==1 ) scatterAtomicAdd<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        else if( op==2 ) scatterAtomicMin<<<NBLOCKS,NTHREADS>>>( total, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        /*
 
         //4. Sort step
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
@@ -280,7 +287,8 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);*/
+        print_array(d->h_cscVecVal,40);
+    */
     
     //gpu_timer.Stop();
     //elapsed = gpu_timer.ElapsedMillis();
@@ -310,7 +318,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 // @brief mXv for sparse vector d_randVecInd, d_randVecVal
 //
 template<typename T>
-void mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
+int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
 
     // h_cscVecInd - index to nonzero vector values
     // h_cscVecVal - for BFS, number of jumps from source
@@ -336,11 +344,11 @@ void mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, 
     //cudaProfilerStart();
 
     // 1. We are given how many nonzeros exist in this column of B 
-        h_cscVecCount = nnz;
-        if( h_cscVecCount == 0 )
-            return; 
-            //printf( "Error: no frontier\n" );
-        else {
+    h_cscVecCount = nnz;
+        if( h_cscVecCount == 0 ) {
+            printf( "Error: no frontier\n" );
+            return 0; 
+        } else {
         /*printf("randVec:\n");
         cudaMemcpy(d->h_cscVecInd, d_randVecInd, nnz*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,nnz);
@@ -395,19 +403,19 @@ void mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, 
         //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
         //LocalitySortKeys( d_cscVecInd, total, context );
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
-        cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         /*printf("SortPairs:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,total);
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,total);*/
-        //MergesortKeys(d_cscVecInd, total, mgpu::less<int>(), context);
+        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
         /*printf("ReduceByKey:\n");
         cudaMemcpy(d->h_cscVecInd, d_resultInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,total);
@@ -417,6 +425,7 @@ void mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
         nnz = h_cscVecCount;
+        return total;
         //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
 
         // 8. Error checking. If misResult is all 0s, something has gone wrong.
