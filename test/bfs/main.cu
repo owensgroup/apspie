@@ -171,7 +171,7 @@ void runBfs(int argc, char**argv) {
     }
 
     // Test copy data from device to host
-    typeVal *h_csrValTest    = (typeVal*)malloc(edge*sizeof(typeVal));
+    typeVal *h_csrValTest = (typeVal*)malloc(edge*sizeof(typeVal));
     int *h_csrColIndTest = (int*)malloc(edge*sizeof(int));
     int *h_csrRowPtrTest = (int*)malloc((m+1)*sizeof(int));
     int *h_rank = (int*)malloc(multi*sizeof(int));
@@ -190,24 +190,24 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_csrValTest, edge*sizeof(typeVal));
     cudaMalloc(&d_csrRowPtrTest, (m+1)*sizeof(int));
     cudaMalloc(&d_csrColIndTest, edge*sizeof(int));
-    cudaMemcpy(&d_new_m, &new_m, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_new_m, &new_m, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_displs, h_displs, multi*sizeof(int), cudaMemcpyHostToDevice);
     printf("%d: %d col, %d nnz\n", rank, new_n, new_m);
     MPI_Barrier(MPI_COMM_WORLD);
     
-    MPI_Gather(&d_new_m, 1, MPI_INT, d_rank, 1, MPI_INT, 1, MPI_COMM_WORLD);
+    MPI_Gather(d_new_m, 1, MPI_INT, d_rank, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     if(rank==0)cudaMemcpy(h_rank, d_rank, multi*sizeof(int), cudaMemcpyDeviceToHost);
-    if(rank==0)print_array(h_rank, 40);
+    if(rank==0)print_array(h_rank, multi);
     for( int i=0; i<multi; i++ ) {
         int valid_rank;
         if( i!=multi-1 ) valid_rank = h_csrRowPtrA[(i+1)*new_n]-h_csrRowPtrA[i*new_n];
-        else valid_rank = edge - h_csrRowPtrA[rank*new_n];
-        if(rank==0)printf("%d: %d\n", i, valid_rank);
+        else valid_rank = edge - h_csrRowPtrA[i*new_n];
+        if(rank==0) printf("%d: %d\n", i, valid_rank);
         if( valid_rank != h_rank[i] && rank==0 ) printf("Error %d: %d != %d\n", i, valid_rank, h_rank[i]);
     }
 
-    MPI_Gatherv(d_csrValA, new_m, MPI_FLOAT, d_csrValTest, d_rank, d_displs, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(d_csrValA, new_m, MPI_FLOAT, d_csrValTest, h_rank, h_displs, MPI_FLOAT, 0, MPI_COMM_WORLD);
     if(rank==0)cudaMemcpy(h_csrValTest, d_csrValTest, m*sizeof(typeVal),cudaMemcpyDeviceToHost);
     if(rank==0)verify( m, h_csrValTest, h_csrValA );
     /*cudaMemcpy(&h_csrColIndA[h_csrRowPtrA[rank*new_n]], d_csrColIndA, (new_m)*sizeof(int),cudaMemcpyDeviceToHost);
