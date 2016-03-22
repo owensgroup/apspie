@@ -245,7 +245,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
-        /*printf("post-sort:\n");
+        printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,40);
         printf("post-sort:\n");
@@ -318,7 +318,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 // @brief mXv for sparse vector d_randVecInd, d_randVecVal
 //
 template<typename T>
-int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
+int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int new_n, int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, mgpu::CudaContext &context) {
 
     // h_cscVecInd - index to nonzero vector values
     // h_cscVecVal - for BFS, number of jumps from source
