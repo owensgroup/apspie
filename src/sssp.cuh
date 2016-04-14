@@ -47,6 +47,7 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
 
     // Allocate GPU memory for result
     T *h_ssspResult = (T*) malloc( m*sizeof(T));
+    T *h_spmvResult = (T*) malloc(m*sizeof(T));
     float *d_spmvResult, *d_spmvSwap;
     cudaMalloc(&d_spmvResult, m*sizeof(float));
     cudaMalloc(&d_spmvSwap, m*sizeof(float));
@@ -55,16 +56,16 @@ void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, co
     // Generate d_ones, d_index
     for( int i=0; i<m; i++ ) {
         h_ssspResult[i]=1.7e+38;
-        d->h_spmvResult[i]=1.7e+38;
+        h_spmvResult[i]=1.7e+38;
         d->h_ones[i] = 1;
         d->h_index[i] = i;
         if( i==vertex ) {
             h_ssspResult[i]=0.0;
-            d->h_spmvResult[i]=0.0;
+            h_spmvResult[i]=0.0;
         }
     }
     cudaMemcpy(d_ssspResult, h_ssspResult, m*sizeof(T), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_spmvSwap, d->h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_spmvSwap, h_spmvResult, m*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_index, d->h_index, m*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d->d_ones, d->h_ones, m*sizeof(int), cudaMemcpyHostToDevice);
 
