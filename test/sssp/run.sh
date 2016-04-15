@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM25"
+ARCH="GEN_SM20"
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
     ./test ../../dataset/small/weighted.mtx

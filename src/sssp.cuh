@@ -2,6 +2,8 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
+#include <naga.h>
+
 //#include "spmspvSssp.cuh"
 #include "scratch.hpp"
 #include "mXv.cuh"
@@ -31,6 +33,72 @@ __global__ void addResultSssp( T *d_ssspResult, T *d_spmvResult, T *d_spmvSwap, 
         //d_ssspResult[idx] = fmin(d_spmvResult[idx],d_ssspResult[idx]);
     }
 }
+
+void check_status(nvgraphStatus_t status)
+{
+    if ((int)status != 0)
+    {
+        printf("ERROR : %d\n",status);
+        exit(0);
+    }
+}
+
+template< typename T >
+void nvgraphSSSP( const int vertex, const int edge, const int m, T *h_cscValA, int *h_cscColPtrA, int *h_cscRowIndA, T *h_ssspResult ) {
+
+    const size_t  n = m, nnz = edge, vertex_numsets = 1, edge_numsets = 1;
+    void** vertex_dim;
+
+    // nvgraph variables
+    nvgraphStatus_t status;
+    nvgraphHandle_t handle;
+    nvgraphGraphDescr_t graph;
+    nvgraphCSCTopology32I_t CSC_input;
+    cudaDataType_t edge_dimT = CUDA_R_32F;
+    cudaDataType_t* vertex_dimT;
+
+    // Host data
+    // d_cscColPtr: destination_offsets_h = (int*) malloc((n+1)*sizeof(int));
+    // d_cscRowInd: source_indices_h = (int*) malloc(nnz*sizeof(int));
+    // d_cscVal:    weights_h = (float*)malloc(nnz*sizeof(float));
+    // SSSP result: sssp_1_h = (float*)malloc(n*sizeof(float));
+    //sssp_2_h = (float*)malloc(n*sizeof(float));
+    vertex_dim  = (void**)malloc(vertex_numsets*sizeof(void*));
+    vertex_dimT = (cudaDataType_t*)malloc(vertex_numsets*sizeof(cudaDataType_t));
+    CSC_input = (nvgraphCSCTopology32I_t) malloc(sizeof(struct nvgraphCSCTopology32I_st));
+
+    vertex_dim[0]= (void*)h_ssspResult;
+    vertex_dimT[0] = CUDA_R_32F;
+
+    check_status(nvgraphCreate(&handle));
+    check_status(nvgraphCreateGraphDescr (handle, &graph));
+
+    CSC_input->nvertices = n;
+    CSC_input->nedges = nnz;
+    CSC_input->destination_offsets = h_cscColPtrA;
+    CSC_input->source_indices = h_cscRowIndA;
+
+    // Set graph connectivity and properties (transfers)
+    check_status(nvgraphSetGraphStructure(handle, graph, (void*)CSC_input, NVGRAPH_CSC_32));
+    check_status(nvgraphAllocateVertexData(handle, graph, vertex_numsets, vertex_dimT));
+    check_status(nvgraphAllocateEdgeData  (handle, graph, edge_numsets, &edge_dimT));
+    check_status(nvgraphSetEdgeData(handle, graph, (void*)h_cscValA, 0, NVGRAPH_CSC_32));
+
+    // Solve
+    int source_vert = vertex;
+    GpuTimer gpu_timer;
+    float elapsed = 0.0f;
+    gpu_timer.Start();
+    check_status(nvgraphSssp(handle, graph, 0,  &source_vert, 0));
+    gpu_timer.Stop();
+    elapsed += gpu_timer.ElapsedMillis();
+    printf("\nGPU SSSP finished in %f msec. \n", elapsed);
+
+    print_array(h_ssspResult,10);
+    check_status(nvgraphGetVertexData(handle, graph, (void*)h_ssspResult, 0, NVGRAPH_CSC_32));
+    print_array(h_ssspResult,10);
+
+}    
 
 template< typename T >
 void sssp( const int vertex, const int edge, const int m, const T *d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, T *d_ssspResult, const int depth, mgpu::CudaContext& context) {

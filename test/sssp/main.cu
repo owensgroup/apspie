@@ -13,6 +13,7 @@
 #include <cuda.h>
 #include <deque>
 #include <cusparse.h>
+#include <naga.h>
 
 #include <moderngpu.cuh>
 #include <util.cuh>
@@ -52,13 +53,17 @@ void runSssp(int argc, char**argv) {
         edge=2*edge;
 
     // 3. Allocate memory depending on how many edges are present
-    typeVal *h_csrValA, *h_cooValA;
+    typeVal *h_csrValA, *h_cooValA, *h_cscValA;
     int *h_csrRowPtrA, *h_csrColIndA, *h_cooRowIndA, *h_cooColIndA;
     float *h_ssspResult, *h_ssspResultCPU;
+    int *h_cscColPtrA, *h_cscRowIndA;
 
     h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_csrRowPtrA = (int*)malloc((m+1)*sizeof(int));
+    h_cscValA    = (typeVal*)malloc(edge*sizeof(typeVal));
+    h_cscRowIndA = (int*)malloc(edge*sizeof(int));
+    h_cscColPtrA = (int*)malloc((m+1)*sizeof(int));
     h_cooValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_cooColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
@@ -120,6 +125,7 @@ void runSssp(int argc, char**argv) {
     cudaMemcpy(d_csrRowPtrA, h_csrRowPtrA, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
     // 7. Run COO -> CSR kernel
+    nvgraphStatus_t status;
     //coo2csr( d_cooRowIndA, edge, m, d_csrRowPtrA );
 
     // 8. Run SSSP on CPU. Need data in CSR form first.
@@ -129,19 +135,24 @@ void runSssp(int argc, char**argv) {
     int depth = 1000;
     ssspCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
     //ssspBoost( source, m, edge, h_csrRowPtrA, h_csrColIndA, h_csrValA, h_ssspResultCPU, depth );
-    depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, depth );
+    //depth = bfsCPU( source, m, h_csrRowPtrA, h_csrColIndA, h_ssspResult, depth );
 
     // 9. Run CSR -> CSC kernel
-    //csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    csr2csc<typeVal>( m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
+    cudaMemcpy(h_cscColPtrA, d_cscColPtrA, (m+1)*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscRowIndA, d_cscRowIndA, edge*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscValA, d_cscValA, edge*sizeof(typeVal), cudaMemcpyDeviceToHost);
 
     // 10. Run SSSP kernel on GPU
     // Experiment 1: Optimized SSSP using mXv (no Val array)
     //spmspvBfs( source, edge, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context); 
 
     // Experiment 2: Optimized SSSP using mXv
-    sssp( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context); 
+    //nvgraphSSSP( source, edge, m, h_cscValA, h_cscColPtrA, h_cscRowIndA, h_ssspResult );
+    nvgraphSSSP( source, edge, m, h_csrValA, h_csrRowPtrA, h_csrColIndA, h_ssspResult );
+    //sssp( source, edge, m, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_ssspResult, depth, *context); 
     // Compare with CPU SSSP for errors
-    cudaMemcpy(h_ssspResult,d_ssspResult,m*sizeof(float),cudaMemcpyDeviceToHost);
+    //cudaMemcpy(h_ssspResult,d_ssspResult,m*sizeof(float),cudaMemcpyDeviceToHost);
     verify( m, h_ssspResult, h_ssspResultCPU );
     //print_array(h_ssspResult, m);
 
