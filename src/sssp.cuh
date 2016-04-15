@@ -94,9 +94,9 @@ void nvgraphSSSP( const int vertex, const int edge, const int m, T *h_cscValA, i
     elapsed += gpu_timer.ElapsedMillis();
     printf("\nGPU SSSP finished in %f msec. \n", elapsed);
 
-    print_array(h_ssspResult,10);
+    print_array(h_ssspResult,n);
     check_status(nvgraphGetVertexData(handle, graph, (void*)h_ssspResult, 0, NVGRAPH_CSC_32));
-    print_array(h_ssspResult,10);
+    print_array(h_ssspResult,n);
 
 }    
 

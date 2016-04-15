@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM20"
+ARCH="GEN_SM25"
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
     ./test ../../dataset/small/weighted.mtx
@@ -11,11 +11,11 @@ if [ "$ARCH" = "GEN_SM15" ] ; then
 fi
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
-	./test ../../dataset/small/weighted.mtx
-    ./test ../../dataset/small/test_cc.mtx
-    ./test ../../dataset/small/test_bc.mtx
-    ./test ../../dataset/small/test_pr.mtx
-    ./test ../../dataset/small/chesapeake.mtx
+	./test ../../dataset/small/weighted.mtx -undirected
+    ./test ../../dataset/small/test_cc.mtx -undirected
+    ./test ../../dataset/small/test_bc.mtx -undirected
+    ./test ../../dataset/small/test_pr.mtx -undirected
+    ./test ../../dataset/small/chesapeake.mtx -undirected
 fi
 
 if [ "$ARCH" = "GEN_SM25" ] ; then
@@ -38,7 +38,7 @@ done
 for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M soc-LiveJournal1 kron_g500-logn21
 do
     if [ "$ARCH" = "GEN_SM35" ] ; then
-        ./test /data/gunrock_dataset/large/$i/$i.mtx
+        ./test /data/gunrock_dataset/large/$i/$i.mtx -undirected
     else
         if [ "$ARCH" = "GEN_SM40" ] ; then
             ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
