@@ -1,8 +1,8 @@
 
 
-ARCH="GEN_SM30"
+ARCH="GEN_SM15"
 
-for i in delaunay_n24 rgg_n_2_24_s0 coAuthorsCiteseer coPapersCiteseer coPapersDBLP road_central road_usa ldoor cage15
+for i in com-orkut cit-Patents coAuthorsDBLP delaunay_n24 rgg_n_2_24_s0 coAuthorsCiteseer coPapersCiteseer coPapersDBLP road_central road_usa ldoor cage15
 do
     if [ "$ARCH" = "GEN_SM15" ] ; then
         ./test /data/gunrock_dataset/large/$i/$i.mtx
