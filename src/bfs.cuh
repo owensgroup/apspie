@@ -109,17 +109,16 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMalloc(&d_sendHistProc, multi*sizeof(int));
     cudaMalloc(&d_recvHist, multi*sizeof(int));
 
-    // Generate initial vector using vertex
-    h_spmvResultInd[0] = vertex;
-    h_spmvResultVec[0] = 1.0;
-
     // Only make one element of h_bfsResult 0 if following is true:
     //   a) if not last processor
     //   b) if last processor
+    // Also generate initial sparse vector using vertex
     for( int i=0; i<new_n; i++ ) {
         h_bfsResult[i] = -1;
         if( ((rank != multi-1 && rank == vertex/new_n) || (rank==multi-1 && vertex >= rank*(old_n/multi+1)) ) && i==vertex ) {
             h_bfsResult[vertex-rank*(old_n/multi+1)] = 0;
+            h_spmvResultInd[0] = vertex-rank*(old_n/multi+1)
+			h_spmvResultVec[0] = 1.0;
             printf("Source vertex on processor %d!\n", rank);
         }
     }
@@ -149,6 +148,9 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     int NBLOCKS = (new_n+NTHREADS-1)/NTHREADS;
     diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, new_n);
 
+	// Testing correctness:
+	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
+
     // Keep a count of new_nnzs traversed
     int cumsum = 0;
     int sum = 0;
@@ -157,8 +159,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     gpu_timer.Start();
     cudaProfilerStart();
 
-	/*
-    for( int i=1; i<depth; i++ ) {
+    for( int i=1; i<2; i++ ) {
+    //for( int i=1; i<depth; i++ ) {
         //printf("Iteration %d\n", i);
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
@@ -167,7 +169,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
 
             // Generate the send histograms
-            cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
+            /*cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
             generateHistogram<<<NTHREADS, NBLOCKS>>>( old_n/multi+1, h_nnz, d_spmvSwapInd, d_sendHist, d_sendHistProc, d_counter, d_mutex );
 
             cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost);
@@ -199,8 +201,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResultInd,d_spmvResultInd, h_nnz*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResultInd,h_nnz);
-        cumsum+=sum;
-    }*/
+        cumsum+=sum;*/
+    }
 
     cudaProfilerStop();
     gpu_timer.Stop();

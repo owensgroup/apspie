@@ -349,11 +349,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
             printf( "Error: no frontier\n" );
             return 0; 
         } else {
-        /*printf("randVec:\n");
+        printf("randVec:\n");
         cudaMemcpy(d->h_cscVecInd, d_randVecInd, nnz*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,nnz);
         cudaMemcpy(d->h_cscVecVal, d_randVecVal, nnz*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,nnz);*/
+        print_array(d->h_cscVecVal,nnz);
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -386,11 +386,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
 
         // Element-wise multiplication
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
-        /*printf("elementMul:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,total);
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,total);*/
+        //printf("elementMul:\n");
+        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,total);
+        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -403,12 +403,13 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
         //LocalitySortKeys( d_cscVecInd, total, context );
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
-        /*printf("SortPairs:\n");
+        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
+
+        printf("SortPairs:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,total);
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,total);*/
-        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
+        print_array(d->h_cscVecVal,total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -416,11 +417,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //6. Segmented Reduce By Key
         //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
         ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
-        /*printf("ReduceByKey:\n");
-        cudaMemcpy(d->h_cscVecInd, d_resultInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,total);
-        cudaMemcpy(d->h_cscVecVal, d_resultVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,total);*/
+        //printf("ReduceByKey:\n");
+        //cudaMemcpy(d->h_cscVecInd, d_resultInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,total);
+        //cudaMemcpy(d->h_cscVecVal, d_resultVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,total);
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
