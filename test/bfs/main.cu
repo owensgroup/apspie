@@ -235,7 +235,7 @@ void runBfs(int argc, char**argv) {
     //spmspvBfs( source, nnz, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
 
     // Experiment 2: Optimized BFS using mXv
-    bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    //bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     // Compare with CPU BFS for errors
     int *h_bfsResultSmall = (int*)malloc(new_n*sizeof(int));
     cudaMemcpy(h_bfsResultSmall,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);

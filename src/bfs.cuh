@@ -113,7 +113,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     h_spmvResultInd[0] = vertex;
     h_spmvResultVec[0] = 1.0;
 
-    // Only make one element of h_bfsResult 0 if we get lucky:
+    // Only make one element of h_bfsResult 0 if following is true:
     //   a) if not last processor
     //   b) if last processor
     for( int i=0; i<new_n; i++ ) {
@@ -157,6 +157,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     gpu_timer.Start();
     cudaProfilerStart();
 
+	/*
     for( int i=1; i<depth; i++ ) {
         //printf("Iteration %d\n", i);
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
@@ -173,7 +174,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             print_array(h_sendHist, multi);
 
             // Exchange then sum up histograms
-            /*MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
+            MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
             int sumHist = 0;
             for( int i=0; i<multi; i++ ) sumHist += h_recvHist[i];
 
@@ -198,8 +199,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResultInd,d_spmvResultInd, h_nnz*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResultInd,h_nnz);
-        cumsum+=sum;*/
-    }
+        cumsum+=sum;
+    }*/
 
     cudaProfilerStop();
     gpu_timer.Stop();
@@ -207,7 +208,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     printf("\nGPU BFS finished in %f msec. \n", elapsed);
     printf("Traversed new_nnzs: %d\n", cumsum);
     printf("Performance: %f GTEPS\n", (float)cumsum/(elapsed*1000000));
-
+	
     // Important: destroy handle
     //cusparseDestroy(handle);
     //cusparseDestroyMatDescr(descr);
