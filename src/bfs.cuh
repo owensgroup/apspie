@@ -202,19 +202,22 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
             cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost);
 			h_sendHist[h_nnz/h_size] = h_nnz;
+			printf("%d: SendHist:\n", rank);
             print_array(h_sendHist, multi);
 
             // Exchange then sum up histograms
-            /*MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
+            MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
             int sumHist = 0;
             for( int i=0; i<multi; i++ ) sumHist += h_recvHist[i];
+			printf("%d: RecvHist:\n", rank);
+			print_array(h_recvHist, multi);
 
             // Exchange vectors
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_scanHist, MPI_INT, d_spmvRecvInd, h_recvHist, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_scanHist, MPI_INT, d_spmvRecvVec, h_recvHist, MPI_INT, MPI_COMM_WORLD );
 
             // Merge vectors
-            MergesortPairs(d_spmvRecv)
+            /*MergesortPairs(d_spmvRecv);
 
             // Update BFS Result
             addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwapInd, i, h_nnz);
