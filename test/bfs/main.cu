@@ -127,8 +127,10 @@ void runBfs(int argc, char**argv) {
     // 5. Allocate GPU memory
     // Multi-GPU:
     //   -Option 1:
-    //   m=m/multi+1            for all
-    //   
+    //   m=ceil(m/multi+1)            for all
+    //   implemented as:
+    //   m=(m+multi-1)/multi   
+    //
     //   nnz=same as Option 2
     //
     //   -Option 2: (not implemented yet)
@@ -139,12 +141,13 @@ void runBfs(int argc, char**argv) {
     //   nnz=nnz-h_csrRowIndA[rank*m]                      else
     int new_n, new_nnz;
     if( rank==multi-1 ) {
-        new_n = m-rank*(m/multi+1)+1;
-        new_nnz = nnz - h_csrRowPtrA[rank*(m/multi+1)];
+        new_n = m-(m+multi-1)/multi*rank;
+        new_nnz = nnz - h_csrRowPtrA[(m+multi-1)/multi*rank];
     } else {
-        new_n = m/multi+1;
+        new_n = (m+multi-1)/multi;
         new_nnz = h_csrRowPtrA[(rank+1)*new_n]-h_csrRowPtrA[rank*new_n];
     }
+    printf("%d: %d col, %d nnz\n", rank, new_n, new_nnz);
 
     typeVal *d_csrValA;
     int *d_csrRowPtrA, *d_csrColIndA, *d_cooRowIndA;
@@ -163,8 +166,8 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_cscColPtrA, (new_n+1)*sizeof(int));
 
     // 6. Copy data from host to device
-    cudaMemcpy(d_csrValA, &h_csrValA[h_csrRowPtrA[rank*(m/multi+1)]], (new_nnz)*sizeof(typeVal),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_csrColIndA, &h_csrColIndA[h_csrRowPtrA[rank*(m/multi+1)]], (new_nnz)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrValA, &h_csrValA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(typeVal),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrColIndA, &h_csrColIndA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(int),cudaMemcpyHostToDevice);
     if( rank==multi-1 ) {
         cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[rank*new_n], (m-rank*new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
     } else {
@@ -177,7 +180,7 @@ void runBfs(int argc, char**argv) {
     int *h_csrRowPtrTest = (int*)malloc((m+1)*sizeof(int));
     int *h_rank = (int*)malloc(multi*sizeof(int));
     int *h_displs = (int*)malloc(multi*sizeof(int));
-    //for( int i=0; i<multi; i++ ) h_displs[i] = h_csrRowPtrA[i*(m/multi+1)];
+    //for( int i=0; i<multi; i++ ) h_displs[i] = h_csrRowPtrA[(m+multi-1)/multi*i];
     for( int i=0; i<multi; i++ ) h_displs[i] = i*new_n;
 
     typeVal *d_csrValTest;

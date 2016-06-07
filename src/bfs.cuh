@@ -43,6 +43,29 @@ __device__ void swap(int &first, int &second) {
     return;
 }
 
+/*
+__global__  void makeHistogram( int *d_bins, const float* d_idata, int
+numBins, int numElements ) {
+    extern __shared__ int tempHistogram[];
+    int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    int sid = threadIdx.x;
+
+    if( sid < numBins )
+        tempHistogram[sid] = 0;
+    __syncthreads();
+
+    if( tid<numElements ) {
+        int bin = whichBin(d_idata[tid], numBins);
+        atomicAdd(&tempHistogram[bin], 1);
+    }
+    __syncthreads();
+
+    if( sid<numBins ) {
+        //d_blockHistogram[sid+blockIdx.x*numBins] = tempHistogram[sid];
+        atomicAdd(&d_bins[threadIdx.x], tempHistogram[threadIdx.x]);
+    }
+}*/
+
 __global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_sendHistProc, int *d_counter, int *d_mutex ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz-1; idx+=blockDim.x*gridDim.x ) {
         if( d_spmvSwapInd[idx]/new_n > d_spmvSwapInd[idx+1]/new_n ) {
@@ -117,7 +140,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
         h_bfsResult[i] = -1;
         if( ((rank != multi-1 && rank == vertex/new_n) || (rank==multi-1 && vertex >= rank*(old_n/multi+1)) ) && i==vertex ) {
             h_bfsResult[vertex-rank*(old_n/multi+1)] = 0;
-            h_spmvResultInd[0] = vertex-rank*(old_n/multi+1)
+            h_spmvResultInd[0] = vertex-rank*(old_n/multi+1);
 			h_spmvResultVec[0] = 1.0;
             printf("Source vertex on processor %d!\n", rank);
         }
