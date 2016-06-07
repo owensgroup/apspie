@@ -386,11 +386,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
 
         // Element-wise multiplication
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
-        //printf("elementMul:\n");
-        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,total);
-        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,total);
+        printf("elementMul:\n");
+        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        print_array(d->h_cscVecInd,total);
+        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        print_array(d->h_cscVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -406,10 +406,14 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         printf("SortPairs:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecInd,total);
-        cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
         print_array(d->h_cscVecVal,total);
+        //cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,total);
+        //cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );

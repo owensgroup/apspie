@@ -68,20 +68,23 @@ numBins, int numElements ) {
 
 __global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_sendHistProc, int *d_counter, int *d_mutex ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz-1; idx+=blockDim.x*gridDim.x ) {
-        if( d_spmvSwapInd[idx]/new_n > d_spmvSwapInd[idx+1]/new_n ) {
+
+    // This code is checking whether we have come to a boundary in GPU partition dest.
+    // Should this be a <?
+        if( d_spmvSwapInd[idx]/new_n < d_spmvSwapInd[idx+1]/new_n ) {
             //printf("<=\n");
             bool isSet = false;
             do {
                 if( isSet = atomicCAS( d_mutex, 0, 1 ) == 0 ) {
-                    d_sendHist[*d_counter] = idx;
-                    d_sendHistProc[*d_counter] = d_spmvSwapInd[idx]/new_n;
-                    if( *d_counter>0 ) {
+                    d_sendHist[d_spmvSwapInd[idx]/new_n] = idx+1;
+                    d_sendHistProc[d_spmvSwapInd[idx]/new_n] = *d_counter;
+                    /*if( *d_counter>0 ) {
                         int i;
     					for( i = *d_counter; i > 0 && d_sendHistProc[i] < d_sendHistProc[i-1]; i--) {
                             swap( d_sendHistProc[i], d_sendHistProc[i-1] );
                         }
                         swap( d_sendHist[*d_counter], d_sendHistProc[i] );
-                    } 
+                    }*/
                     atomicAdd(d_counter, 1);
                 } if( isSet ) {
                     *d_mutex = 0;
@@ -119,7 +122,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMalloc(&d_spmvResultVec, old_n*sizeof(float));
     cudaMalloc(&d_spmvSwapVec, old_n*sizeof(float));
     
-    int h_nnz = 1;
+    int h_nnz = 0;
     int h_cscVecCount = 0;
 
     // Allocate histogram of send 
@@ -138,10 +141,11 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     // Also generate initial sparse vector using vertex
     for( int i=0; i<new_n; i++ ) {
         h_bfsResult[i] = -1;
-        if( ((rank != multi-1 && rank == vertex/new_n) || (rank==multi-1 && vertex >= rank*(old_n/multi+1)) ) && i==vertex ) {
+        if( ((rank != multi-1 && rank == vertex/new_n) || (rank==multi-1 && vertex >= rank*(old_n+multi-1)/multi) ) && i==vertex ) {
             h_bfsResult[vertex-rank*(old_n/multi+1)] = 0;
             h_spmvResultInd[0] = vertex-rank*(old_n/multi+1);
 			h_spmvResultVec[0] = 1.0;
+			h_nnz = 1;
             printf("Source vertex on processor %d!\n", rank);
         }
     }
@@ -173,6 +177,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
 	// Testing correctness:
 	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
+    int h_size = (old_n+multi-1)/multi;
 
     // Keep a count of new_nnzs traversed
     int cumsum = 0;
@@ -192,14 +197,15 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
 
             // Generate the send histograms
-            /*cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
-            generateHistogram<<<NTHREADS, NBLOCKS>>>( old_n/multi+1, h_nnz, d_spmvSwapInd, d_sendHist, d_sendHistProc, d_counter, d_mutex );
+            cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
+            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendHist, d_sendHistProc, d_counter, d_mutex );
 
             cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost);
+			h_sendHist[h_nnz/h_size] = h_nnz;
             print_array(h_sendHist, multi);
 
             // Exchange then sum up histograms
-            MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
+            /*MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
             int sumHist = 0;
             for( int i=0; i<multi; i++ ) sumHist += h_recvHist[i];
 

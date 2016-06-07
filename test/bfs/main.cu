@@ -134,12 +134,13 @@ void runBfs(int argc, char**argv) {
     //   nnz=same as Option 2
     //
     //   -Option 2: (not implemented yet)
-    //   m=m/multi              if rank!=multi-1
-    //   m=m-(multi-1)*m/multi  else
+    //   m_avg=m/multi              if rank!=multi-1
+    //   m_last=m-(multi-1)*m/multi  else
     //
-    //   nnz=h_csrRowIndA[(rank+1)*m]-h_csrRowIndA[rank*m]  if rank!=multi-1
-    //   nnz=nnz-h_csrRowIndA[rank*m]                      else
+    //   nnz=h_csrRowIndA[(rank+1)*m_avg]-h_csrRowIndA[rank*m_avg]  if rank!=multi-1
+    //   nnz=nnz-h_csrRowIndA[rank*m_avg]                      else
     int new_n, new_nnz;
+	// -Option 1:
     if( rank==multi-1 ) {
         new_n = m-(m+multi-1)/multi*rank;
         new_nnz = nnz - h_csrRowPtrA[(m+multi-1)/multi*rank];
@@ -147,6 +148,14 @@ void runBfs(int argc, char**argv) {
         new_n = (m+multi-1)/multi;
         new_nnz = h_csrRowPtrA[(rank+1)*new_n]-h_csrRowPtrA[rank*new_n];
     }
+	// -Option 2:
+	/*if( rank==multi-1 ) {
+		new_n = m-rank*m/multi;
+		new_nnz = nnz - h_csrRowPtrA[rank*m/multi];
+	} else {
+		new_n = m/multi;
+		new_nnz = h_csrRowPtrA[(rank+1)*new_n]-h_csrRowPtrA[rank*new_n];
+	}*/
     printf("%d: %d col, %d nnz\n", rank, new_n, new_nnz);
 
     typeVal *d_csrValA;

@@ -4,7 +4,8 @@ date
 ARCH="GEN_SM15"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
-    aprun -n2 -N1 ./test dataset/small/test_ac.mtx -multi 2
+    aprun -n4 -N1 ./test dataset/small/test_ac.mtx -multi 4
+	aprun -n2 -N1 ./test dataset/small/test_ac.mtx -multi 2
 fi
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
