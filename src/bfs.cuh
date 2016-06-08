@@ -66,7 +66,7 @@ numBins, int numElements ) {
     }
 }*/
 
-__global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_sendHistProc, int *d_counter, int *d_mutex ) {
+__global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_counter, int *d_mutex ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz-1; idx+=blockDim.x*gridDim.x ) {
 
     // This code is checking whether we have come to a boundary in GPU partition dest.
@@ -76,9 +76,9 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
             bool isSet = false;
             do {
                 if( isSet = atomicCAS( d_mutex, 0, 1 ) == 0 ) {
-                    d_sendHist[d_spmvSwapInd[idx]/new_n] = idx+1;
-                    d_sendHistProc[d_spmvSwapInd[idx]/new_n] = *d_counter;
-                    /*if( *d_counter>0 ) {
+                    d_sendHist[d_spmvSwapInd[idx+1]/new_n] = idx+1;
+                    /*d_sendHistProc[d_spmvSwapInd[idx]/new_n] = *d_counter;
+                    if( *d_counter>0 ) {
                         int i;
     					for( i = *d_counter; i > 0 && d_sendHistProc[i] < d_sendHistProc[i-1]; i--) {
                             swap( d_sendHistProc[i], d_sendHistProc[i-1] );
@@ -127,13 +127,21 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
     // Allocate histogram of send 
     int *h_sendHist = (int*)malloc(multi*sizeof(int));
-    int *h_sendHistProc = (int*)malloc(multi*sizeof(int));
+    //int *h_sendHistProc = (int*)malloc(multi*sizeof(int));
     int *h_recvHist = (int*)malloc(multi*sizeof(int));
 
     int *d_sendHist, *d_sendHistProc, *d_recvHist;
     cudaMalloc(&d_sendHist, multi*sizeof(int));
-    cudaMalloc(&d_sendHistProc, multi*sizeof(int));
+    //cudaMalloc(&d_sendHistProc, multi*sizeof(int));
     cudaMalloc(&d_recvHist, multi*sizeof(int));
+
+    // Allocate prefix sum of send 
+    int *h_sendScan = (int*)malloc((multi+1)*sizeof(int));
+    int *h_recvScan = (int*)malloc((multi+1)*sizeof(int));
+
+    int *d_sendScan, *d_recvScan;
+    cudaMalloc(&d_sendScan, (multi+1)*sizeof(int));
+    cudaMalloc(&d_recvScan, (multi+1)*sizeof(int));
 
     // Only make one element of h_bfsResult 0 if following is true:
     //   a) if not last processor
@@ -196,25 +204,39 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             // op=1 Arithmetic semiring
             sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
 
-            // Generate the send histograms
+            // Generate the send prefix sums
             cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
-            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendHist, d_sendHistProc, d_counter, d_mutex );
+            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_counter, d_mutex );
 
-            cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost);
-			h_sendHist[h_nnz/h_size] = h_nnz;
-			printf("%d: SendHist:\n", rank);
-            print_array(h_sendHist, multi);
+            cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
+			for( int j=h_nnz/h_size+1; j<multi+1; j++ )
+				h_sendScan[j] = h_nnz;
+			//printf("%d: SendScan:\n", rank);
+            //print_array(h_sendScan, multi+1);
 
-            // Exchange then sum up histograms
+			// Linear undo prefix sum using CPU
+			linearUnscan( h_sendScan, h_sendHist, multi );
+
+			//printf("%d: SendHist:\n", rank);
+			//print_array(h_sendHist, multi);
+
+            // Exchange send prefix sums
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
-            int sumHist = 0;
-            for( int i=0; i<multi; i++ ) sumHist += h_recvHist[i];
-			printf("%d: RecvHist:\n", rank);
-			print_array(h_recvHist, multi);
+			//printf("%d: RecvHist:\n", rank);
+			//print_array(h_recvHist, multi);
+
+			// Linear prefix sum using CPU
+			linearScan( h_recvHist, h_recvScan, multi );
+
+			printf("%d: RecvScan:\n", rank);
+			print_array(h_recvScan, multi+1);
 
             // Exchange vectors
-            MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_scanHist, MPI_INT, d_spmvRecvInd, h_recvHist, MPI_INT, MPI_COMM_WORLD );
-            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_scanHist, MPI_INT, d_spmvRecvVec, h_recvHist, MPI_INT, MPI_COMM_WORLD );
+            MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvRecvInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
+            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvRecvVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
+
+			printf("%d: SpmvRecvInd:\n", rank);
+			print_device(d_spmvRecvInd, h_recvHist[rank]);
 
             // Merge vectors
             /*MergesortPairs(d_spmvRecv);

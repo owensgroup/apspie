@@ -26,7 +26,7 @@ void print_end_interesting( T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_end( T *array, int length=10 ) {
+void print_end( const T *array, int length=10 ) {
     int start = length > 10 ? length-10 : 0;
     for( int j=start;j<length;j++ ) {
         std::cout << array[j] << " ";
@@ -35,12 +35,45 @@ void print_end( T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_array( T *array, int length=40 ) {
+void print_array( const T *h_data, int length=40 ) {
     if( length>40 ) length=40;
     for( int j=0;j<length;j++ ) {
-        std::cout << "[" << j << "]:" << array[j] << " ";
+        std::cout << "[" << j << "]:" << h_data[j] << " ";
     }
     std::cout << "\n";
+}
+
+template<typename T>
+void print_device( const T *d_data, int length=40 ) {
+	if( length>40 ) length=40;
+
+    // Allocate array on host
+    T *h_data = (T*) malloc(length * sizeof(T));
+
+	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
+	print_array( h_data, length );
+
+    // Cleanup
+    if (h_data) free(h_data);
+}
+
+// @brief Undoes prefix sum sequentially in O(n) time
+//		  Note: h_output is size: length-1
+//				h_input is size:  length
+template<typename T>
+void linearUnscan( const T *h_input, T *h_output, int length ) {
+	for( int i=0; i<length-1; i++ )
+		h_output[i] = h_input[i+1]-h_input[i];
+}
+
+// @brief Does prefix sum sequentially in O(n) time
+//		  Note: h_input is size:  length-1
+//				h_output is size: length
+template<typename T>
+void linearScan( const T *h_input, T *h_output, int length ) {
+	h_output[0] = 0;
+	for( int i=1; i<=length; i++ )
+		h_output[i] = h_input[i-1]+h_output[i-1];
 }
 
 template<typename T>
