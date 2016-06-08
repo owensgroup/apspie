@@ -43,29 +43,6 @@ __device__ void swap(int &first, int &second) {
     return;
 }
 
-/*
-__global__  void makeHistogram( int *d_bins, const float* d_idata, int
-numBins, int numElements ) {
-    extern __shared__ int tempHistogram[];
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    int sid = threadIdx.x;
-
-    if( sid < numBins )
-        tempHistogram[sid] = 0;
-    __syncthreads();
-
-    if( tid<numElements ) {
-        int bin = whichBin(d_idata[tid], numBins);
-        atomicAdd(&tempHistogram[bin], 1);
-    }
-    __syncthreads();
-
-    if( sid<numBins ) {
-        //d_blockHistogram[sid+blockIdx.x*numBins] = tempHistogram[sid];
-        atomicAdd(&d_bins[threadIdx.x], tempHistogram[threadIdx.x]);
-    }
-}*/
-
 __global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_counter, int *d_mutex ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz-1; idx+=blockDim.x*gridDim.x ) {
 
@@ -227,25 +204,30 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
-
 			printf("%d: RecvScan:\n", rank);
 			print_array(h_recvScan, multi+1);
 
             // Exchange vectors
-            MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvRecvInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvRecvVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-
-			printf("%d: SpmvRecvInd:\n", rank);
-			print_device(d_spmvRecvInd, h_recvHist[rank]);
+            MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
+            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
+			printf("%d: SpmvResultInd:\n", rank);
+			print_device(d_spmvResultInd, h_recvScan[multi]);
 
             // Merge vectors
-            /*MergesortPairs(d_spmvRecv);
+			// 2 options:
+			//	1) merge sparse vectors
+			//  2) atomicAdd into dense vector
+            MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
+			printf("%d: SortPairs:\n", rank);
+			print_device(d_spmvResultInd, h_recvScan[multi]);
 
             // Update BFS Result
-            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwapInd, i, h_nnz);
+            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi]);
+			printf("%d: BFSResult:\n", rank);
+			print_device(d_bfsResult, h_size);
 
             // Prune new vector
-            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, h_nnz );
+            /*bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_nnz );
             mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_nnz, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_nnz );
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_nnz );           
