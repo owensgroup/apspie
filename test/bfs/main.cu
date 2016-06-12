@@ -177,11 +177,7 @@ void runBfs(int argc, char**argv) {
     // 6. Copy data from host to device
     cudaMemcpy(d_csrValA, &h_csrValA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, &h_csrColIndA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(int),cudaMemcpyHostToDevice);
-    if( rank==multi-1 ) {
-        cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[rank*new_n], (m-rank*new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
-    } else {
-        cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[rank*new_n], (new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
-    }
+    cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[rank*new_n], (new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
 
     // Test copy data from device to host
     /*typeVal *h_csrValTest = (typeVal*)malloc(nnz*sizeof(typeVal));
@@ -257,7 +253,8 @@ void runBfs(int argc, char**argv) {
     MPI_Gather( &new_n, 1, MPI_INT, h_rank, 1, MPI_INT, 0, MPI_COMM_WORLD);
     
     MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_rank, h_displs, MPI_INT, 0, MPI_COMM_WORLD); 
-    verify( m, h_bfsResult, h_bfsResultCPU );
+    if(rank ==0 )
+		verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
 
 

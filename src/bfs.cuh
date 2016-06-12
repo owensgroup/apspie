@@ -20,11 +20,15 @@ __global__ void bitifySparse( const int *d_randVec, int *d_randVecInd, const int
     }
 }
 
-__global__ void addResultSparse( int *d_bfsResult, int* d_spmvSwapInd, const int iter, const int length) {
+// @brief Performs global to local format conversion before updating BFSResult
+//
+__global__ void addResultSparse( int *d_bfsResult, int* d_spmvSwapInd, const int iter, const int length, const int rank, const int h_size ) {
     const int STRIDE = gridDim.x * blockDim.x;
+	const int offset = rank*h_size;
     for( int idx = (blockIdx.x * blockDim.x ) + threadIdx.x; idx<length; idx+=STRIDE ) {
-        if( d_spmvSwapInd[idx]>=0 && d_bfsResult[d_spmvSwapInd[idx]] < 0 ) {
-            d_bfsResult[d_spmvSwapInd[idx]] = iter;
+        if( d_spmvSwapInd[idx]>=0 && d_bfsResult[d_spmvSwapInd[idx]-offset] < 0 ) {
+            d_bfsResult[d_spmvSwapInd[idx]-offset] = iter;
+			d_spmvSwapInd[idx] -= offset;
         } else d_spmvSwapInd[idx] = -1;
     }
 }
@@ -71,8 +75,17 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
     }
 }
 
+// @brief Performs global to local conversion on cscColPtr
+//
+__global__ void updateColPtr( int *d_cscColPtr, const int length ) {
+	const int offset = d_cscColPtr[0];
+	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<length; idx+=blockDim.x*gridDim.x ) {
+		d_cscColPtr[idx] -= offset;
+	}
+}
+
 template< typename T >
-void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int old_n, const int multi, const int rank, const T* d_cscValA, const int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
+void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int old_n, const int multi, const int rank, const T* d_cscValA, int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -131,7 +144,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             h_spmvResultInd[0] = vertex-rank*(old_n/multi+1);
 			h_spmvResultVec[0] = 1.0;
 			h_nnz = 1;
-            printf("Source vertex on processor %d!\n", rank);
+            //printf("Source vertex on processor %d!\n", rank);
         }
     }
 
@@ -160,8 +173,15 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     int NBLOCKS = (new_n+NTHREADS-1)/NTHREADS;
     diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, new_n);
 
+    // Global to local cscColPtr conversion
+	//printf("%d: PreLocal:\n", rank);
+	//print_device( d_cscColPtrA, new_n+1 );
+	updateColPtr<<<NBLOCKS,NTHREADS>>>( d_cscColPtrA, new_n+1 );
+	//printf("%d: PostLocal:\n", rank);
+	//print_device( d_cscColPtrA, new_n+1 );
+
 	// Testing correctness:
-	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
+	//printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
     int h_size = (old_n+multi-1)/multi;
 
     // Keep a count of new_nnzs traversed
@@ -172,7 +192,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     gpu_timer.Start();
     cudaProfilerStart();
 
-    for( int i=1; i<2; i++ ) {
+    for( int i=1; i<3; i++ ) {
     //for( int i=1; i<depth; i++ ) {
         //printf("Iteration %d\n", i);
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
@@ -198,37 +218,42 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			//print_array(h_sendHist, multi);
 
             // Exchange send prefix sums
+			MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
+			MPI_Barrier( MPI_COMM_WORLD );
 			//printf("%d: RecvHist:\n", rank);
 			//print_array(h_recvHist, multi);
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
-			printf("%d: RecvScan:\n", rank);
-			print_array(h_recvScan, multi+1);
+			//printf("%d: RecvScan:\n", rank);
+			//print_array(h_recvScan, multi+1);
 
             // Exchange vectors
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-			printf("%d: SpmvResultInd:\n", rank);
-			print_device(d_spmvResultInd, h_recvScan[multi]);
+			//fflush( stdout );
+			MPI_Barrier( MPI_COMM_WORLD );
+			//printf("%d: SpmvResultInd:\n", rank);
+			//print_device(d_spmvResultInd, h_recvScan[multi]);
 
             // Merge vectors
 			// 2 options:
 			//	1) merge sparse vectors
 			//  2) atomicAdd into dense vector
-            MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
-			printf("%d: SortPairs:\n", rank);
-			print_device(d_spmvResultInd, h_recvScan[multi]);
+			if( h_recvScan[multi] != 0 ) 
+            	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
+			printf( "Iteration %d: %d\n", i, rank);
+			printDeviceRank(d_spmvResultInd, rank, "SortPairs", h_recvScan[multi] );
 
             // Update BFS Result
-            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi]);
-			printf("%d: BFSResult:\n", rank);
-			print_device(d_bfsResult, h_size);
+            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi], rank, h_size );
+			printDeviceRank(d_bfsResult, rank, "BFSResult", h_size);
+			printDeviceRank(d_spmvResultInd, rank, "SpmvResultInd", h_recvScan[multi]);
 
             // Prune new vector
-            /*bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_nnz );
-            mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_nnz, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
+            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_recvScan[multi] );
+            mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_nnz );
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_nnz );           
             h_nnz = h_cscVecCount;
@@ -237,7 +262,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //print_array(h_bfsResult,m);
             //cudaMemcpy(h_spmvResultInd,d_spmvResultInd, h_nnz*sizeof(int), cudaMemcpyDeviceToHost);
             //print_array(h_spmvResultInd,h_nnz);
-        cumsum+=sum;*/
+        cumsum+=sum;
     }
 
     cudaProfilerStop();

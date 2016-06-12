@@ -57,6 +57,30 @@ void print_device( const T *d_data, int length=40 ) {
     if (h_data) free(h_data);
 }
 
+template<typename T>
+void printArrayRank( const T *h_data, const int rank, const char* str, int length=40 ) {
+    if( length>40 ) length=40;
+	std::cout << str << ": " << rank << std::endl;
+    for( int j=0;j<length;j++ ) {
+        std::cout << "[" << j << "]:" << h_data[j] << " ";
+    }
+    std::cout << "\n";
+}
+
+template<typename T>
+void printDeviceRank( const T *d_data, const int rank, const char* str, int length=40 ) {
+	if( length>40 ) length=40;
+
+    // Allocate array on host
+    T *h_data = (T*) malloc(length * sizeof(T));
+
+	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
+	printArrayRank( h_data, rank, str, length );
+
+    // Cleanup
+    if (h_data) free(h_data);
+}
+
 // @brief Undoes prefix sum sequentially in O(n) time
 //		  Note: h_output is size: length-1
 //				h_input is size:  length
