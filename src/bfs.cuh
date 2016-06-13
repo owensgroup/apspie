@@ -202,8 +202,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaProfilerStart();
 
 	// Important that i begins at 1, because it is used to update BFS result
-    //for( int i=1; i<3; i++ ) {
-    for( int i=1; i<=depth; i++ ) {
+    for( int i=1; i<3; i++ ) {
+    //for( int i=1; i<depth; i++ ) {
 			outf << "Iteration " << i << ": " << rank << std::endl;
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
@@ -215,23 +215,21 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             // Generate the send prefix sums
             generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
 
+			// Max out sendScan from last index of SpmvResult
             cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
             cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
-
 			for( int j=h_counter/h_size+1; j<multi+1; j++ )
 				h_sendScan[j] = h_nnz;
+
+			// Zero out sendScan from previous iterations
 			if( h_nnz==0 )
 				for( int j=0; j<multi+1; j++ )
 					h_sendScan[j] = 0;
-			//printf("%d: SendScan:\n", rank);
-            //print_array(h_sendScan, multi+1);
 			fprintArray("SendScan", outf, h_sendScan, multi+1);
 
 			// Linear undo prefix sum using CPU
 			linearUnscan( h_sendScan, h_sendHist, multi );
-
-			//printf("%d: SendHist:\n", rank);
-			//print_array(h_sendHist, multi);
+			fprintArray("SendHist", outf, h_sendHist, multi);
 
             // Exchange send prefix sums
 			MPI_Barrier( MPI_COMM_WORLD );
@@ -248,7 +246,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
-			outf.flush();
+			//outf.flush();
 			MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
@@ -288,7 +286,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaProfilerStop();
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("\nGPU BFS finished in %f msec. \n", elapsed);
+    printf("\nGPU%d BFS finished in %f msec. \n", rank, elapsed);
     printf("Traversed new_nnzs: %d\n", cumsum);
     printf("Performance: %f GTEPS\n", (float)cumsum/(elapsed*1000000));
 	

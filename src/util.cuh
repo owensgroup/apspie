@@ -87,7 +87,7 @@ void fprintDevice( const char* str, std::ofstream& outf, const T *d_data, int le
 //				h_input is size:  length
 template<typename T>
 void linearUnscan( const T *h_input, T *h_output, int length ) {
-	for( int i=0; i<length-1; i++ )
+	for( int i=0; i<length; i++ )
 		h_output[i] = h_input[i+1]-h_input[i];
 }
 
