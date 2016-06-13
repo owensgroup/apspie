@@ -185,7 +185,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 	//print_device( d_cscColPtrA, new_n+1 );
 
 	// Testing correctness:
-	//printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
+	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
     int h_size = (old_n+multi-1)/multi;
 
 	// File output:
@@ -202,8 +202,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaProfilerStart();
 
 	// Important that i begins at 1, because it is used to update BFS result
-    for( int i=1; i<3; i++ ) {
-    //for( int i=1; i<depth; i++ ) {
+    //for( int i=1; i<3; i++ ) {
+    for( int i=1; i<depth; i++ ) {
 			outf << "Iteration " << i << ": " << rank << std::endl;
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);

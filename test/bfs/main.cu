@@ -269,8 +269,8 @@ void runBfs(int argc, char**argv) {
     }
 
 	outf.flush();
-	//MPI_Barrier(MPI_COMM_WORLD); 
-    //MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_hist, h_scan, MPI_INT, 0, MPI_COMM_WORLD); 
+	MPI_Barrier(MPI_COMM_WORLD); 
+    MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_hist, h_scan, MPI_INT, 0, MPI_COMM_WORLD); 
 	//MPI_Barrier(MPI_COMM_WORLD); 
     if(rank ==0 )
 		verify( m, h_bfsResult, h_bfsResultCPU );
