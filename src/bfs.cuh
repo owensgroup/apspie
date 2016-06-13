@@ -78,7 +78,7 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
 //
 __global__ void generateKey( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_cscFlag ) 
 {
-	for( int idx=blockDim.x+blockIdx.x+threadIdx.x; idx<nnz; idx+=blockDim.x*gridDim.x ) 
+	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz; idx+=blockDim.x*gridDim.x ) 
 		d_cscFlag[idx] = d_spmvSwapInd[idx]/new_n;
 }
 
@@ -252,9 +252,11 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d->d_cscColBad, h_send );
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
 				generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
+				outf << "h_size: \n" << h_size << std::endl;
+				fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 				scatterFloat<<<NTHREADS,NBLOCKS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
 			fprintDevice("SendHist", outf, d_sendHist, multi);
