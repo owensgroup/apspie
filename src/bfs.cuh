@@ -246,7 +246,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
-			//outf.flush();
+			outf.flush();
 			MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );

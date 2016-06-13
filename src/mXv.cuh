@@ -174,7 +174,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     //     values: not necessary (will be expanded into d_cscVecVal in step 3
     mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, m, 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
     if( h_cscVecCount == 0 ) {
-        printf( "Error: no frontier\n" );
+        //printf( "Error: no frontier\n" );
         return 0;
     } else {
         streamCompact<<<NBLOCKS,NTHREADS>>>( d->d_randVecInd, d->d_cscColGood, d->d_cscVecInd, m );
@@ -346,14 +346,14 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     // 1. We are given how many nonzeros exist in this column of B 
     h_cscVecCount = nnz;
         if( h_cscVecCount == 0 ) {
-            printf( "Error: no frontier\n" );
+            //printf( "Error: no frontier\n" );
             return 0; 
         } else {
-        printf("randVec:\n");
-        cudaMemcpy(d->h_cscVecInd, d_randVecInd, nnz*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,nnz);
-        cudaMemcpy(d->h_cscVecVal, d_randVecVal, nnz*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,nnz);
+        //printf("randVec:\n");
+        //cudaMemcpy(d->h_cscVecInd, d_randVecInd, nnz*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,nnz);
+        //cudaMemcpy(d->h_cscVecVal, d_randVecVal, nnz*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,nnz);
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -386,11 +386,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
 
         // Element-wise multiplication
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
-        printf("elementMul:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,total);
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,total);
+        //printf("elementMul:\n");
+        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,total);
+        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -405,11 +405,11 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
-        printf("SortPairs:\n");
-        cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,total);
-        cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,total);
+        //printf("SortPairs:\n");
+        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecInd,total);
+        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
+        //print_array(d->h_cscVecVal,total);
         //cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
         //print_array(d->h_cscVecInd,total);
         //cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
