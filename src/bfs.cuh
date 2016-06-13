@@ -74,6 +74,14 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
     }
 }
 
+// @brief Generates the bin (GPU#) that each SPMV result falls into
+//
+__global__ void generateKey( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_cscFlag ) 
+{
+	for( int idx=blockDim.x+blockIdx.x+threadIdx.x; idx<nnz; idx+=blockDim.x*gridDim.x ) 
+		d_cscFlag[idx] = d_spmvSwapInd[idx]/new_n;
+}
+
 // @brief Performs global to local conversion on cscColPtr
 //
 __global__ void updateColPtr( int *d_cscColPtr, const int length ) {
@@ -164,8 +172,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMemcpy(d_bfsResult, h_bfsResult, new_n*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultInd, h_spmvResultInd, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultVec, h_spmvResultVec, sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_index, d->h_index, new_n*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_ones, d->h_ones, new_n*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_index, d->h_index, new_nnz*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, new_nnz*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate counter and mutex (for histogram)
     int h_counter = 0;
@@ -194,6 +202,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     std::ofstream outf(filename);
 
     // Keep a count of new_nnzs traversed
+	int h_send;
     int cumsum = 0;
     int sum = 0;
     GpuTimer gpu_timer;
@@ -204,7 +213,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 	// Important that i begins at 1, because it is used to update BFS result
     //for( int i=1; i<3; i++ ) {
     for( int i=1; i<depth; i++ ) {
-			outf << "Iteration " << i << ": " << rank << std::endl;
+			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
@@ -213,23 +222,46 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
-            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
-
+			
+			// Option 1: Histogram
+            //generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
+			//
 			// Max out sendScan from last index of SpmvResult
-            cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
-            cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
-			for( int j=h_counter/h_size+1; j<multi+1; j++ )
-				h_sendScan[j] = h_nnz;
+            //cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
+            //cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
+			//for( int j=h_counter/h_size+1; j<multi+1; j++ )
+			//	h_sendScan[j] = h_nnz;
+			//
+			// Zero out sendScan from previous iterations
+			//if( h_nnz==0 )
+			//	for( int j=0; j<multi+1; j++ )
+			//		h_sendScan[j] = 0;
+			//fprintArray("SendScan", outf, h_sendScan, multi+1);
+			//
+			// Linear undo prefix sum using CPU
+			//linearUnscan( h_sendScan, h_sendHist, multi );
+			//fprintArray("SendHist", outf, h_sendHist, multi);
 
+			//
+			// Option 2: Generate Bin ID in parallel and Segmented Reduce
+			//
 			// Zero out sendScan from previous iterations
 			if( h_nnz==0 )
-				for( int j=0; j<multi+1; j++ )
-					h_sendScan[j] = 0;
-			fprintArray("SendScan", outf, h_sendScan, multi+1);
+				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
+			else {
+				zeroArray<<<NTHREADS,NBLOCKS>>>( d->d_cscColBad, h_send );
+				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
+				generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
+				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
+				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				scatterFloat<<<NTHREADS,NBLOCKS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
+			}
+			fprintDevice("SendHist", outf, d_sendHist, multi);
 
-			// Linear undo prefix sum using CPU
-			linearUnscan( h_sendScan, h_sendHist, multi );
-			fprintArray("SendHist", outf, h_sendHist, multi);
+			cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost );
+			linearScan( h_sendHist, h_sendScan, multi);
+			fprintArray("SendScan", outf, h_sendScan, multi+1);
 
             // Exchange send prefix sums
 			MPI_Barrier( MPI_COMM_WORLD );
