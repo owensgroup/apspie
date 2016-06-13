@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include <deque>
+#include <fstream>
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -246,13 +247,22 @@ void runBfs(int argc, char**argv) {
     bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
     // Compare with CPU BFS for errors
     int *h_bfsResultSmall = (int*)malloc(new_n*sizeof(int));
-    cudaMemcpy(h_bfsResultSmall,d_bfsResult,m*sizeof(int),cudaMemcpyDeviceToHost);
-    int *h_rank = (int*)malloc(multi*sizeof(int));
-    int *h_displs = (int*)malloc(multi*sizeof(int));
-    for( int i=0; i<multi; i++ ) h_displs[i] = i*new_n;
-    MPI_Gather( &new_n, 1, MPI_INT, h_rank, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    cudaMemcpy(h_bfsResultSmall,d_bfsResult,new_n*sizeof(int),cudaMemcpyDeviceToHost);
+
+	// File output
+	char filename[20];
+	sprintf(filename, "file_%d,out", rank);
+	std::ofstream outf(filename);
+
+    int *h_hist = (int*)malloc(multi*sizeof(int));
+    int *h_scan = (int*)malloc(multi*sizeof(int));
+    for( int i=0; i<multi; i++ ) {
+		h_hist[i] = new_n;
+		h_scan[i] = i*new_n;
+	}
+	h_hist[multi-1] = m-(m+multi-1)/multi*(multi-1);
     
-    MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_rank, h_displs, MPI_INT, 0, MPI_COMM_WORLD); 
+    MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_hist, h_scan, MPI_INT, 0, MPI_COMM_WORLD); 
     if(rank ==0 )
 		verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);

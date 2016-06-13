@@ -47,7 +47,7 @@ __device__ void swap(int &first, int &second) {
     return;
 }
 
-__global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_counter, int *d_mutex ) {
+__global__ void generateHistogram( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_sendHist, int *d_mutex ) {
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz-1; idx+=blockDim.x*gridDim.x ) {
 
     // This code is checking whether we have come to a boundary in GPU partition dest.
@@ -66,7 +66,6 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
                         }
                         swap( d_sendHist[*d_counter], d_sendHistProc[i] );
                     }*/
-                    atomicAdd(d_counter, 1);
                 } if( isSet ) {
                     *d_mutex = 0;
                 }
@@ -81,6 +80,14 @@ __global__ void updateColPtr( int *d_cscColPtr, const int length ) {
 	const int offset = d_cscColPtr[0];
 	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<length; idx+=blockDim.x*gridDim.x ) {
 		d_cscColPtr[idx] -= offset;
+	}
+}
+
+// @brief Makes right element -1 if it is equal to the current element
+//
+__global__ void lookRightUnique( int *d_array, const int length ) {
+	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<length-1; idx+=blockDim.x*gridDim.x ) {
+		if( d_array[idx] == d_array[idx+1] ) d_array[idx] = -1;
 	}
 }
 
@@ -161,13 +168,10 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMemcpy(d->d_ones, d->h_ones, new_n*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate counter and mutex (for histogram)
-    int *h_counter = (int*)malloc(sizeof(int));
-    *h_counter = 0;
-    int *d_counter;
+    int h_counter = 0;
     int *d_mutex;
-    cudaMalloc(&d_counter, sizeof(int));
     cudaMalloc(&d_mutex, sizeof(int));
-    cudaMemcpy(d_mutex, h_counter, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_mutex, &h_counter, sizeof(int), cudaMemcpyHostToDevice);
 
     // Generate d_cscColDiff
     int NBLOCKS = (new_n+NTHREADS-1)/NTHREADS;
@@ -184,6 +188,11 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 	//printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
     int h_size = (old_n+multi-1)/multi;
 
+	// File output:
+	char filename[20];
+    sprintf(filename, "file_%d.out", rank);
+    std::ofstream outf(filename);
+
     // Keep a count of new_nnzs traversed
     int cumsum = 0;
     int sum = 0;
@@ -192,24 +201,31 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     gpu_timer.Start();
     cudaProfilerStart();
 
-    for( int i=1; i<3; i++ ) {
-    //for( int i=1; i<depth; i++ ) {
-        //printf("Iteration %d\n", i);
+	// Important that i begins at 1, because it is used to update BFS result
+    //for( int i=1; i<3; i++ ) {
+    for( int i=1; i<=depth; i++ ) {
+			outf << "Iteration " << i << ": " << rank << std::endl;
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
             sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+			fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
-            cudaMemcpy(d_counter, h_counter, sizeof(int), cudaMemcpyHostToDevice);
-            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_counter, d_mutex );
+            generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
 
             cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
-			for( int j=h_nnz/h_size+1; j<multi+1; j++ )
+            cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
+
+			for( int j=h_counter/h_size+1; j<multi+1; j++ )
 				h_sendScan[j] = h_nnz;
+			if( h_nnz==0 )
+				for( int j=0; j<multi+1; j++ )
+					h_sendScan[j] = 0;
 			//printf("%d: SendScan:\n", rank);
             //print_array(h_sendScan, multi+1);
+			fprintArray("SendScan", outf, h_sendScan, multi+1);
 
 			// Linear undo prefix sum using CPU
 			linearUnscan( h_sendScan, h_sendHist, multi );
@@ -223,45 +239,49 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			MPI_Barrier( MPI_COMM_WORLD );
 			//printf("%d: RecvHist:\n", rank);
 			//print_array(h_recvHist, multi);
+			fprintArray("RecvHist", outf, h_recvHist, multi);
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
 			//printf("%d: RecvScan:\n", rank);
 			//print_array(h_recvScan, multi+1);
+			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
+			outf.flush();
+			MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-			//fflush( stdout );
 			MPI_Barrier( MPI_COMM_WORLD );
-			//printf("%d: SpmvResultInd:\n", rank);
-			//print_device(d_spmvResultInd, h_recvScan[multi]);
+			fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Merge vectors
 			// 2 options:
 			//	1) merge sparse vectors
 			//  2) atomicAdd into dense vector
-			if( h_recvScan[multi] != 0 ) 
+			if( h_recvScan[multi] != 0 ) { 
             	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
-			printf( "Iteration %d: %d\n", i, rank);
-			printDeviceRank(d_spmvResultInd, rank, "SortPairs", h_recvScan[multi] );
+				lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
+			}
+			fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
 
             // Update BFS Result
             addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi], rank, h_size );
-			printDeviceRank(d_bfsResult, rank, "BFSResult", h_size);
-			printDeviceRank(d_spmvResultInd, rank, "SpmvResultInd", h_recvScan[multi]);
+			fprintDevice("BFSResult", outf, d_bfsResult, h_size);
+			fprintDevice("Pre-Filter SpmvResultInd", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Prune new vector
+			cudaMemcpy(d_spmvSwapInd, d_spmvResultInd, h_recvScan[multi]*sizeof(int), cudaMemcpyDeviceToDevice);
+			cudaMemcpy(d_spmvSwapVec, d_spmvResultVec, h_recvScan[multi]*sizeof(float), cudaMemcpyDeviceToDevice);
             bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_recvScan[multi] );
+			fprintDevice("Bitify Sparse", outf, d->d_randVecInd, h_recvScan[multi]);
             mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
-            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_nnz );
-            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_nnz );           
+			fprintDevice("Indices Good", outf, d->d_cscColGood, h_recvScan[multi]);
+            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_recvScan[multi] );
+            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_recvScan[multi] );           
             h_nnz = h_cscVecCount;
+			fprintDevice("Post-Filter SpmvResultInd", outf, d_spmvResultInd, h_nnz);
 
-            //cudaMemcpy(h_bfsResult,d_bfsResult, m*sizeof(int), cudaMemcpyDeviceToHost);
-            //print_array(h_bfsResult,m);
-            //cudaMemcpy(h_spmvResultInd,d_spmvResultInd, h_nnz*sizeof(int), cudaMemcpyDeviceToHost);
-            //print_array(h_spmvResultInd,h_nnz);
         cumsum+=sum;
     }
 

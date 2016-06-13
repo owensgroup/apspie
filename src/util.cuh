@@ -2,6 +2,7 @@
 
 #include <ctime>
 #include <iostream>
+#include <fstream>
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -58,24 +59,24 @@ void print_device( const T *d_data, int length=40 ) {
 }
 
 template<typename T>
-void printArrayRank( const T *h_data, const int rank, const char* str, int length=40 ) {
+void fprintArray( const char* str, std::ofstream& outf, const T *h_data, int length=40 ) {
     if( length>40 ) length=40;
-	std::cout << str << ": " << rank << std::endl;
+	outf << str << ":\n";
     for( int j=0;j<length;j++ ) {
-        std::cout << "[" << j << "]:" << h_data[j] << " ";
+        outf << "[" << j << "]:" << h_data[j] << " ";
     }
-    std::cout << "\n";
+    outf << "\n";
 }
 
 template<typename T>
-void printDeviceRank( const T *d_data, const int rank, const char* str, int length=40 ) {
+void fprintDevice( const char* str, std::ofstream& outf, const T *d_data, int length=40 ) {
 	if( length>40 ) length=40;
 
     // Allocate array on host
     T *h_data = (T*) malloc(length * sizeof(T));
 
 	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
-	printArrayRank( h_data, rank, str, length );
+	fprintArray( str, outf, h_data, length );
 
     // Cleanup
     if (h_data) free(h_data);
