@@ -178,7 +178,7 @@ void runBfs(int argc, char**argv) {
     // 6. Copy data from host to device
     cudaMemcpy(d_csrValA, &h_csrValA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(typeVal),cudaMemcpyHostToDevice);
     cudaMemcpy(d_csrColIndA, &h_csrColIndA[h_csrRowPtrA[(m+multi-1)/multi*rank]], (new_nnz)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[rank*new_n], (new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_csrRowPtrA, &h_csrRowPtrA[(m+multi-1)/multi*rank], (new_n+1)*sizeof(int),cudaMemcpyHostToDevice);
 
     // Test copy data from device to host
     /*typeVal *h_csrValTest = (typeVal*)malloc(nnz*sizeof(typeVal));
@@ -265,7 +265,7 @@ void runBfs(int argc, char**argv) {
 			h_scan[i] = i*new_n;
 		}
 		h_hist[multi-1] = m-h_scan[multi-1];
-		print_array( h_hist, multi );
+		//printArray( "BFSResult Hist", h_hist, multi );
     }
 
 	outf.flush();

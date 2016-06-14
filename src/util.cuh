@@ -36,8 +36,9 @@ void print_end( const T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_array( const T *h_data, int length=40 ) {
+void printArray( const char* str, const T *h_data, int length=40 ) {
     if( length>40 ) length=40;
+	std::cout << str << ":\n";
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << h_data[j] << " ";
     }
@@ -45,14 +46,14 @@ void print_array( const T *h_data, int length=40 ) {
 }
 
 template<typename T>
-void print_device( const T *d_data, int length=40 ) {
+void printDevice( const char* str, const T *d_data, int length=40 ) {
 	if( length>40 ) length=40;
 
     // Allocate array on host
     T *h_data = (T*) malloc(length * sizeof(T));
 
 	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
-	print_array( h_data, length );
+	printArray( str, h_data, length );
 
     // Cleanup
     if (h_data) free(h_data);

@@ -58,14 +58,6 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
             do {
                 if( isSet = atomicCAS( d_mutex, 0, 1 ) == 0 ) {
                     d_sendHist[d_spmvSwapInd[idx+1]/new_n] = idx+1;
-                    /*d_sendHistProc[d_spmvSwapInd[idx]/new_n] = *d_counter;
-                    if( *d_counter>0 ) {
-                        int i;
-    					for( i = *d_counter; i > 0 && d_sendHistProc[i] < d_sendHistProc[i-1]; i--) {
-                            swap( d_sendHistProc[i], d_sendHistProc[i-1] );
-                        }
-                        swap( d_sendHist[*d_counter], d_sendHistProc[i] );
-                    }*/
                 } if( isSet ) {
                     *d_mutex = 0;
                 }
@@ -135,9 +127,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     //int *h_sendHistProc = (int*)malloc(multi*sizeof(int));
     int *h_recvHist = (int*)malloc(multi*sizeof(int));
 
-    int *d_sendHist, *d_sendHistProc, *d_recvHist;
+    int *d_sendHist, *d_recvHist;
     cudaMalloc(&d_sendHist, multi*sizeof(int));
-    //cudaMalloc(&d_sendHistProc, multi*sizeof(int));
     cudaMalloc(&d_recvHist, multi*sizeof(int));
 
     // Allocate prefix sum of send 
@@ -172,8 +163,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMemcpy(d_bfsResult, h_bfsResult, new_n*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultInd, h_spmvResultInd, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultVec, h_spmvResultVec, sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_index, d->h_index, new_nnz*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_ones, d->h_ones, new_nnz*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_index, d->h_index, old_n*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, old_n*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate counter and mutex (for histogram)
     int h_counter = 0;
@@ -188,9 +179,11 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     // Global to local cscColPtr conversion
 	//printf("%d: PreLocal:\n", rank);
 	//print_device( d_cscColPtrA, new_n+1 );
+	//if( rank==3 ) printDevice( "ColPtr", d_cscColPtrA );
 	updateColPtr<<<NBLOCKS,NTHREADS>>>( d_cscColPtrA, new_n+1 );
-	//printf("%d: PostLocal:\n", rank);
-	//print_device( d_cscColPtrA, new_n+1 );
+	//if( rank==0 || rank==3 ) printDevice( "ColPtr", d_cscColPtrA );
+	//if( rank==0 || rank==3 ) printDevice( "RowInd", d_cscRowIndA );
+	//printDevice( "PostLocal", d_cscColPtrA, new_n+1 );
 
 	// Testing correctness:
 	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
@@ -218,7 +211,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
-            sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+            //sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+            sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
 			fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
@@ -254,9 +248,14 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 				generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
 				outf << "h_size: \n" << h_size << std::endl;
 				fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+				fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
+
+				outf.flush();
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
 				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
 				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+
+				outf.flush();
 				scatterFloat<<<NTHREADS,NBLOCKS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
 			fprintDevice("SendHist", outf, d_sendHist, multi);

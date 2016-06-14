@@ -1,5 +1,6 @@
 // Provides BFS function for GPU
 
+#include <fstream>
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <cub/cub.cuh>
@@ -147,10 +148,10 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
     /*printf("randVec:\n");
     cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_cscVecVal,10);
+    printDevice(d->h_cscVecVal,10);
     printf("cscVal:\n");
     cudaMemcpy(d->h_cscVecVal, d_cscVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_cscVecVal,10);*/
+    printDevice(d->h_cscVecVal,10);*/
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -210,9 +211,9 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         /*printf("pre-ewiseMult:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
+        printDevice(d->h_cscVecInd,40);
         cudaMemcpy(d->h_cscVecVal, d->d_cscTempVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);*/
+        printDevice(d->h_cscVecVal,40);*/
 
         // Element-wise multiplication
         //
@@ -223,7 +224,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         /*printf("post-ewiseMult:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);*/
+        printDevice(d->h_cscVecVal,40);*/
 
         // Reset dense flag array
         //
@@ -247,10 +248,10 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
 
         printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
+        printDevice(d->h_cscVecInd,40);
         printf("post-sort:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);*/
+        printDevice(d->h_cscVecVal,40);*/
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -267,10 +268,10 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         /*printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,40);
+        printDevice(d->h_cscVecInd,40);
         printf("post-reduce:\n");
         cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);*/
+        printDevice(d->h_cscVecVal,40);*/
 
         scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
         //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
@@ -283,11 +284,11 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //    printf( "Error: no node generated\n" );
        /* printf("scatterFloat:\n"); 
         cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, m*sizeof(int), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecInd,h_cscVecCount);
+        printDevice(d->h_cscVecInd,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,h_cscVecCount);
+        printDevice(d->h_cscVecVal,h_cscVecCount);
         cudaMemcpy(d->h_cscVecVal, d_mmResult, m*sizeof(float), cudaMemcpyDeviceToHost);
-        print_array(d->h_cscVecVal,40);
+        printDevice(d->h_cscVecVal,40);
     */
     
     //gpu_timer.Stop();
@@ -328,10 +329,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
     size_t temp_storage_bytes = 93184;
 
-    /*printf("randVec:\n");
-    cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(d->h_cscVecVal,10);*/
-
     // First iteration
     // Note that updateBFS is similar to addResult kernel
     //   -has additional pruning function. If new node, keep. Otherwise, prune.
@@ -348,12 +345,9 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         if( h_cscVecCount == 0 ) {
             //printf( "Error: no frontier\n" );
             return 0; 
-        } else {
-        //printf("randVec:\n");
-        //cudaMemcpy(d->h_cscVecInd, d_randVecInd, nnz*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,nnz);
-        //cudaMemcpy(d->h_cscVecVal, d_randVecVal, nnz*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,nnz);
+		}
+		//printDevice("randVec key", d_randVecInd, nnz);
+        //printDevice("randVec Val", d_randVecVal, nnz);
         
         //3. Gather from CSR graph into one big array       |     |  |
         // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
@@ -366,8 +360,16 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //  -> d_cscVecInd
         //  -> d_cscVecVal
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d->d_cscColDiff, d->d_cscColBad, context );
+		//printDevice("Row length", d->d_cscColBad, h_cscVecCount);
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
+		//printDevice("Row length scan", d->d_cscColGood, h_cscVecCount+1);
+		if( total==0 ) {
+            //printf( "Error: dead-end node\n" );
+            return 0; 
+        }
+			
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d_cscColPtr, d->d_cscColBad, context );
+		//printDevice("Col indices", d->d_cscColBad, total);
 
         //printf("Processing %d nodes frontier size: %d\n", h_cscVecCount, total);
 
@@ -386,11 +388,8 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
 
         // Element-wise multiplication
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
-        //printf("elementMul:\n");
-        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,total);
-        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,total);
+		//printDevice("elementMul key", d->d_cscVecInd, total);
+        //printDevice("elementMul Val", d->d_cscVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -404,16 +403,8 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //LocalitySortKeys( d_cscVecInd, total, context );
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
-
-        //printf("SortPairs:\n");
-        //cudaMemcpy(d->h_cscVecInd, d->d_cscVecInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,total);
-        //cudaMemcpy(d->h_cscVecVal, d->d_cscVecVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,total);
-        //cudaMemcpy(d->h_cscVecInd, d->d_cscSwapInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,total);
-        //cudaMemcpy(d->h_cscVecVal, d->d_cscSwapVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,total);
+		//printDevice("In-loop SortPairs key", d->d_cscVecInd, total);
+        //printDevice("In-loop SortPairs Val", d->d_cscVecVal,total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -421,11 +412,8 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //6. Segmented Reduce By Key
         //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
         ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
-        //printf("ReduceByKey:\n");
-        //cudaMemcpy(d->h_cscVecInd, d_resultInd, total*sizeof(int), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecInd,total);
-        //cudaMemcpy(d->h_cscVecVal, d_resultVal, total*sizeof(float), cudaMemcpyDeviceToHost);
-        //print_array(d->h_cscVecVal,total);
+		//printDevice("ReduceByKey key", d_resultInd, total);
+        //printDevice("ReduceByKey Val", d_resultVal,total);
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
@@ -462,5 +450,141 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     //printf( "The smallest number in MIS result is %d\n", total );
     //if( total==-1 )
     //    printf( "Error: MIS has -1 in it\n" );
-    } 
+}
+
+// @brief mXv for sparse vector d_randVecInd, d_randVecVal
+//
+template<typename T>
+int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int edge, const int new_n, int m, int &nnz, const T *d_cscVal, const int *d_cscColPtr, const int *d_cscRowInd, int *d_resultInd, T *d_resultVal, d_scratch *d, std::ofstream &outf, mgpu::CudaContext &context) {
+
+    // h_cscVecInd - index to nonzero vector values
+    // h_cscVecVal - for BFS, number of jumps from source
+    //             - for SSSP, distance from source
+    // h_cscVecCount - number of nonzero vector values
+    int h_cscVecCount;
+    int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
+    size_t temp_storage_bytes = 93184;
+
+    // First iteration
+    // Note that updateBFS is similar to addResult kernel
+    //   -has additional pruning function. If new node, keep. Otherwise, prune.
+    //GpuTimer gpu_timer;
+    //float elapsed = 0.0f;
+    //gpu_timer.Start();
+    //int iter = 0;
+    int total= 0;
+    //float minimum = 1;
+    //cudaProfilerStart();
+
+    // 1. We are given how many nonzeros exist in this column of B 
+    h_cscVecCount = nnz;
+        if( h_cscVecCount == 0 ) {
+            //printf( "Error: no frontier\n" );
+            return 0; 
+		}
+		fprintDevice("randVec key", outf, d_randVecInd, nnz);
+        fprintDevice("randVec Val", outf, d_randVecVal, nnz);
+        
+        //3. Gather from CSC graph into one big array       |     |  |
+        // 1. Extracts the col lengths we are interested in 3  3  3  2  3  1
+        //  -> d_cscColBad
+        // 2. Scans them, giving the offset from 0          0  3  6  8
+        //  -> d_cscColGood
+        // 3. Extracts the row indices we are interested in 0  6  9
+        //  -> d_cscColBad
+        // 4. Extracts the neighbour lists
+        //  -> d_cscVecInd
+        //  -> d_cscVecVal
+        IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d->d_cscColDiff, d->d_cscColBad, context );
+		fprintDevice("Col length", outf, d->d_cscColBad, h_cscVecCount);
+        mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
+		fprintDevice("Col length scan", outf, d->d_cscColGood, h_cscVecCount+1);
+		if( total==0 ) {
+            //printf( "Error: dead-end node\n" );
+            return 0; 
+        }
+			
+        IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d_cscColPtr, d->d_cscColBad, context );
+		fprintDevice("Row indices", outf, d->d_cscColBad, total);
+
+        outf << "Processing " << h_cscVecCount << " nodes" << std::endl;
+		outf << "Frontier size: " << total << std::endl;
+
+	// Vector Portion
+        // a) naive method
+        //   -IntervalExpand into frontier-length list
+        //      1. Gather the elements indexed by d_cscVecInd
+        //      2. Expand the elements to memory set by d_cscColGood
+        //   -Element-wise multiplication with frontier
+        //IntervalGather( h_cscVecCount, d_cscVecInd, d->d_index, h_cscVecCount, d_randVec, d->d_cscTempVal, context );
+        IntervalExpand( total, d->d_cscColGood, d_randVecVal, h_cscVecCount, d->d_cscSwapVal, context );
+
+        // Matrix Structure Portion
+        IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscRowInd, d->d_cscVecInd, context );
+        IntervalGather( total, d->d_cscColBad, d->d_cscColGood, h_cscVecCount, d_cscVal, d->d_cscTempVal, context );
+
+        // Element-wise multiplication
+        ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
+		fprintDevice("elementMul key", outf, d->d_cscVecInd, total);
+        fprintDevice("elementMul Val", outf, d->d_cscVecVal,total);
+
+        // b) custom kernel method (fewer memory reads)
+        // TODO
+        
+        // Reset dense flag array
+        //preprocessFlag<<<NBLOCKS,NTHREADS>>>( d_mmResult, m );
+
+        //4. Sort step
+        //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
+        //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
+        //LocalitySortKeys( d_cscVecInd, total, context );
+        //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
+		fprintDevice("In-loop SortPairs key", outf, d->d_cscVecInd, total);
+        fprintDevice("In-loop SortPairs Val", outf, d->d_cscVecVal,total);
+
+        //5. Gather the rand values
+        //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
+
+        //6. Segmented Reduce By Key
+        //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+		fprintDevice("ReduceByKey key", outf,d_resultInd, total);
+        fprintDevice("ReduceByKey Val", outf,d_resultVal,total);
+
+        //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
+
+        nnz = h_cscVecCount;
+        return total;
+        //scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
+
+        // 8. Error checking. If misResult is all 0s, something has gone wrong.
+        // Check using max reduce
+        //mgpu::Reduce( d_mmResult, m, INT_MIN, mgpu::maximum<int>(), (int*)0, &total, context );
+        //printf( "The biggest number in MIS result is %d\n", total );
+        //if( total==0 )
+        //    printf( "Error: no node generated\n" );*/
+    
+//    printf("Running iteration %d.\n", iter);
+//    gpu_timer.Stop();
+//    elapsed = gpu_timer.ElapsedMillis();
+//    printf("GPU BFS finished in %f msec. \n", elapsed);
+//    gpu_timer.Start();
+//    printf("Keeping %d elements out of %d.\n", h_cscVecCount, total);
+    //    }
+    //else if( minimum<=(float)0 )
+    //    break;
+    //}*/
+
+    //cudaProfilerStop();
+    //gpu_timer.Stop();
+    //elapsed += gpu_timer.ElapsedMillis();
+    //printf("\nGPU MM finished in %f msec. \n", elapsed);
+
+    // 9. Error checking. If element of misResult is -1 something has gone wrong.
+    // Check using min reduce
+    //mgpu::Reduce( d_mmResult, m, INT_MAX, mgpu::minimum<int>(), (int*)0, &total, context );
+    //printf( "The smallest number in MIS result is %d\n", total );
+    //if( total==-1 )
+    //    printf( "Error: MIS has -1 in it\n" );
 }
