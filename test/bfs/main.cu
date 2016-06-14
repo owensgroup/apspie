@@ -239,24 +239,12 @@ void runBfs(int argc, char**argv) {
     // 9. Run CSR -> CSC kernel
     //csr2csc<typeVal>( new_n, new_nnz, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA );
 
-    // 10. Run BFS kernel on GPU
-    // Experiment 1: Optimized BFS using mXv (no Val array)
-    //spmspvBfs( source, nnz, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-
-    // Experiment 2: Optimized BFS using mXv
-    bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
-
-    // Compare with CPU BFS for errors
-
-    int *h_bfsResultSmall = (int*)malloc(new_n*sizeof(int));
-    cudaMemcpy(h_bfsResultSmall,d_bfsResult,new_n*sizeof(int),cudaMemcpyDeviceToHost);
-	int *h_hist, *h_scan;
-
 	// File output
 	char filename[20];
 	sprintf(filename, "file_%d,out", rank);
 	std::ofstream outf(filename);
 
+	int *h_hist, *h_scan;
 	if( rank==0 ) {
     	h_hist = (int*)malloc(multi*sizeof(int));
     	h_scan = (int*)malloc(multi*sizeof(int));
@@ -268,10 +256,29 @@ void runBfs(int argc, char**argv) {
 		//printArray( "BFSResult Hist", h_hist, multi );
     }
 
-	outf.flush();
+    // 10. Run BFS kernel on GPU
+    // Experiment 1: Optimized BFS using mXv (no Val array)
+    //spmspvBfs( source, nnz, m, h_csrRowPtrA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+
+    // Experiment 2: Optimized BFS using mXv
+    CpuTimer cpu_timerSPMV;
 	MPI_Barrier(MPI_COMM_WORLD); 
+	cpu_timerSPMV.Start();
+    bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+	MPI_Barrier(MPI_COMM_WORLD); 
+	cpu_timerSPMV.Stop();
+	float elapsedSPMV = cpu_timerSPMV.ElapsedMillis();
+	if( rank==0 )
+        printf("SPMV: %f ms\n", elapsedSPMV);
+
+    // Compare with CPU BFS for errors
+    int *h_bfsResultSmall = (int*)malloc(new_n*sizeof(int));
+    cudaMemcpy(h_bfsResultSmall,d_bfsResult,new_n*sizeof(int),cudaMemcpyDeviceToHost);
+
+	//outf.flush();
     MPI_Gatherv(h_bfsResultSmall, new_n, MPI_INT, h_bfsResult, h_hist, h_scan, MPI_INT, 0, MPI_COMM_WORLD); 
 	//MPI_Barrier(MPI_COMM_WORLD); 
+
     if(rank ==0 )
 		verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
