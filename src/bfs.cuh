@@ -211,8 +211,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
-            sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
-            //sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
+            //sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+            sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
 			//fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
