@@ -452,6 +452,13 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     //    printf( "Error: MIS has -1 in it\n" );
 }
 
+__global__ void debugFilter( int total, const int *d_cscVecInd, int new_n, int *d_sum )
+{
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        if( d_cscVecInd[idx] < new_n )
+          atomicAdd( d_sum, 1 );
+}
+
 // @brief mXv for sparse vector d_randVecInd, d_randVecVal
 //
 template<typename T>
@@ -473,6 +480,10 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
     //gpu_timer.Start();
     //int iter = 0;
     int total= 0;
+    int h_sum = 0;
+    int *d_sum;
+    cudaMalloc( &d_sum, sizeof(int));
+    cudaMemcpy( d_sum, &total, sizeof(int), cudaMemcpyHostToDevice );
     //float minimum = 1;
     //cudaProfilerStart();
 
@@ -500,6 +511,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
 		fprintDevice("Col length scan", outf, d->d_cscColGood, h_cscVecCount+1);
 		if( total==0 ) {
+            nnz = 0;
             //printf( "Error: dead-end node\n" );
             return 0; 
         }
@@ -527,7 +539,12 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 		fprintDevice("elementMul key", outf, d->d_cscVecInd, total);
         fprintDevice("elementMul Val", outf, d->d_cscVecVal,total);
+		fprintDeviceAll("elementMul key", outf, d->d_cscVecInd, total);
 
+        debugFilter<<<NBLOCKS, NTHREADS>>>( total, d->d_cscVecInd, new_n, d_sum );
+        cudaMemcpy( &h_sum, d_sum, sizeof(int), cudaMemcpyDeviceToHost );
+        outf << "The number of 0s in elementMul: " << h_sum << std::endl;
+        
         // b) custom kernel method (fewer memory reads)
         // TODO
         
@@ -540,8 +557,10 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //LocalitySortKeys( d_cscVecInd, total, context );
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
+        //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, 40, mgpu::less<int>(), context);
 		fprintDevice("In-loop SortPairs key", outf, d->d_cscVecInd, total);
         fprintDevice("In-loop SortPairs Val", outf, d->d_cscVecVal,total);
+		fprintDeviceAll("In-loop SortPairs key", outf, d->d_cscVecInd, total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );

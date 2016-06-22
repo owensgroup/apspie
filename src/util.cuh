@@ -83,6 +83,28 @@ void fprintDevice( const char* str, std::ofstream& outf, const T *d_data, int le
     if (h_data) free(h_data);
 }
 
+template<typename T>
+void fprintArrayAll( const char* str, std::ofstream& outf, const T *h_data, int length=40 ) {
+	outf << str << ":\n";
+    for( int j=0;j<length;j++ ) {
+        outf << "[" << j << "]:" << h_data[j] << " ";
+    }
+    outf << "\n";
+}
+
+template<typename T>
+void fprintDeviceAll( const char* str, std::ofstream& outf, const T *d_data, int length=40 ) {
+
+    // Allocate array on host
+    T *h_data = (T*) malloc(length * sizeof(T));
+
+	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
+	fprintArrayAll( str, outf, h_data, length );
+
+    // Cleanup
+    if (h_data) free(h_data);
+}
+
 // @brief Undoes prefix sum sequentially in O(n) time
 //		  Note: h_output is size: length-1
 //				h_input is size:  length

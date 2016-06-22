@@ -76,10 +76,14 @@ __global__ void generateKey( const int new_n, const int nnz, const int *d_spmvSw
 
 // @brief Performs global to local conversion on cscColPtr
 //
+//__global__ void updateColPtr( int *d_cscColPtr, const int length, int *offset, int rank ) {
 __global__ void updateColPtr( int *d_cscColPtr, const int length ) {
-	const int offset = d_cscColPtr[0];
+    const int offset = d_cscColPtr[0];
 	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<length; idx+=blockDim.x*gridDim.x ) {
-		d_cscColPtr[idx] -= offset;
+		if( idx!=0 ) 
+          d_cscColPtr[idx] -= offset;
+        //if( d_cscColPtr[idx] > 225032 && rank==1 )
+        //  printf("Error %d: %d > 225032\n", idx, d_cscColPtr[idx]);
 	}
 }
 
@@ -179,9 +183,11 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     // Global to local cscColPtr conversion
 	//printf("%d: PreLocal:\n", rank);
 	//print_device( d_cscColPtrA, new_n+1 );
-	//if( rank==3 ) printDevice( "ColPtr", d_cscColPtrA );
+	if( rank==1 ) printDevice( "ColPtr", d_cscColPtrA );
 	updateColPtr<<<NBLOCKS,NTHREADS>>>( d_cscColPtrA, new_n+1 );
-	//if( rank==0 || rank==3 ) printDevice( "ColPtr", d_cscColPtrA );
+    zeroArray<<<NBLOCKS,NTHREADS>>>( d_cscColPtrA, 1);
+ 
+	if( rank==1 ) printDevice( "ColPtr", d_cscColPtrA );
 	//if( rank==0 || rank==3 ) printDevice( "RowInd", d_cscRowIndA );
 	//printDevice( "PostLocal", d_cscColPtrA, new_n+1 );
 
@@ -203,7 +209,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     gpu_timer.Start();
     cudaProfilerStart();
 
-	// Important that i begins at 1, because it is used to update BFS result
+    // Important that i begins at 1, because it is used to update BFS result
     //for( int i=1; i<3; i++ ) {
     for( int i=1; i<depth; i++ ) {
 			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
@@ -272,7 +278,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
-			//fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
+			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
 			outf.flush();
@@ -280,7 +286,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
 			MPI_Barrier( MPI_COMM_WORLD );
-			//fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
+			fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Merge vectors
 			// 2 options:
@@ -290,7 +296,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
 				lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
 			}
-			//fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
+			fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
 
             // Update BFS Result
             addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi], rank, h_size );
