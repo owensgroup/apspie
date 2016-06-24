@@ -2,6 +2,7 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
+#include <cub/cub.cuh>
 #include "mXv.cuh"
 #include "scratch.hpp"
 
@@ -214,8 +215,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaProfilerStart();
 
     // Important that i begins at 1, because it is used to update BFS result
-    for( int i=1; i<3; i++ ) {
-    //for( int i=1; i<depth; i++ ) {
+    //for( int i=1; i<3; i++ ) {
+    for( int i=1; i<depth; i++ ) {
 			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
@@ -230,23 +231,24 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //
 			// Option 1: Histogram
             //
-            //generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
-			//
+            /*generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
+            zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendScan, multi+1 );
+
 			// Max out sendScan from last index of SpmvResult
-            //cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
-            //cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
-			//for( int j=h_counter/h_size+1; j<multi+1; j++ )
-			//	h_sendScan[j] = h_nnz;
-			//
+            cudaMemcpy( h_sendScan, d_sendScan, (multi+1)*sizeof(int), cudaMemcpyDeviceToHost);
+            cudaMemcpy( &h_counter, &d_spmvSwapInd[h_nnz-1], sizeof(int), cudaMemcpyDeviceToHost);
+			for( int j=h_counter/h_size+1; j<multi+1; j++ )
+				h_sendScan[j] = h_nnz;
+			
 			// Zero out sendScan from previous iterations
-			//if( h_nnz==0 )
-			//	for( int j=0; j<multi+1; j++ )
-			//		h_sendScan[j] = 0;
-			//fprintArray("SendScan", outf, h_sendScan, multi+1);
-			//
+			if( h_nnz==0 )
+				for( int j=0; j<multi+1; j++ )
+					h_sendScan[j] = 0;
+			fprintArray("SendScan", outf, h_sendScan, multi+1);
+			
 			// Linear undo prefix sum using CPU
-			//linearUnscan( h_sendScan, h_sendHist, multi );
-			//fprintArray("SendHist", outf, h_sendHist, multi);
+			linearUnscan( h_sendScan, h_sendHist, multi );
+			fprintArray("SendHist", outf, h_sendHist, multi);*/
 
 			//
 			// Option 2: Generate Bin ID in parallel and Segmented Reduce
@@ -259,8 +261,19 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			else {
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d->d_cscColBad, h_send );
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
-				generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
-			    fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
+				//generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
+                // Determine temporary device storage requirements
+            	void *d_temp_storage = NULL;
+           		size_t temp_storage_bytes = 0;
+            	cub::DeviceHistogram::HistogramEven( d_temp_storage, temp_storage_bytes, d_spmvSwapInd, d_sendHist, multi+1, 0, h_size*multi, h_nnz );
+
+                // Allocate temporary storage
+                cudaMalloc( &d_temp_storage, temp_storage_bytes );
+
+                // Compute histograms
+            	cub::DeviceHistogram::HistogramEven( d_temp_storage, temp_storage_bytes, d_spmvSwapInd, d_sendHist, multi+1, 0, h_size*multi, h_nnz );
+ 
+			    /*fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
                 outf << "h_nnz: " << h_nnz << std::endl;
 			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
 				fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
@@ -271,7 +284,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
                 outf << "h_send: " << h_send << std::endl;
-				scatterFloat<<<multi,1>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
+				scatterFloat<<<multi,1>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );*/
 			}
 			fprintDevice("SendHist", outf, d_sendHist, multi);
 
