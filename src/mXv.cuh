@@ -348,32 +348,26 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
             //printf( "Error: no frontier\n" );
             return 0; 
 		}
-		//printDevice("randVec key", d_randVecInd, nnz);
-        //printDevice("randVec Val", d_randVecVal, nnz);
         
-        //3. Gather from CSR graph into one big array       |     |  |
-        // 1. Extracts the row lengths we are interested in 3  3  3  2  3  1
+        //3. Gather from CSC graph into one big array       |     |  |
+        // 1. Extracts the col lengths we are interested in 3  3  3  2  3  1
         //  -> d_cscColBad
         // 2. Scans them, giving the offset from 0          0  3  6  8
         //  -> d_cscColGood
-        // 3. Extracts the col indices we are interested in 0  6  9
+        // 3. Extracts the col scans we are interested in   0  6  9
         //  -> d_cscColBad
         // 4. Extracts the neighbour lists
         //  -> d_cscVecInd
         //  -> d_cscVecVal
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d->d_cscColDiff, d->d_cscColBad, context );
-		//printDevice("Row length", d->d_cscColBad, h_cscVecCount);
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
-		//printDevice("Row length scan", d->d_cscColGood, h_cscVecCount+1);
 		if( total==0 ) {
+            nnz = 0;
             //printf( "Error: dead-end node\n" );
             return 0; 
         }
 			
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d_cscColPtr, d->d_cscColBad, context );
-		//printDevice("Col indices", d->d_cscColBad, total);
-
-        //printf("Processing %d nodes frontier size: %d\n", h_cscVecCount, total);
 
 	// Vector Portion
         // a) naive method
@@ -390,8 +384,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
 
         // Element-wise multiplication
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
-		//printDevice("elementMul key", d->d_cscVecInd, total);
-        //printDevice("elementMul Val", d->d_cscVecVal,total);
 
         // b) custom kernel method (fewer memory reads)
         // TODO
@@ -405,8 +397,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //LocalitySortKeys( d_cscVecInd, total, context );
         //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
         MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
-		//printDevice("In-loop SortPairs key", d->d_cscVecInd, total);
-        //printDevice("In-loop SortPairs Val", d->d_cscVecVal,total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
@@ -414,8 +404,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //6. Segmented Reduce By Key
         //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
         ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
-		//printDevice("ReduceByKey key", d_resultInd, total);
-        //printDevice("ReduceByKey Val", d_resultVal,total);
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
