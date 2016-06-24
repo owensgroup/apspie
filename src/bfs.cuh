@@ -70,8 +70,12 @@ __global__ void generateHistogram( const int new_n, const int nnz, const int *d_
 //
 __global__ void generateKey( const int new_n, const int nnz, const int *d_spmvSwapInd, int *d_cscFlag ) 
 {
-	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz; idx+=blockDim.x*gridDim.x ) 
+	for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<nnz; idx+=blockDim.x*gridDim.x ){ 
 		d_cscFlag[idx] = d_spmvSwapInd[idx]/new_n;
+        printf("%d: \n", idx);
+        if( d_cscFlag[idx] > 3 )
+            printf("Error: thread %d, %d\n", idx, new_n);
+    }
 }
 
 // @brief Performs global to local conversion on cscColPtr
@@ -192,8 +196,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 	//printDevice( "PostLocal", d_cscColPtrA, new_n+1 );
 
 	// Testing correctness:
-	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d\n", rank, new_nnz, new_n, old_n, multi);
     int h_size = (old_n+multi-1)/multi;
+	printf("Rank %d, new_nnz %d, new_n %d, old_n %d, multi %d, h_size %d\n", rank, new_nnz, new_n, old_n, multi, h_size);
 
 	// File output:
 	char filename[20];
@@ -210,8 +214,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaProfilerStart();
 
     // Important that i begins at 1, because it is used to update BFS result
-    //for( int i=1; i<3; i++ ) {
-    for( int i=1; i<depth; i++ ) {
+    for( int i=1; i<3; i++ ) {
+    //for( int i=1; i<depth; i++ ) {
 			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
@@ -219,11 +223,13 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             // op=1 Arithmetic semiring
             //sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
             sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
-			//fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
+			fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
 			
+            //
 			// Option 1: Histogram
+            //
             //generateHistogram<<<NTHREADS, NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d_sendScan, d_mutex );
 			//
 			// Max out sendScan from last index of SpmvResult
@@ -246,25 +252,28 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			// Option 2: Generate Bin ID in parallel and Segmented Reduce
 			//
 			// Zero out sendScan from previous iterations
+            //   -Doesn't work for large h_size!!!
+            //   -because requires integer division which is buggy on CUDA
 			if( h_nnz==0 )
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
 			else {
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d->d_cscColBad, h_send );
 				zeroArray<<<NTHREADS,NBLOCKS>>>( d_sendHist, multi );
 				generateKey<<<NTHREADS,NBLOCKS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
-				//outf << "h_size: \n" << h_size << std::endl;
-				//fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
-				//fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
+			    fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
+                outf << "h_nnz: " << h_nnz << std::endl;
+			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+				fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
+			    fprintDeviceAll("Generate Key", outf, d->d_cscColGood, h_nnz);
 
-				//outf.flush();
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
-				//outf.flush();
-				scatterFloat<<<NTHREADS,NBLOCKS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
+                outf << "h_send: " << h_send << std::endl;
+				scatterFloat<<<multi,1>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
-			//fprintDevice("SendHist", outf, d_sendHist, multi);
+			fprintDevice("SendHist", outf, d_sendHist, multi);
 
 			cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost );
 			linearScan( h_sendHist, h_sendScan, multi);

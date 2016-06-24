@@ -61,8 +61,10 @@ __global__ void scatter( const int total, const int *d_cscVecInd, int *d_cscFlag
 
 template<typename T>
 __global__ void scatterFloat( const int total, const int *d_key, const T *d_cscSwapVal, T *d_temp ) {
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) {
         d_temp[d_key[idx]] = d_cscSwapVal[idx];
+        //printf("%d: \n", idx);
+    }
 }
 
 __device__ void fatomicMin( float *addr, float val ) {
@@ -501,7 +503,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //  -> d_cscColBad
         // 2. Scans them, giving the offset from 0          0  3  6  8
         //  -> d_cscColGood
-        // 3. Extracts the row indices we are interested in 0  6  9
+        // 3. Extracts the col scans we are interested in   0  6  9
         //  -> d_cscColBad
         // 4. Extracts the neighbour lists
         //  -> d_cscVecInd
@@ -509,7 +511,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d->d_cscColDiff, d->d_cscColBad, context );
 		fprintDevice("Col length", outf, d->d_cscColBad, h_cscVecCount);
         mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscColBad, h_cscVecCount, 0, mgpu::plus<int>(), (int*)0, &total, d->d_cscColGood, context );
-		fprintDevice("Col length scan", outf, d->d_cscColGood, h_cscVecCount+1);
+		fprintDevice("Col length scan", outf, d->d_cscColGood, h_cscVecCount);
 		if( total==0 ) {
             nnz = 0;
             //printf( "Error: dead-end node\n" );
@@ -517,7 +519,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         }
 			
         IntervalGather( h_cscVecCount, d_randVecInd, d->d_index, h_cscVecCount, d_cscColPtr, d->d_cscColBad, context );
-		fprintDevice("Row indices", outf, d->d_cscColBad, total);
+		fprintDevice("Col length scan (good)", outf, d->d_cscColBad, h_cscVecCount);
 
         outf << "Processing " << h_cscVecCount << " nodes" << std::endl;
 		outf << "Frontier size: " << total << std::endl;
@@ -539,7 +541,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         ewiseMult<<<NBLOCKS, NTHREADS>>>( total, d->d_cscSwapVal, d->d_cscTempVal, d->d_cscVecVal );
 		fprintDevice("elementMul key", outf, d->d_cscVecInd, total);
         fprintDevice("elementMul Val", outf, d->d_cscVecVal,total);
-		fprintDeviceAll("elementMul key", outf, d->d_cscVecInd, total);
+		//fprintDeviceAll("elementMul key", outf, d->d_cscVecInd, total);
 
         debugFilter<<<NBLOCKS, NTHREADS>>>( total, d->d_cscVecInd, new_n, d_sum );
         cudaMemcpy( &h_sum, d_sum, sizeof(int), cudaMemcpyDeviceToHost );
@@ -560,7 +562,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, 40, mgpu::less<int>(), context);
 		fprintDevice("In-loop SortPairs key", outf, d->d_cscVecInd, total);
         fprintDevice("In-loop SortPairs Val", outf, d->d_cscVecVal,total);
-		fprintDeviceAll("In-loop SortPairs key", outf, d->d_cscVecInd, total);
+		//fprintDeviceAll("In-loop SortPairs key", outf, d->d_cscVecInd, total);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
