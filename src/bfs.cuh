@@ -276,40 +276,40 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
  
 			    *///fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
                 outf << "h_nnz: " << h_nnz << std::endl;
-			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
-				fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
+			    //fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+				//fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
 			    //fprintDeviceAll("Generate Key", outf, d->d_cscColGood, h_nnz);
 
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
-                outf << "h_send: " << h_send << std::endl;
+                //outf << "h_send: " << h_send << std::endl;
 				scatterFloat<<<multi,1>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
-			fprintDevice("SendHist", outf, d_sendHist, multi);
+			//fprintDevice("SendHist", outf, d_sendHist, multi);
 
 			cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost );
 			linearScan( h_sendHist, h_sendScan, multi);
-			fprintArray("SendScan", outf, h_sendScan, multi+1);
+			//fprintArray("SendScan", outf, h_sendScan, multi+1);
 
             // Exchange send prefix sums
-			MPI_Barrier( MPI_COMM_WORLD );
+			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
-			MPI_Barrier( MPI_COMM_WORLD );
-			fprintArray("RecvHist", outf, h_recvHist, multi);
+			//MPI_Barrier( MPI_COMM_WORLD );
+			//fprintArray("RecvHist", outf, h_recvHist, multi);
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
-			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
+			//fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
-			outf.flush();
-			MPI_Barrier( MPI_COMM_WORLD );
+			//outf.flush();
+			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-			MPI_Barrier( MPI_COMM_WORLD );
-			fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
+			//MPI_Barrier( MPI_COMM_WORLD );
+			//fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Merge vectors
 			// 2 options:
@@ -319,24 +319,24 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
 				lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
 			}
-			fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
+			//fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
 
             // Update BFS Result
             addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi], rank, h_size );
-			fprintDevice("BFSResult", outf, d_bfsResult, h_size);
-			fprintDevice("Pre-Filter SpmvResultInd", outf, d_spmvResultInd, h_recvScan[multi]);
+			//fprintDevice("BFSResult", outf, d_bfsResult, h_size);
+			//fprintDevice("Pre-Filter SpmvResultInd", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Prune new vector
 			cudaMemcpy(d_spmvSwapInd, d_spmvResultInd, h_recvScan[multi]*sizeof(int), cudaMemcpyDeviceToDevice);
 			cudaMemcpy(d_spmvSwapVec, d_spmvResultVec, h_recvScan[multi]*sizeof(float), cudaMemcpyDeviceToDevice);
             bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_recvScan[multi] );
-			fprintDevice("Bitify Sparse", outf, d->d_randVecInd, h_recvScan[multi]);
+			//fprintDevice("Bitify Sparse", outf, d->d_randVecInd, h_recvScan[multi]);
             mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
-			fprintDevice("Indices Good", outf, d->d_cscColGood, h_recvScan[multi]);
+			//fprintDevice("Indices Good", outf, d->d_cscColGood, h_recvScan[multi]);
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_recvScan[multi] );
             streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_recvScan[multi] );           
             h_nnz = h_cscVecCount;
-			fprintDevice("Post-Filter SpmvResultInd", outf, d_spmvResultInd, h_nnz);
+			//fprintDevice("Post-Filter SpmvResultInd", outf, d_spmvResultInd, h_nnz);
 
         cumsum+=sum;
     }
