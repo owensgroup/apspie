@@ -313,9 +313,14 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
             // Merge vectors
 			// 2 options:
-			//	1) merge sparse vectors
+			//	1) sort sparse vectors
 			//  2) atomicAdd into dense vector
-			if( h_recvScan[multi] != 0 ) { 
+			if( h_recvScan[multi] != 0 ) {
+ 
+            // Radixsort
+                
+
+            // Mergesort
             	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
 				lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
 			}
