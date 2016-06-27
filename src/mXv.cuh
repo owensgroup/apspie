@@ -329,7 +329,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     // h_cscVecCount - number of nonzero vector values
     int h_cscVecCount;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-    size_t temp_storage_bytes = 93184;
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -395,15 +394,21 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
         //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
         //LocalitySortKeys( d_cscVecInd, total, context );
-        //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
-        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
+        void *d_temp_storage = NULL;
+        size_t temp_storage_bytes = 0;
+        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+
+        cudaMalloc( &d_temp_storage, temp_storage_bytes );
+
+        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+        //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
-        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        //ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
