@@ -318,23 +318,28 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 			if( h_recvScan[multi] != 0 ) {
  
             // Radixsort
-                
+                void *d_temp_storage = NULL;
+                size_t temp_storage_bytes = 0;
+                cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_spmvResultInd, d_spmvSwapInd, d_spmvResultVec, d_spmvSwapVec, h_recvScan[multi] );
+                cudaMalloc(&d_temp_storage, temp_storage_bytes);
+                cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_spmvResultInd, d_spmvSwapInd, d_spmvResultVec, d_spmvSwapVec, h_recvScan[multi] );
+			    lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, h_recvScan[multi] );
 
             // Mergesort
-            	MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
-				lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
+            	//MergesortPairs( d_spmvResultInd, d_spmvResultVec, h_recvScan[multi], mgpu::less<int>(), context );
+				//lookRightUnique<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, h_recvScan[multi] );
 			}
 			//fprintDevice("SortPairs", outf, d_spmvResultInd, h_recvScan[multi] );
 
             // Update BFS Result
-            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvResultInd, i, h_recvScan[multi], rank, h_size );
+            addResultSparse<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_spmvSwapInd, i, h_recvScan[multi], rank, h_size );
 			//fprintDevice("BFSResult", outf, d_bfsResult, h_size);
 			//fprintDevice("Pre-Filter SpmvResultInd", outf, d_spmvResultInd, h_recvScan[multi]);
 
             // Prune new vector
-			cudaMemcpy(d_spmvSwapInd, d_spmvResultInd, h_recvScan[multi]*sizeof(int), cudaMemcpyDeviceToDevice);
-			cudaMemcpy(d_spmvSwapVec, d_spmvResultVec, h_recvScan[multi]*sizeof(float), cudaMemcpyDeviceToDevice);
-            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvResultInd, d->d_randVecInd, h_recvScan[multi] );
+			//cudaMemcpy(d_spmvSwapInd, d_spmvResultInd, h_recvScan[multi]*sizeof(int), cudaMemcpyDeviceToDevice);
+			//cudaMemcpy(d_spmvSwapVec, d_spmvResultVec, h_recvScan[multi]*sizeof(float), cudaMemcpyDeviceToDevice);
+            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, h_recvScan[multi] );
 			//fprintDevice("Bitify Sparse", outf, d->d_randVecInd, h_recvScan[multi]);
             mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
 			//fprintDevice("Indices Good", outf, d->d_cscColGood, h_recvScan[multi]);
