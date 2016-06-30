@@ -149,7 +149,7 @@ void runBfs(int argc, char**argv) {
     //verify( m, h_bfsResult, h_bfsResultCPU );
     //print_array(h_bfsResult, m);
     
-    cudaFree(d_csrValA);
+    /*cudaFree(d_csrValA);
     cudaFree(d_csrRowPtrA);
     cudaFree(d_csrColIndA);
 
@@ -165,11 +165,7 @@ void runBfs(int argc, char**argv) {
     free(h_cooRowIndA);
     free(h_cooColIndA);
     free(h_bfsResult);
-    free(h_bfsResultCPU);
-
-    //free(h_cscValA);
-    //free(h_cscRowIndA);
-    //free(h_cscColPtrA);*/
+    free(h_bfsResultCPU);*/
 }
 
 int main(int argc, char**argv) {

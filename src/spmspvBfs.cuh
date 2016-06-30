@@ -155,7 +155,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
 
     diff<<<NBLOCKS,NTHREADS>>>(d_csrRowPtr, d_csrRowDiff, m);
 
-    for( iter=1; iter<=depth; iter++ ) {
+    for( iter=1; iter<depth; iter++ ) {
 
         // Compact dense vector into sparse
         if( iter>1 ) {
@@ -188,6 +188,7 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
 
     //printf("Running iteration %d.\n", iter);
+    //printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
     /*gpu_timer.Stop();
     elapsed = gpu_timer.ElapsedMillis();
     printf("GPU BFS finished in %f msec. \n", iter, elapsed);

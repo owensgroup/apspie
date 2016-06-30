@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM35"
+ARCH="GEN_SM30"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test ../../dataset/small/test_cc.mtx -source 3 
@@ -25,7 +25,6 @@ for i in 579593	897318 666033 194754 796384 924094 932129 912391 344516
 do
     if [ "$ARCH" = "GEN_SM30" ] ; then
 	    ./test /data/gunrock_dataset/large/kron_g500-logn20/kron_g500-logn20.mtx -source $i -undirected
-        ./test_bfs /data/gunrock_dataset/large/kron_g500-logn20/kron_g500-logn20.mtx -source $i -undirected
 	fi
 done
 
