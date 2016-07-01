@@ -1,6 +1,6 @@
 
 
-ARCH="GEN_SM30"
+ARCH="GEN_SM40"
 
 if [ "$ARCH" = "GEN_SM15" ] ; then
     ./test ../../dataset/small/test_cc.mtx -source 3 
@@ -34,8 +34,9 @@ do
         ./test /data/gunrock_dataset/large/$i/$i.mtx
     else
         if [ "$ARCH" = "GEN_SM40" ] ; then
-            ./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
+            #./test /data/gunrock_dataset/large/soc-LiveJournal1/soc-LiveJournal1.mtx
             ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx
+            ./test /data/gunrock_dataset/large/kron_g500-logn21/kron_g500-logn21.mtx -undirected
             break
         fi
     fi
