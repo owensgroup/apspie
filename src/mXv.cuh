@@ -135,6 +135,22 @@ __global__ void ewiseMultMinPlus( const int total, const T *d_x, const T*d_y, T 
     for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x ) d_result[idx] = d_x[idx]+d_y[idx];
 } 
 
+__global__ void checkSorted( const int*d_csrVecInd, int *d_csrFlag, const int total ) {
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total-1; idx+=blockDim.x*gridDim.x )
+      if( d_csrVecInd[idx] > d_csrVecInd[idx+1] )
+      {
+        d_csrFlag[idx] = 1;
+        //printf("Error: %d > %d not sorted\n", d_csrVecInd[idx], d_csrVecInd[idx+1] );
+      } else d_csrFlag[idx] = 0;
+}
+
+__global__ void debugFilter( int total, const int *d_cscVecInd, int new_n, int *d_sum )
+{
+    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
+        if( d_cscVecInd[idx] < new_n )
+          atomicAdd( d_sum, 1 );
+}
+
 // @brief mXv for dense vector d_randVec
 //
 template<typename T>
@@ -336,7 +352,7 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     //GpuTimer gpu_timer;
     //float elapsed = 0.0f;
     //gpu_timer.Start();
-    //int iter = 0;
+    int flag = 0;
     int total= 0;
     //float minimum = 1;
     //cudaProfilerStart();
@@ -401,6 +417,7 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
         cudaMalloc( &d_temp_storage, temp_storage_bytes );
 
         cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+        
         //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
@@ -447,13 +464,6 @@ int mXvSparse( const int *d_randVecInd, const T *d_randVecVal, const int edge, c
     //    printf( "Error: MIS has -1 in it\n" );
 }
 
-__global__ void debugFilter( int total, const int *d_cscVecInd, int new_n, int *d_sum )
-{
-    for( int idx=blockDim.x*blockIdx.x+threadIdx.x; idx<total; idx+=blockDim.x*gridDim.x )
-        if( d_cscVecInd[idx] < new_n )
-          atomicAdd( d_sum, 1 );
-}
-
 // @brief mXv for sparse vector d_randVecInd, d_randVecVal
 //
 template<typename T>
@@ -465,7 +475,6 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
     // h_cscVecCount - number of nonzero vector values
     int h_cscVecCount;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-    size_t temp_storage_bytes = 93184;
 
     // First iteration
     // Note that updateBFS is similar to addResult kernel
@@ -473,7 +482,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
     //GpuTimer gpu_timer;
     //float elapsed = 0.0f;
     //gpu_timer.Start();
-    //int iter = 0;
+    int flag = 0;
     int total= 0;
     int h_sum = 0;
     int *d_sum;
@@ -550,12 +559,22 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //IntervalGather( ceil(h_cscVecCount/2.0), everyOther->get(), d_index, ceil(h_cscVecCount/2.0), d_cscColGood, d_cscColBad, context );
         //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
         //LocalitySortKeys( d_cscVecInd, total, context );
-        //cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
-        MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
-        //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, 40, mgpu::less<int>(), context);
+        void *d_temp_storage = NULL;
+        size_t temp_storage_bytes = 0;
+        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+
+        cudaMalloc( &d_temp_storage, temp_storage_bytes );
+
+        cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+
 		fprintDevice("In-loop SortPairs key", outf, d->d_cscVecInd, total);
         fprintDevice("In-loop SortPairs Val", outf, d->d_cscVecVal,total);
 		//fprintDeviceAll("In-loop SortPairs key", outf, d->d_cscVecInd, total);
+
+        checkSorted<<<NBLOCKS,NTHREADS>>>( d->d_cscSwapInd, d->d_cscVecInd, total );
+        mgpu::Reduce( d->d_cscVecInd, total-1, (int)0, mgpu::plus<int>(), (int*)0, &flag, context );
+        printf("The number of sort mistakes: %d out of %d\n", flag, total );
+        //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );

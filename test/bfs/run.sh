@@ -1,7 +1,7 @@
 cd $MEMBERWORK/csc103
 date
 
-ARCH="GEN_SM15"
+ARCH="GEN_SM5"
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
     aprun -n4 -N1 ./test dataset/small/test_ac.mtx -multi 4
@@ -39,7 +39,7 @@ for i in 1 2 4 6 8 16 32 64
 do
 	if [ "$ARCH" = "GEN_SM5" ] ; then
 		#aprun -n$i -N1 ./test dataset/large/ak2010/ak2010.mtx -multi $i
-		aprun -n$i -N1 ./test dataset/large/ak2010/ak2010.mtx -multi $i
+		aprun -n$i -N1 ./test dataset/large/kron_g500-logn21/kron_g500-logn21.mtx -multi $i
 	fi
 done
 
