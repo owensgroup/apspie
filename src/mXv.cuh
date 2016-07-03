@@ -7,6 +7,23 @@
 
 #define NTHREADS 512
 
+#define CUDA_SAFE_CALL_NO_SYNC(call) do {                               \
+  cudaError err = call;                                                 \
+  if( cudaSuccess != err) {                                             \
+    fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",       \
+                __FILE__, __LINE__, cudaGetErrorString( err) );         \
+    exit(EXIT_FAILURE);                                                 \
+    } } while (0)
+
+#define CUDA_SAFE_CALL(call) do {                                       \
+  CUDA_SAFE_CALL_NO_SYNC(call);                                         \
+  cudaError err = cudaThreadSynchronize();                              \
+  if( cudaSuccess != err) {                                             \
+     fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",      \
+                 __FILE__, __LINE__, cudaGetErrorString( err) );        \
+     exit(EXIT_FAILURE);                                                \
+     } } while (0)
+
 __global__ void diff( const int *d_cscColPtr, int *d_cscColDiff, const int m ) {
 
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<m; idx+=blockDim.x*gridDim.x) {
@@ -97,7 +114,7 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
     // h_cscVecCount - number of nonzero vector values
     int h_cscVecCount;
     int NBLOCKS = (m+NTHREADS-1)/NTHREADS;
-    size_t temp_storage_bytes = 93184;
+    size_t temp_storage_bytes = 0;
 
     /*printf("randVec:\n");
     cudaMemcpy(d->h_cscVecVal, d_randVec, m*sizeof(float), cudaMemcpyDeviceToHost);
@@ -170,17 +187,22 @@ int mXv( const T *d_randVec, const int edge, const int m, const T *d_cscVal, con
         //SegSortKeysFromIndices( d_cscVecInd, total, d_cscColBad, ceil(h_cscVecCount/2.0), context );
         //LocalitySortKeys( d_cscVecInd, total, context );
         cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+        cudaMalloc( &d->d_temp_storage, temp_storage_bytes );
+        cub::DeviceRadixSort::SortPairs( d->d_temp_storage, temp_storage_bytes, d->d_cscVecInd, d->d_cscSwapInd, d->d_cscVecVal, d->d_cscSwapVal, total );
+
         //MergesortKeys(d_cscVecInd, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscSwapInd, d->d_cscSwapVal, &h_cscVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d->d_cscVecInd, d->d_cscVecVal, &h_cscVecCount, (int*)0, context );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
-        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscSwapInd, d->d_cscSwapVal, d_mmResult );
+        scatterFloat<<<NBLOCKS,NTHREADS>>>( h_cscVecCount, d->d_cscVecInd, d->d_cscVecVal, d_mmResult );
+        cudaFree( d->d_temp_storage );
+        d->d_temp_storage = NULL;
 
         // 8. Error checking. If misResult is all 0s, something has gone wrong.
         // Check using max reduce
