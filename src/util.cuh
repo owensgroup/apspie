@@ -698,9 +698,9 @@ void allocScratch( d_scratch **d, const int edge, const int m ) {
     cudaMalloc(&((*d)->d_cscColGood), edge*sizeof(int));
     cudaMalloc(&((*d)->d_cscColBad), m*sizeof(int));
     cudaMalloc(&((*d)->d_cscColDiff), m*sizeof(int));
-    cudaMalloc(&((*d)->d_ones), m*sizeof(int));
+    cudaMalloc(&((*d)->d_ones), edge*sizeof(int));
     cudaMalloc(&((*d)->d_index), m*sizeof(int));
-    cudaMalloc(&((*d)->d_temp_storage), 93184);
+    //cudaMalloc(&((*d)->d_temp_storage), 93184);
     cudaMalloc(&((*d)->d_randVecInd), m*sizeof(int));
 
     //Host mallocs

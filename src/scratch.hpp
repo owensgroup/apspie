@@ -15,7 +15,7 @@ typedef struct scratch{
     int *d_cscColDiff;
     int *d_ones;
     int *d_index;
-    void *d_temp_storage;
+    //void *d_temp_storage;
     int *d_randVecInd;
 
     //Host mallocs

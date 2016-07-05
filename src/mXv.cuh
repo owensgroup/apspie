@@ -580,8 +580,8 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //gather<<<NBLOCKS,NTHREADS>>>( total, d_cscVecVal, d_randVec, d_cscVecVal );
 
         //6. Segmented Reduce By Key
-        //ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
-        ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        ReduceByKey( d->d_cscSwapInd, d->d_cscSwapVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
+        //ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
 		fprintDevice("ReduceByKey key", outf,d_resultInd, total);
         fprintDevice("ReduceByKey Val", outf,d_resultVal,total);
 

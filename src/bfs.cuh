@@ -9,6 +9,23 @@
 //#define NBLOCKS 16384
 #define NTHREADS 512
 
+#define CUDA_SAFE_CALL_NO_SYNC(call) do {                               \
+  cudaError err = call;                                                 \
+  if( cudaSuccess != err) {                                             \
+    fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",       \
+                __FILE__, __LINE__, cudaGetErrorString( err) );         \
+    exit(EXIT_FAILURE);                                                 \
+    } } while (0)
+
+#define CUDA_SAFE_CALL(call) do {                                       \
+  CUDA_SAFE_CALL_NO_SYNC(call);                                         \
+  cudaError err = cudaThreadSynchronize();                              \
+  if( cudaSuccess != err) {                                             \
+     fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",      \
+                 __FILE__, __LINE__, cudaGetErrorString( err) );        \
+     exit(EXIT_FAILURE);                                                \
+     } } while (0)
+
 template<typename T>
 void spmv( const T *d_inputVector, const int new_nnz, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, new_nnz, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
@@ -221,9 +238,9 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
-            sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
-			//outf << "Iteration " << i << ": " << rank << std::endl << "==========";
-            //sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
+            //sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
+            sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
 			//fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
             // Generate the send prefix sums
@@ -276,32 +293,33 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
  
 			    *///fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
                 outf << "h_nnz: " << h_nnz << std::endl;
-			    //fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
 				//fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
 			    //fprintDeviceAll("Generate Key", outf, d->d_cscColGood, h_nnz);
 
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
-                //outf << "h_send: " << h_send << std::endl;
-				scatterFloat<<<multi,1>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
+                outf << "h_send: " << h_send << std::endl;
+			    fprintDevice("SendHist", outf, d_sendHist, multi);
+				scatterFloat<<<1,NTHREADS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
-			//fprintDevice("SendHist", outf, d_sendHist, multi);
+			fprintDevice("SendHist", outf, d_sendHist, multi);
 
 			cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost );
 			linearScan( h_sendHist, h_sendScan, multi);
-			//fprintArray("SendScan", outf, h_sendScan, multi+1);
+			fprintArray("SendScan", outf, h_sendScan, multi+1);
 
             // Exchange send prefix sums
 			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
 			//MPI_Barrier( MPI_COMM_WORLD );
-			//fprintArray("RecvHist", outf, h_recvHist, multi);
+			fprintArray("RecvHist", outf, h_recvHist, multi);
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
-			//fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
+			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
 
             // Exchange vectors
 			//outf.flush();
