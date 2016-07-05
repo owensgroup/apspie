@@ -217,12 +217,12 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     // Important that i begins at 1, because it is used to update BFS result
     //for( int i=1; i<3; i++ ) {
     for( int i=1; i<depth; i++ ) {
-			outf << "Iteration " << i << ": " << rank << std::endl << "==========";
             //spmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, context);
             //cuspmv<float>( d_spmvResult, new_nnz, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwap, handle, descr);
 
             // op=1 Arithmetic semiring
             sum = mXvSparse( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, context);
+			//outf << "Iteration " << i << ": " << rank << std::endl << "==========";
             //sum = mXvSparseDebug( d_spmvResultInd, d_spmvResultVec, new_nnz, new_n, old_n, h_nnz, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_spmvSwapInd, d_spmvSwapVec, d, outf, context);
 			//fprintDevice("mXvSparse", outf, d_spmvSwapInd, h_nnz);
 
