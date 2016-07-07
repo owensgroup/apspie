@@ -573,7 +573,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
 
         checkSorted<<<NBLOCKS,NTHREADS>>>( d->d_cscSwapInd, d->d_cscVecInd, total );
         mgpu::Reduce( d->d_cscVecInd, total-1, (int)0, mgpu::plus<int>(), (int*)0, &flag, context );
-        printf("The number of sort mistakes: %d out of %d\n", flag, total );
+        printf("The number of sort mistakes: %d out of %d, %d, %d\n", flag, total, edge, m );
         //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values

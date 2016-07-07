@@ -118,7 +118,7 @@ __global__ void lookRightUnique( int *d_array, const int length ) {
 }
 
 template< typename T >
-void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int old_n, const int multi, const int rank, const T* d_cscValA, int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
+void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const int new_n, const int old_n, const int multi, const int rank, const T* d_cscValA, int *d_cscColPtrA, const int *d_cscRowIndA, int *d_bfsResult, const int depth, mgpu::CudaContext& context) {
 
     /*cusparseHandle_t handle;
     cusparseCreate(&handle);
@@ -127,8 +127,9 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cusparseCreateMatDescr(&descr);*/
 
     // Allocate scratch memory
+    int edge = std::max(new_nnz,old_nnz/multi);
     d_scratch *d;
-    allocScratch( &d, new_nnz, old_n );
+    allocScratch( &d, edge, old_n );
 
     // Allocate GPU memory for result
     int *h_bfsResult = (int*)malloc(old_n*sizeof(int));
@@ -140,10 +141,10 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
     int *d_spmvResultInd, *d_spmvSwapInd;
     float *d_spmvResultVec, *d_spmvSwapVec;
-    cudaMalloc(&d_spmvResultInd, old_n*sizeof(int));
-    cudaMalloc(&d_spmvSwapInd, old_n*sizeof(int));
-    cudaMalloc(&d_spmvResultVec, old_n*sizeof(float));
-    cudaMalloc(&d_spmvSwapVec, old_n*sizeof(float));
+    cudaMalloc(&d_spmvResultInd, edge*sizeof(int));
+    cudaMalloc(&d_spmvSwapInd, edge*sizeof(int));
+    cudaMalloc(&d_spmvResultVec, edge*sizeof(float));
+    cudaMalloc(&d_spmvSwapVec, edge*sizeof(float));
     
     int h_nnz = 0;
     int h_cscVecCount = 0;
@@ -181,7 +182,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     }
 
     // Generate d_ones, d_index
-    for( int i=0; i<old_n; i++ ) {
+    for( int i=0; i<edge; i++ ) {
         d->h_ones[i] = 1;
         d->h_index[i] = i;
     }
@@ -189,8 +190,8 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
     cudaMemcpy(d_bfsResult, h_bfsResult, new_n*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultInd, h_spmvResultInd, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_spmvResultVec, h_spmvResultVec, sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_index, d->h_index, old_n*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d->d_ones, d->h_ones, old_n*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_index, d->h_index, edge*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d->d_ones, d->h_ones, edge*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate counter and mutex (for histogram)
     int h_counter = 0;
@@ -200,7 +201,7 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
 
     // Generate d_cscColDiff
     int NBLOCKS = (new_n+NTHREADS-1)/NTHREADS;
-    diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, new_n);
+    diff<<<NBLOCKS,NTHREADS>>>(d_cscColPtrA, d->d_cscColDiff, old_n);
 
     // Global to local cscColPtr conversion
 	//printf("%d: PreLocal:\n", rank);
@@ -274,10 +275,10 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             //   -Doesn't work for large h_size!!!
             //   -because requires integer division which is buggy on CUDA
 			if( h_nnz==0 )
-				zeroArray<<<NBLOCKS,NTHREADS>>>( d_sendHist, multi );
+				zeroArray<<<1,NTHREADS>>>( d_sendHist, multi );
 			else {
-				zeroArray<<<NBLOCKS,NTHREADS>>>( d->d_cscColBad, h_send );
-				zeroArray<<<NBLOCKS,NTHREADS>>>( d_sendHist, multi );
+				zeroArray<<<1,NTHREADS>>>( d->d_cscColBad, h_send );
+				zeroArray<<<1,NTHREADS>>>( d_sendHist, multi );
 				generateKey<<<NBLOCKS,NTHREADS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
 				//generateKey<<<(h_nnz+NTHREADS-1)/NTHREADS,NTHREADS>>>( h_size, h_nnz, d_spmvSwapInd, d->d_cscColGood );
                 // Determine temporary device storage requirements
@@ -293,16 +294,16 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
  
 			    *///fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
                 outf << "h_nnz: " << h_nnz << std::endl;
-			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+			    //fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
 				//fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
 			    //fprintDeviceAll("Generate Key", outf, d->d_cscColGood, h_nnz);
 
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
                 outf << "h_send: " << h_send << std::endl;
-			    fprintDevice("SendHist", outf, d_sendHist, multi);
+			    //fprintDevice("SendHist", outf, d_sendHist, multi);
 				scatterFloat<<<1,NTHREADS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
 			fprintDevice("SendHist", outf, d_sendHist, multi);
@@ -314,18 +315,23 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             // Exchange send prefix sums
 			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
-			//MPI_Barrier( MPI_COMM_WORLD );
+			MPI_Barrier( MPI_COMM_WORLD );
 			fprintArray("RecvHist", outf, h_recvHist, multi);
 
 			// Linear prefix sum using CPU
 			linearScan( h_recvHist, h_recvScan, multi );
 			fprintArray("Pre-Alltoallv RecvScan", outf, h_recvScan, multi+1);
+            fprintDeviceAll( "mXv sparse", outf, d_spmvSwapInd, h_sendScan[multi]);
+            if( h_nnz != h_sendScan[multi] ) outf << "Error: " << h_nnz << " != " << h_sendScan[multi] << std::endl;
+            outf << "Sending " << h_sendScan[multi] << std::endl;
 
             // Exchange vectors
-			//outf.flush();
+			outf.flush();
 			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
-            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_INT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
+            outf << "Passed first level!\n";
+            outf.flush();
+            MPI_Alltoallv( d_spmvSwapVec, h_sendHist, h_sendScan, MPI_FLOAT, d_spmvResultVec, h_recvHist, h_recvScan, MPI_FLOAT, MPI_COMM_WORLD );
 			//MPI_Barrier( MPI_COMM_WORLD );
 			//fprintDevice("Pre-sort Frontier", outf, d_spmvResultInd, h_recvScan[multi]);
 
@@ -357,12 +363,12 @@ void bfsSparse( const int vertex, const int new_nnz, const int new_n, const int 
             // Prune new vector
 			//cudaMemcpy(d_spmvSwapInd, d_spmvResultInd, h_recvScan[multi]*sizeof(int), cudaMemcpyDeviceToDevice);
 			//cudaMemcpy(d_spmvSwapVec, d_spmvResultVec, h_recvScan[multi]*sizeof(float), cudaMemcpyDeviceToDevice);
-            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, h_recvScan[multi] );
+            bitifySparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_cscVecInd, h_recvScan[multi] );
 			//fprintDevice("Bitify Sparse", outf, d->d_randVecInd, h_recvScan[multi]);
-            mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_randVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
+            mgpu::Scan<mgpu::MgpuScanTypeExc>( d->d_cscVecInd, h_recvScan[multi], 0, mgpu::plus<int>(), (int*)0, &h_cscVecCount, d->d_cscColGood, context );
 			//fprintDevice("Indices Good", outf, d->d_cscColGood, h_recvScan[multi]);
-            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_randVecInd, d->d_cscColGood, d_spmvResultInd, h_recvScan[multi] );
-            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_randVecInd, d->d_cscColGood, d_spmvResultVec, h_recvScan[multi] );           
+            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapInd, d->d_cscVecInd, d->d_cscColGood, d_spmvResultInd, h_recvScan[multi] );
+            streamCompactSparse<<<NBLOCKS,NTHREADS>>>( d_spmvSwapVec, d->d_cscVecInd, d->d_cscColGood, d_spmvResultVec, h_recvScan[multi] );           
             h_nnz = h_cscVecCount;
 			//fprintDevice("Post-Filter SpmvResultInd", outf, d_spmvResultInd, h_nnz);
 

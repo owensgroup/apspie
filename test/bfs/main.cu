@@ -264,7 +264,7 @@ void runBfs(int argc, char**argv) {
     CpuTimer cpu_timerSPMV;
 	MPI_Barrier(MPI_COMM_WORLD); 
 	cpu_timerSPMV.Start();
-    bfsSparse( source, new_nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
+    bfsSparse( source, new_nnz, nnz, new_n, m, multi, rank, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_bfsResult, depth, *context); 
 	MPI_Barrier(MPI_COMM_WORLD); 
 	cpu_timerSPMV.Stop();
 	float elapsedSPMV = cpu_timerSPMV.ElapsedMillis();
