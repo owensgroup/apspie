@@ -134,10 +134,10 @@ void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const in
     // Allocate GPU memory for result
     int *h_bfsResult = (int*)malloc(old_n*sizeof(int));
 
-    int *h_spmvResultInd = (int*)malloc(old_n*sizeof(int));
-    int *h_spmvSwapInd = (int*)malloc(old_n*sizeof(int));
-    float *h_spmvResultVec = (float*)malloc(old_n*sizeof(float));
-    float *h_spmvSwapVec = (float*)malloc(old_n*sizeof(float));
+    int *h_spmvResultInd = (int*)malloc(edge*sizeof(int));
+    int *h_spmvSwapInd = (int*)malloc(edge*sizeof(int));
+    float *h_spmvResultVec = (float*)malloc(edge*sizeof(float));
+    float *h_spmvSwapVec = (float*)malloc(edge*sizeof(float));
 
     int *d_spmvResultInd, *d_spmvSwapInd;
     float *d_spmvResultVec, *d_spmvSwapVec;
@@ -294,22 +294,34 @@ void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const in
  
 			    *///fprintDeviceAll("mXvSparse", outf, d_spmvSwapInd, h_nnz);
                 outf << "h_nnz: " << h_nnz << std::endl;
-			    //fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
+			    fprintDevice("Generate Key", outf, d->d_cscColGood, h_nnz);
 				//fprintDevice("Array of 1's", outf, d->d_ones, h_nnz);
 			    //fprintDeviceAll("Generate Key", outf, d->d_cscColGood, h_nnz);
 
 				ReduceByKey( d->d_cscColGood, d->d_ones, h_nnz, (int)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d->d_cscColBad, d->d_cscVecInd, &h_send, (int*)0, context );
-				//fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
-				//fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
+				fprintDevice("ReduceByKey Key", outf, d->d_cscColBad, h_send);
+				fprintDevice("ReduceByKey Val", outf, d->d_cscVecInd, h_send);
 
                 outf << "h_send: " << h_send << std::endl;
-			    //fprintDevice("SendHist", outf, d_sendHist, multi);
 				scatterFloat<<<1,NTHREADS>>>( h_send, d->d_cscColBad, d->d_cscVecInd, d_sendHist );
 			}
-			fprintDevice("SendHist", outf, d_sendHist, multi);
+			//fprintDevice("SendHist", outf, d_sendHist, multi);
 
 			cudaMemcpy( h_sendHist, d_sendHist, multi*sizeof(int), cudaMemcpyDeviceToHost );
+            // Debugging
+            int stopNum = 12;
+            if( rank>=stopNum ) {
+                for( int j=0; j<stopNum; j++ ) {
+                    h_sendHist[j] = 0;
+                    //h_recvHist[j] = 0;
+                }
+            }
+            for( int j=stopNum; j<multi; j++ ) {
+                h_sendHist[j] = 0;
+                //h_recvHist[j] = 0;
+            }
 			linearScan( h_sendHist, h_sendScan, multi);
+			fprintArray("SendHist", outf, h_sendHist, multi);
 			fprintArray("SendScan", outf, h_sendScan, multi+1);
 
             // Exchange send prefix sums
@@ -324,10 +336,12 @@ void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const in
             fprintDeviceAll( "mXv sparse", outf, d_spmvSwapInd, h_sendScan[multi]);
             if( h_nnz != h_sendScan[multi] ) outf << "Error: " << h_nnz << " != " << h_sendScan[multi] << std::endl;
             outf << "Sending " << h_sendScan[multi] << std::endl;
+            outf << "Receiving " << h_recvScan[multi] << std::endl;
 
             // Exchange vectors
 			outf.flush();
 			//MPI_Barrier( MPI_COMM_WORLD );
+
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             outf << "Passed first level!\n";
             outf.flush();

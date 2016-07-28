@@ -69,6 +69,11 @@ void runBfs(int argc, char**argv) {
         exit( EXIT_FAILURE );
     }
 
+    /*if( rank==0 ) {
+        if( 
+
+    MPI_Barrier(MPI_COMM_WORLD);*/
+
     // 2. Reads in number of nnzs, number of nodes
     //    Note: Need to double # of nnzs in case of undirected, because this affects
     //          how much to allocate
@@ -104,6 +109,11 @@ void runBfs(int argc, char**argv) {
         nnz = makeSymmetric( nnz, h_cooColIndA, h_cooRowIndA, h_cooValA );
         cpu_timerMake.Stop();
         if(rank==0)printf("\nUndirected graph has %d nodes, %d nnzs\n", m, nnz);
+    } else {
+        readMtx<typeVal>( nnz, h_cooColIndA, h_cooRowIndA, h_cooValA );
+        if(rank==0)printf("\nDirected graph has %d nodes, %d nnzs\n", m, nnz);
+    }
+    cpu_timerBuild.Start();
     } else {
         readMtx<typeVal>( nnz, h_cooColIndA, h_cooRowIndA, h_cooValA );
         if(rank==0)printf("\nDirected graph has %d nodes, %d nnzs\n", m, nnz);
@@ -302,8 +312,3 @@ void runBfs(int argc, char**argv) {
     free(h_bfsResultCPU);*/
 
     MPI_Finalize();
-}
-
-int main(int argc, char**argv) {
-    runBfs(argc, argv);
-}    

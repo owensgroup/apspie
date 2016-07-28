@@ -573,7 +573,6 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
 
         checkSorted<<<NBLOCKS,NTHREADS>>>( d->d_cscSwapInd, d->d_cscVecInd, total );
         mgpu::Reduce( d->d_cscVecInd, total-1, (int)0, mgpu::plus<int>(), (int*)0, &flag, context );
-        printf("The number of sort mistakes: %d out of %d, %d, %d\n", flag, total, edge, m );
         //MergesortPairs(d->d_cscVecInd, d->d_cscVecVal, total, mgpu::less<int>(), context);
 
         //5. Gather the rand values
@@ -584,6 +583,7 @@ int mXvSparseDebug( const int *d_randVecInd, const T *d_randVecVal, const int ed
         //ReduceByKey( d->d_cscVecInd, d->d_cscVecVal, total, (float)0, mgpu::plus<float>(), mgpu::equal_to<int>(), d_resultInd, d_resultVal, &h_cscVecCount, (int*)0, context );
 		fprintDevice("ReduceByKey key", outf,d_resultInd, total);
         fprintDevice("ReduceByKey Val", outf,d_resultVal,total);
+        printf("The number of sort mistakes: %d out of %d, %d, %d -> %d\n", flag, total, edge, m, h_cscVecCount );
 
         //printf("Current iteration: %d nonzero vector, %d edges\n",  h_cscVecCount, total);
 
