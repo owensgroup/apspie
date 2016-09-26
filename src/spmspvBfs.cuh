@@ -7,6 +7,23 @@
 //#define NBLOCKS 16384
 #define NTHREADS 512
 
+#define CUDA_SAFE_CALL_NO_SYNC(call) do {                               \
+  cudaError err = call;                                                 \
+  if( cudaSuccess != err) {                                             \
+    fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",       \
+                __FILE__, __LINE__, cudaGetErrorString( err) );         \
+    exit(EXIT_FAILURE);                                                 \
+    } } while (0)
+
+#define CUDA_SAFE_CALL(call) do {                                       \
+  CUDA_SAFE_CALL_NO_SYNC(call);                                         \
+  cudaError err = cudaThreadSynchronize();                              \
+  if( cudaSuccess != err) {                                             \
+     fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",      \
+                 __FILE__, __LINE__, cudaGetErrorString( err) );        \
+     exit(EXIT_FAILURE);                                                \
+     } } while (0)
+
 __global__ void updateBfs( int *d_bfsResult, int *d_spmvResult, const int iter, const int length ) {
     for (int idx = blockIdx.x*blockDim.x+threadIdx.x; idx < length; idx += gridDim.x*blockDim.x) {
         if( d_spmvResult[idx]>0 && d_bfsResult[idx]<0 ) d_bfsResult[idx] = iter;
@@ -138,9 +155,8 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
     //cudaMemcpy(d_keys.d_buffers[d_keys.selector], h_csrVecInd, h_csrVecCount*sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate temporary storage
-    size_t temp_storage_bytes = 93184;
+    size_t temp_storage_bytes = 0;
     void *d_temp_storage = NULL;
-    cudaMalloc(&d_temp_storage, temp_storage_bytes);
     int cumsum = 0;
 
     // First iteration
@@ -177,6 +193,8 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
         //SegSortKeysFromIndices( d_keys.Current(), total, d_csrRowBad, ceil(h_csrVecCount/2.0), context );
         //LocalitySortKeys( d_keys.Current(), total, context );
         cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
+        cudaMalloc(&d_temp_storage, temp_storage_bytes);
+        cub::DeviceRadixSort::SortKeys( d_temp_storage, temp_storage_bytes, d_keys, total );
         //MergesortKeys(d_keys.Current(), total, mgpu::less<int>(), context);
 
         //updateSparseBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_keys.Current(), iter, total );
@@ -186,6 +204,8 @@ void spmspvBfs( const int vertex, const int edge, const int m, const int *h_csrR
         scatter<<<NBLOCKS,NTHREADS>>>( total, d_keys.Current(), d_csrFlag );
 
         updateBfs<<<NBLOCKS,NTHREADS>>>( d_bfsResult, d_csrFlag, iter, m );
+        cudaFree( d_temp_storage );
+        d_temp_storage = NULL;
 
     //printf("Running iteration %d.\n", iter);
     //printf("Keeping %d elements out of %d.\n", h_csrVecCount, total);
