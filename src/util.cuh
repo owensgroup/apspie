@@ -5,12 +5,26 @@
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <sys/time.h>
-//#include <boost/timer/timer.hpp>
 #include "scratch.hpp"
 
 #include <vector>
 #include <utility>
 #include <algorithm>
+
+// Tuple sort
+struct arrayset {
+    int *values1;
+    int *values2;
+    float *values3;
+};
+
+typedef struct pair {
+    int key, key2, value;
+	float key3;
+} Pair;
+
+// Forward declare
+void custom_sort( arrayset *v, size_t size );
 
 template<typename T>
 void print_end_interesting( T *array, int length=10 ) {
@@ -56,7 +70,38 @@ void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length )
             if( count>=h_csrRowPtr[i+1] || h_csrColInd[count] != j )
                 std::cout << "0 ";
             else {
-                std::cout << h_csrVal[count] << " ";
+                //std::cout << h_csrVal[count] << " ";
+                std::cout << "x ";
+                count++;
+            }
+        }
+        std::cout << std::endl;
+    }
+}
+
+template<typename T>
+void print_matrixCOO( T* h_cooVal, int* h_cooRowInd, int* h_cooColInd, int length, int edge ) {
+    //print_array(h_csrRowPtr);
+    //print_array(h_csrColInd); 
+    //print_array(h_csrVal);
+
+    struct arrayset work = { h_cooColInd, h_cooRowInd, h_cooVal };
+    custom_sort(&work, edge);
+
+    std::cout << "Matrix:\n";
+    if( length>20 ) length=20;
+
+	int curr = 0;
+	int count = 0;
+    for( int i=0; i<length; i++ ) {
+        curr = h_cooRowInd[count];
+		int last = curr;
+        for( int j=0; j<length; j++ ) {
+            if( curr!=last || h_cooColInd[count] != j )
+                std::cout << "0 ";
+            else {
+                //std::cout << h_cooVal[count] << " ";
+                std::cout << "x ";
                 count++;
             }
         }
@@ -319,7 +364,7 @@ void readEdge( int &m, int &n, int &edge, FILE *inputFile ) {
 
 // This function loads a graph from .mtx input file
 template<typename typeVal>
-void readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
+bool readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
     bool weighted = true;
     int c;
     int csr_max = 0;
@@ -373,10 +418,11 @@ void readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) 
     printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
     printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
-        printf("The graph is weighted. ");
+        printf("The graph is weighted.\n");
     } else {
         printf("The graph is unweighted.\n");
     }
+	return weighted;
 }
 
   // This function converts function from COO to CSR representation
@@ -489,17 +535,6 @@ void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *
     cusparseDestroy(handle);
 }
 
-// Tuple sort
-struct arrayset {
-    int *values1;
-    int *values2;
-    //int *values3;
-};
-
-typedef struct pair {
-    int key, key2, value;
-} Pair;
-
 int cmp(const void *x, const void *y){
     int a = ((const Pair*)x)->key;
     int b = ((const Pair*)y)->key;
@@ -509,76 +544,106 @@ int cmp(const void *x, const void *y){
     else return a < b ? -1 : a > b;
 }
 
-void custom_sort(struct arrayset *v, size_t size){
-    //Pair key[size];
+void custom_sort( arrayset *v, size_t size){
     Pair *key = (Pair *)malloc(size*sizeof(Pair));
     for(int i=0;i<size;++i){
         key[i].key  = v->values1[i];
         key[i].key2 = v->values2[i];
+        key[i].key3 = v->values3[i];
         key[i].value=i;
     }
     qsort(key, size, sizeof(Pair), cmp);
     //int v1[size], v2[size];
     int *v1 = (int*)malloc(size*sizeof(int));
     int *v2 = (int*)malloc(size*sizeof(int));
+    float *v3 = (float*)malloc(size*sizeof(float));
     memcpy(v1, v->values1, size*sizeof(int));
     memcpy(v2, v->values2, size*sizeof(int));
+    memcpy(v3, v->values3, size*sizeof(float));
     //memcpy(v3, v->values3, size*sizeof(int));
     for(int i=0;i<size;++i){
         v->values1[i] = v1[key[i].value];
         v->values2[i] = v2[key[i].value];
+        v->values3[i] = v3[key[i].value];
     }
     free(key);
     free(v1);
     free(v2);
+    free(v3);
 }
 
+// Performs transposition
+// -by swapping ColInd and RowInd, then sorting
+/*template<typename typeVal>
+void makeTranspose( int edge, int *h_cooColIndA, int *h_cooRowIndA, typeVal *h_cooValA ) {
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
+    int *temp = h_cooColIndA;
+    h_cooColIndA = h_cooRowIndA;
+    h_cooRowIndA = temp;
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
+
+    // Sort by column ID
+    //struct arrayset work = { h_cooRowIndA, h_cooColIndA };
+    struct arrayset work = { h_cooColIndA, h_cooRowIndA };
+    custom_sort(&work, edge);
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
+
+}*/
+
+// Performs symmetrization
 template<typename typeVal>
 int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
 
     int realEdge = edge/2;
+    int shift = 0;
     
     for( int i=0; i<realEdge; i++ ) {
-        h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
-        h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
+		if( h_csrColIndA[i] != h_cooRowIndA[i] )
+		{
+			h_cooRowIndA[realEdge+i-shift] = h_csrColIndA[i];
+       		h_csrColIndA[realEdge+i-shift] = h_cooRowIndA[i];
+			h_randVec[realEdge+i-shift] = h_randVec[i];
+		}
+		else shift++;
     }
 
-    // Sort
-    struct arrayset work = { h_cooRowIndA, h_csrColIndA };
-    custom_sort(&work, edge);
-    /*std::vector< std::pair<int, int> > pairs;
-    for( int i=0; i<edge; i++ )
-        pairs.push_back(std::make_pair( h_cooRowIndA[i], h_csrColIndA[i] ));
-    std::sort( pairs.begin(), pairs.end() );
-    for( int i=0; i<edge; i++ ) {
-        h_cooRowIndA[i] = pairs[i].first;
-        h_csrColIndA[i] = pairs[i].second;
-    }*/
+	//print_array(h_randVec);
 
-    int curr = h_csrColIndA[0];
+    // Sort
+    struct arrayset work = { h_cooRowIndA, h_csrColIndA, h_randVec };
+    custom_sort(&work, edge-shift);
+	//print_array(h_randVec);
+
+    // Check for self-loops and repetitions, mark with -1
+    // TODO: make self-loops and repetitions contingent on whether we 			  
+	// are doing graph algorithm or matrix multiplication
+    /*int curr = h_csrColIndA[0];
     int last;
     int curr_row = h_cooRowIndA[0];
     int last_row;
+    int shift = 0;
     if( curr_row == curr )
         h_cooRowIndA[0] = -1;
-
-    // Check for self-loops and repetitions, mark with -1
-    for( int i=1; i<edge; i++ ) {
+    
+	for( int i=1; i<edge; i++ ) {
         last = curr;
         last_row = curr_row;
         curr = h_csrColIndA[i];
         curr_row = h_cooRowIndA[i];
 
-        // Self-loops
-        if( curr_row == curr )
-            h_csrColIndA[i] = -1;
+        // Self-loops (TODO: make self-loops and repetitions contingent on whether we 
+		// are doing graph algorithm or matrix multiplication)
+        //if( curr_row == curr )
+        //    h_csrColIndA[i] = -1;
         // Repetitions
-        else if( curr == last && curr_row == last_row )
-            h_csrColIndA[i] = -1;
+        //if( curr == last && curr_row == last_row )
+        //    h_csrColIndA[i] = -1;
     }
 
     // Remove self-loops and repetitions.
-    int shift = 0;
     int back = 0;
     for( int i=0; i+shift<edge; i++ ) {
         if(h_csrColIndA[i] == -1) {
@@ -590,7 +655,7 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
                     h_cooRowIndA[i] = h_cooRowIndA[back];
                     h_csrColIndA[back] = -1;
                     break;
-    }}}}
+    }}}}*/
     return edge-shift;
 }
 

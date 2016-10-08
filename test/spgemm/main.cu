@@ -16,11 +16,80 @@
 #include <moderngpu.cuh>
 
 #include <util.cuh>
-#include <tc.cuh>
+#include <spgemm.cuh>
 
 #include <testBfs.cpp>
 #include <string.h>
+#include <fstream>
 
+// Counts number of nnz in 1D partition
+void histogramHorz( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+{
+	std::ofstream outf;
+	outf.open("histogramA.csv", std::ofstream::out | std::ofstream::app);
+	printf("Partition size: %d\n", part_size);
+	outf << "New matrix\n";
+	int curr_ind = 0;
+	int last_ind = 0;
+	for( int i=part_size; i<=m-part_size; i+=part_size )
+	{
+		last_ind = curr_ind;
+		curr_ind = h_cscColPtrA[i];
+		outf << i/part_size-1 << " " << curr_ind-last_ind << "\n";
+	}
+}
+
+// Counts number of nnz in 1D partition
+void histogramVert( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+{
+	std::ofstream outf;
+	outf.open("histogramB.csv", std::ofstream::out | std::ofstream::app);
+	printf("Partition size: %d\n", part_size);
+	outf << "New matrix\n";
+	int curr_ind = 0;
+	int last_ind = 0;
+	for( int i=part_size; i<=m-part_size; i+=part_size )
+	{
+		last_ind = curr_ind;
+		curr_ind = h_cscColPtrA[i];
+		outf << i/part_size-1 << " " << curr_ind-last_ind << "\n";
+	}
+}
+
+// Counts number of nnz in 2D partition
+void histogramBlock( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+{
+	std::ofstream outf, outf2;
+	outf2.open("histogramC.csv", std::ofstream::out | std::ofstream::app);
+	outf2 << "New matrix\n";
+
+	printf("Partition size: %d\n", part_size);
+	int curr_ind = 0;
+	int last_ind = 0;
+
+    int block_size = (m+part_size-1)/part_size;
+	int *block = (int*) malloc( block_size*block_size*sizeof(int));
+	printf("Block size: %d\n", block_size);
+	for( int i=0; i<block_size*block_size; i++ )
+		block[i] = 0;
+
+	for( int i=part_size; i<=m-part_size; i+=part_size )
+	{
+		last_ind = curr_ind;
+		curr_ind = h_cscColPtrA[i];
+		for( int j=last_ind; j< curr_ind; j++ ) 
+		{
+			//printf("%d ", (i/part_size-1)*block_size+h_cscRowIndA[j]/part_size ); 
+			block[(i/part_size-1)*block_size+h_cscRowIndA[j]/part_size]++;
+		}
+	}
+
+	for( int i=0; i<block_size*block_size; i++ )
+	{
+		if( block[i]!=0 )
+			outf2 << i/block_size << " " << i%block_size << " " << block[i] << "\n";
+	}
+}
 
 int countDiag( const int edge, const int *h_cscRowIndA, const int* h_cooColIndA ) {
     int count = 0;
@@ -90,6 +159,7 @@ void runBfs(int argc, char**argv) {
     int device;
     float delta;
     bool undirected = false;
+	bool weighted = false;
     if( parseArgs( argc, argv, source, device, delta, undirected )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
@@ -101,7 +171,7 @@ void runBfs(int argc, char**argv) {
     readEdge( m, n, edge, stdin );
     printf("Graph has %d nodes, %d edges\n", m, edge);
     if( undirected )
-        edge=2*edge;
+      edge=2*edge;
 
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_cscValA, *h_cooValA;
@@ -129,15 +199,26 @@ void runBfs(int argc, char**argv) {
     CpuTimer cpu_timerBuild;
     printf("Old edge #: %d\n", edge);
     cpu_timerRead.Start();
-    readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_cooValA );
+	if( undirected )
+    	weighted = readMtx<typeVal>( edge/2, h_cooColIndA, h_cooRowIndA, h_cooValA );
+	else
+    	weighted = readMtx<typeVal>( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
     cpu_timerRead.Stop();
+    if( !weighted )
+		buildVal( edge, h_cscValA );
     cpu_timerMake.Start();
-    //edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
-    makeTranspose( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+    if( undirected ) {
+		edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+    	printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
+	}
+    print_matrixCOO( h_cooValA, h_cooRowIndA, h_cooColIndA, m, edge );
     cpu_timerMake.Stop();
-    printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
     cpu_timerBuild.Start();
-    buildMatrix<typeVal>( h_cscColPtrA, h_cscRowIndA, h_cscValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+    // This function reads CSR or CSC by swapping h_cooColIndA and h_cooRowIndA
+    if( undirected )
+		buildMatrix<typeVal>( h_cscColPtrA, h_cscRowIndA, h_cscValA, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+	else
+    	buildMatrix<typeVal>( h_cscColPtrA, h_cscRowIndA, h_cscValA, m, edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
     cpu_timerBuild.Stop();
     float elapsedRead = cpu_timerRead.ElapsedMillis();
     float elapsedMake = cpu_timerMake.ElapsedMillis();
@@ -148,7 +229,7 @@ void runBfs(int argc, char**argv) {
 
     // 4b. Count diagonal
     int diag = countDiag( edge, h_cooRowIndA, h_cooColIndA ); 
-    int edge_B = (edge-diag)/2;
+    int edge_B = edge;
     int edge_C = edge_B;
     printf("Number of elements on diagonal: %d\n", diag);
     printf("Number of elements on L: %d\n", edge_B);
@@ -159,22 +240,20 @@ void runBfs(int argc, char**argv) {
     int m_B = m;
     int m_C = m;
 
-    typeVal *h_cscValB, *h_cscValC;
+    typeVal *h_cscValB;
     int *h_cscRowIndB, *h_cscColPtrB;
-    int *h_cscRowIndC, *h_cscColPtrC;
     h_cscValB = (typeVal*)malloc(edge_B*sizeof(typeVal));
-    h_cscValC = (typeVal*)malloc(edge_C*sizeof(typeVal));
     h_cscRowIndB = (int*)malloc(edge_B*sizeof(int));
-    h_cscRowIndC = (int*)malloc(edge_C*sizeof(int));
-    h_cscColPtrB = (int*)malloc(m_B*sizeof(int));
-    h_cscColPtrC = (int*)malloc(m_C*sizeof(int));
+    h_cscColPtrB = (int*)malloc((m_B+1)*sizeof(int));
 
-    buildVal( edge, h_cscValA );
-    buildLower( m, edge_B, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrB, h_cscRowIndB, h_cscValB );
+    if( !weighted )
+		buildVal( edge, h_cscValA );
+    //buildLower( m, edge_B, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrB, h_cscRowIndB, h_cscValB );
+	memcpy( h_cscColPtrB, h_cscColPtrA, (m_B+1)*sizeof(int));
+	memcpy( h_cscRowIndB, h_cscRowIndA, edge_B*sizeof(int));
+	memcpy( h_cscValB, h_cscValA, edge_B*sizeof(typeVal));
     print_matrix( h_cscValA, h_cscColPtrA, h_cscRowIndA, m );
     print_matrix( h_cscValB, h_cscColPtrB, h_cscRowIndB, m );
-    buildLower( m, edge_C, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrC, h_cscRowIndC, h_cscValC, false );
-    print_matrix( h_cscValC, h_cscColPtrC, h_cscRowIndC, m );
 
     // 5. Allocate GPU memory
     typeVal *d_cscValA, *d_cscValB, *d_cscValC;
@@ -200,9 +279,6 @@ void runBfs(int argc, char**argv) {
     cudaMalloc(&d_cscValB, edge_B*sizeof(typeVal));
     cudaMalloc(&d_cscRowIndB, edge_B*sizeof(int));
     cudaMalloc(&d_cscColPtrB, (m_B+1)*sizeof(int));
-    cudaMalloc(&d_cscValC, edge_C*sizeof(typeVal)); // Allocate C in mXm
-    cudaMalloc(&d_cscRowIndC, edge_C*sizeof(int));
-    cudaMalloc(&d_cscColPtrC, (m_C+1)*sizeof(int));
 
     // 6. Copy data from host to device
     cudaMemcpy(d_cscValA, h_cscValA, (edge)*sizeof(typeVal),cudaMemcpyHostToDevice);
@@ -214,26 +290,13 @@ void runBfs(int argc, char**argv) {
     cudaMemcpy(d_cscRowIndB, h_cscRowIndB, (edge_B)*sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(d_cscColPtrB, h_cscColPtrB, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
 
-    cudaMemcpy(d_cscValC, h_cscValC, (edge_C)*sizeof(typeVal),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_cscRowIndC, h_cscRowIndC, (edge_C)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_cscColPtrC, h_cscColPtrC, (m+1)*sizeof(int),cudaMemcpyHostToDevice);
-
     // 7. [insert CPU verification code here] 
 
     // 8. Make GPU timers
-    GpuTimer gpu_timer, gpu_timer2, gpu_timer3;
+    GpuTimer gpu_timer;
     float elapsed = 0.0f;
-    float elapsed2 = 0.0f;
-    float elapsed3 = 0.0f;
 
-    // 9. Initialize product matrix D
-    typeVal *d_cscValD;
-    int *d_cscRowIndD, *d_cscColPtrD;
-    int edge_D, m_D = m;
-
-    // 10. Print two matrices
-
-    // 11. Run spgemm
+    // 9. Run spgemm
     // Must be UxL because we are using CSC matrices rather than specified CSR
     // input required by cuSPARSE
     int NT = 512;
@@ -241,37 +304,46 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Start();
     
     //edge_D = mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValA, h_cscColPtrA, d_cscColPtrA, d_cscRowIndA, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
-    edge_D = spgemm<typeVal>( edge, m, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValD, d_cscColPtrD, d_cscRowIndD );
+    edge_C = spgemm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, d_cscColPtrC, d_cscRowIndC );
     gpu_timer.Stop();
-    gpu_timer2.Start();
-    ewiseMultTc<<<NB, NT>>>( edge, m, d_cscValD, d_cscColPtrD, d_cscRowIndD, d_cscValC, d_cscColPtrC, d_cscRowIndC, d_cscValA );
-    gpu_timer2.Stop();
-    gpu_timer3.Start();
-    typeVal n_tri = mgpu::Reduce( d_cscValA, m, *context ); 
-    gpu_timer3.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    elapsed2 += gpu_timer2.ElapsedMillis();
-    elapsed3 += gpu_timer3.ElapsedMillis();
-
     printf("spgemm finished in %f msec.\n", elapsed);
-    printf("intersection finished in %f msec.\n", elapsed2);
-    printf("reduce finished in %f msec.\n", elapsed3);
-    cudaMemcpy(h_cscValA, d_cscValA, m*sizeof(float), cudaMemcpyDeviceToHost);
-    print_array(h_cscValA, m);
-    printf("total runtime: %f msec.\n", elapsed+elapsed2+elapsed3);
-    printf("Number of triangles: %f\n", n_tri);
+
+    // 10. Allocate memory for C on Host
+	typeVal *h_cscValC;
+    int *h_cscRowIndC, *h_cscColPtrC;
+    h_cscValC = (typeVal*)malloc(edge_C*sizeof(typeVal));
+    h_cscRowIndC = (int*)malloc(edge_C*sizeof(int));
+    h_cscColPtrC = (int*)malloc((m_C+1)*sizeof(int));
+
+	// Statistics:
+	// MEMORY = 128000 (L2), 1000 (L1)
+	typeVal *h_cscValD;
+	int *h_cscRowIndD, *h_cscColPtrD;
+    h_cscValD = (typeVal*)malloc(edge*sizeof(typeVal));
+    h_cscRowIndD = (int*)malloc(edge*sizeof(int));
+    h_cscColPtrD = (int*)malloc((m+1)*sizeof(int));
+    buildMatrix<typeVal>( h_cscColPtrD, h_cscRowIndD, h_cscValD, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+	float AGGRO_FACTOR = 0.5;  // a value in (0-1] that describes how close to 
+								// shared mem threshold
+	float k_A = (float)edge/m;
+	float MEMORY = 128000.0;
+	float TARGET_PART_SIZE = AGGRO_FACTOR*MEMORY/k_A;
+	float TARGET_PART_NUM = edge/MEMORY/AGGRO_FACTOR;
+
+	printf("Mem: %f; Size: %f; Num: %f\n", MEMORY, (int)TARGET_PART_SIZE, TARGET_PART_NUM);
 
     // 11. Compare with CPU BFS for errors
-    typeVal *h_cscValD;
-    int *h_cscRowIndD, *h_cscColPtrD;
-    h_cscValD = (typeVal*)malloc(edge_D*sizeof(typeVal));
-    h_cscRowIndD = (int*)malloc(edge_D*sizeof(int));
-    h_cscColPtrD = (int*)malloc(m_D*sizeof(int));
-    cudaMemcpy(h_cscRowIndD, d_cscRowIndD, edge_D*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_cscColPtrD, d_cscColPtrD, (m_D+1)*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_cscValD, d_cscValD, edge_D*sizeof(float), cudaMemcpyDeviceToHost);
-    printf("Matrix D: %dx%d with %d nnz\n", m, m, edge_D);
-    //print_matrix( h_cscValD, h_cscColPtrD, h_cscRowIndD, m );
+    cudaMemcpy(h_cscRowIndC, d_cscRowIndC, edge_C*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscColPtrC, d_cscColPtrC, (m_C+1)*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_cscValC, d_cscValC, edge_C*sizeof(typeVal), cudaMemcpyDeviceToHost);
+    //printf("Matrix C: %dx%d with %d nnz\n", m, m, edge_C);
+    //print_matrix( h_cscValC, h_cscColPtrC, h_cscRowIndC, m );
+
+    histogramHorz( h_cscColPtrA, h_cscRowIndA, m, (int)TARGET_PART_SIZE );
+    histogramVert( h_cscColPtrD, h_cscRowIndD, m, (int)TARGET_PART_SIZE );
+
+	histogramBlock( h_cscColPtrC, h_cscRowIndC, m, (int)TARGET_PART_SIZE );
 }
 
 int main(int argc, char**argv) {
