@@ -5,7 +5,7 @@
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <sys/time.h>
-#include "scratch.hpp"
+#include <scratch.hpp>
 
 #include <vector>
 #include <utility>
@@ -55,28 +55,6 @@ void print_array( T *array, int length=40 ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
     }
     std::cout << "\n";
-}
-
-template<typename T>
-void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
-    //print_array(h_csrRowPtr);
-    //print_array(h_csrColInd); 
-    //print_array(h_csrVal);
-    std::cout << "Matrix:\n";
-    if( length>20 ) length=20;
-    for( int i=0; i<length; i++ ) {
-        int count = h_csrRowPtr[i];
-        for( int j=0; j<length; j++ ) {
-            if( count>=h_csrRowPtr[i+1] || h_csrColInd[count] != j )
-                std::cout << "0 ";
-            else {
-                //std::cout << h_csrVal[count] << " ";
-                std::cout << "x ";
-                count++;
-            }
-        }
-        std::cout << std::endl;
-    }
 }
 
 template<typename T>
@@ -425,64 +403,6 @@ bool readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) 
 	return weighted;
 }
 
-  // This function converts function from COO to CSR representation
-  // TODO: -add support for COO->CSC
-  //       -add support for int64
-  //
-  // @tparam[in] <typeVal>   Models value
-  //
-  // @param[in] numVert
-  // @param[in] numEdge
-  // @param[in] h_cooRowInd
-  // @param[in] h_cooColInd
-  // @param[in] h_cooVal
-  // @param[out] h_csrRowPtr
-  // @param[out] h_csrColInd
-  // @param[out] h_csrVal
-
-  template<typename typeVal>
-  void buildMatrix( int *h_csrRowPtr,
-                    int *h_csrColInd,
-                    typeVal *h_csrVal,
-                    int numVert,
-                    int numEdge,
-                    int *h_cooRowInd,     // I
-                    int *h_cooColInd,     // J
-                    typeVal *h_cooVal ) {
-
-    int temp;
-    int row;
-    int dest;
-    int cumsum = 0;
-    //int nnz = numEdge;
-    //C.val.resize(nnz);
-    //C.rowind.resize(nnz);
-
-    for( int i=0; i<=numVert; i++ )
-      h_csrRowPtr[i] = 0;               // Set all rowPtr to 0
-    for( int i=0; i<numEdge; i++ )
-      h_csrRowPtr[h_cooRowInd[i]]++;                   // Go through all elements to see how many fall into each column
-    for( int i=0; i<numVert; i++ ) {                  // Cumulative sum to obtain column pointer array
-      temp = h_csrRowPtr[i];
-      h_csrRowPtr[i] = cumsum;
-      cumsum += temp;
-    }
-    h_csrRowPtr[numVert] = numEdge;
-
-    for( int i=0; i<numEdge; i++ ) {
-      row = h_cooRowInd[i];                         // Store every row index in memory location specified by colptr
-      dest = h_csrRowPtr[row];
-      h_csrColInd[dest] = h_cooColInd[i];              // Store row index
-      h_csrVal[dest] = h_cooVal[i];                 // Store value
-      h_csrRowPtr[row]++;                      // Shift destination to right by one
-    }
-    cumsum = 0;
-    for( int i=0; i<=numVert; i++ ) {                 // Undo damage done by moving destination
-      temp = h_csrRowPtr[i];
-      h_csrRowPtr[i] = cumsum;
-      cumsum = temp;
-  }}
-
 bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bool &undirected ) {
     bool error = false;
     source = 0;
@@ -595,17 +515,17 @@ void makeTranspose( int edge, int *h_cooColIndA, int *h_cooRowIndA, typeVal *h_c
 
 // Performs symmetrization
 template<typename typeVal>
-int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
+int makeSymmetric( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
 
     int realEdge = edge/2;
     int shift = 0;
     
     for( int i=0; i<realEdge; i++ ) {
-		if( h_csrColIndA[i] != h_cooRowIndA[i] )
+		if( h_cooColInd[i] != h_cooRowInd[i] )
 		{
-			h_cooRowIndA[realEdge+i-shift] = h_csrColIndA[i];
-       		h_csrColIndA[realEdge+i-shift] = h_cooRowIndA[i];
-			h_randVec[realEdge+i-shift] = h_randVec[i];
+			h_cooRowInd[realEdge+i-shift] = h_cooColInd[i];
+       		h_cooColInd[realEdge+i-shift] = h_cooRowInd[i];
+			h_cooVal[realEdge+i-shift] = h_cooVal[i];
 		}
 		else shift++;
     }
@@ -613,7 +533,7 @@ int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_ra
 	//print_array(h_randVec);
 
     // Sort
-    struct arrayset work = { h_cooRowIndA, h_csrColIndA, h_randVec };
+    struct arrayset work = { h_cooRowInd, h_cooColInd, h_cooVal };
     custom_sort(&work, edge-shift);
 	//print_array(h_randVec);
 
