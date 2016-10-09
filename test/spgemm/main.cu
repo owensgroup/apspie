@@ -24,7 +24,7 @@
 #include <matrix.cpp>
 
 // Counts number of nnz in 1D partition
-void histogramHorz( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+void histogramHorz( d_matrix *A, const int part_size )
 {
 	std::ofstream outf;
 	outf.open("histogramA.csv", std::ofstream::out | std::ofstream::app);
@@ -32,16 +32,16 @@ void histogramHorz( const int *h_cscColPtrA, const int *h_cscRowIndA, const int 
 	outf << "New matrix\n";
 	int curr_ind = 0;
 	int last_ind = 0;
-	for( int i=part_size; i<=m-part_size; i+=part_size )
+	for( int i=part_size; i<=A->m-part_size; i+=part_size )
 	{
 		last_ind = curr_ind;
-		curr_ind = h_cscColPtrA[i];
+		curr_ind = A->h_cscColPtr[i];
 		outf << i/part_size-1 << " " << curr_ind-last_ind << "\n";
 	}
 }
 
 // Counts number of nnz in 1D partition
-void histogramVert( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+void histogramVert( d_matrix *A, const int part_size )
 {
 	std::ofstream outf;
 	outf.open("histogramB.csv", std::ofstream::out | std::ofstream::app);
@@ -49,16 +49,16 @@ void histogramVert( const int *h_cscColPtrA, const int *h_cscRowIndA, const int 
 	outf << "New matrix\n";
 	int curr_ind = 0;
 	int last_ind = 0;
-	for( int i=part_size; i<=m-part_size; i+=part_size )
+	for( int i=part_size; i<=A->m-part_size; i+=part_size )
 	{
 		last_ind = curr_ind;
-		curr_ind = h_cscColPtrA[i];
+		curr_ind = A->h_cscColPtr[i];
 		outf << i/part_size-1 << " " << curr_ind-last_ind << "\n";
 	}
 }
 
 // Counts number of nnz in 2D partition
-void histogramBlock( const int *h_cscColPtrA, const int *h_cscRowIndA, const int m, const int part_size )
+void histogramBlock( d_matrix *A, const int part_size )
 {
 	std::ofstream outf, outf2;
 	outf2.open("histogramC.csv", std::ofstream::out | std::ofstream::app);
@@ -68,20 +68,20 @@ void histogramBlock( const int *h_cscColPtrA, const int *h_cscRowIndA, const int
 	int curr_ind = 0;
 	int last_ind = 0;
 
-    int block_size = (m+part_size-1)/part_size;
+    int block_size = (A->m+part_size-1)/part_size;
 	int *block = (int*) malloc( block_size*block_size*sizeof(int));
 	printf("Block size: %d\n", block_size);
 	for( int i=0; i<block_size*block_size; i++ )
 		block[i] = 0;
 
-	for( int i=part_size; i<=m-part_size; i+=part_size )
+	for( int i=part_size; i<=A->m-part_size; i+=part_size )
 	{
 		last_ind = curr_ind;
-		curr_ind = h_cscColPtrA[i];
+		curr_ind = A->h_cscColPtr[i];
 		for( int j=last_ind; j< curr_ind; j++ ) 
 		{
-			//printf("%d ", (i/part_size-1)*block_size+h_cscRowIndA[j]/part_size ); 
-			block[(i/part_size-1)*block_size+h_cscRowIndA[j]/part_size]++;
+			//printf("%d ", (i/part_size-1)*block_size+A->h_cscRowInd[j]/part_size ); 
+			block[(i/part_size-1)*block_size+A->h_cscRowInd[j]/part_size]++;
 		}
 	}
 
@@ -178,7 +178,6 @@ void runBfs(int argc, char**argv) {
     typeVal *h_cooValA;
     //int *h_csrRowPtrA, *h_csrColIndA;
     int *h_cooRowIndA, *h_cooColIndA;
-    int *h_bfsResult, *h_bfsResultCPU;
 
     //h_csrValA    = (typeVal*)malloc(edge*sizeof(typeVal));
     h_cooValA    = (typeVal*)malloc(edge*sizeof(typeVal));
@@ -186,8 +185,6 @@ void runBfs(int argc, char**argv) {
     //h_csrColIndA = (int*)malloc(edge*sizeof(int));
     h_cooRowIndA = (int*)malloc(edge*sizeof(int));
     h_cooColIndA = (int*)malloc(edge*sizeof(int));
-    h_bfsResult = (int*)malloc((m)*sizeof(int));
-    h_bfsResultCPU = (int*)malloc((m)*sizeof(int));
 
     // 4. Read in graph from .mtx file
     // We are actually doing readMtx<typeVal>( edge, h_cooColIndA, h_cscRowIndA, h_cscValA );
@@ -200,6 +197,8 @@ void runBfs(int argc, char**argv) {
 	d_matrix D; //Used for counting vertical slab nnzs and for my spgemm mult
 	matrix_new( &A, m, m );
 	matrix_new( &B, m, m );
+	matrix_new( &C, m, m );
+	matrix_new( &D, m, m );
 
     cpu_timerRead.Start();
 	if( undirected )
@@ -237,15 +236,7 @@ void runBfs(int argc, char**argv) {
     printf("The max degree is: %d\n", maxDegree(m, A.h_cscColPtr));
     printf("Square degree sum is: %lld\n", squareDegree(m, A.h_cscColPtr));
 
-    //buildLower( m, edge_B, h_cscColPtrA, h_cscRowIndA, h_cscValA, h_cscColPtrB, h_cscRowIndB, h_cscValB );
-    print_matrix( &A, A.m, true );
-
-    // 5. Allocate GPU memory
-    //typeVal *d_csrValA;
-    //int *d_csrRowPtrA, *d_csrColIndA;
-    int *d_cooColIndA;
-    int *d_bfsResult;
-    cudaMalloc(&d_bfsResult, m*sizeof(int));
+    print_matrix( &A, A.m );
 
     // 6. Copy data from host to device
 	matrix_copy( &B, &A );
@@ -263,28 +254,17 @@ void runBfs(int argc, char**argv) {
     int NB = (m+NT-1)/NT;
     gpu_timer.Start();
 
-    /*
+    // 10. Compare with CPU BFS for errors
     //edge_D = mXm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValA, h_cscColPtrA, d_cscColPtrA, d_cscRowIndA, d_cscValD, d_cscColPtrD, d_cscRowIndD, *context);
-    edge_C = spgemm<typeVal>( edge, m, d_cscValA, d_cscColPtrA, d_cscRowIndA, d_cscValB, d_cscColPtrB, d_cscRowIndB, d_cscValC, d_cscColPtrC, d_cscRowIndC );
+    spgemm<typeVal>( &C, &A, &B );
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
-
-    // 10. Allocate memory for C on Host
-	typeVal *h_cscValC;
-    int *h_cscRowIndC, *h_cscColPtrC;
-    h_cscValC = (typeVal*)malloc(edge_C*sizeof(typeVal));
-    h_cscRowIndC = (int*)malloc(edge_C*sizeof(int));
-    h_cscColPtrC = (int*)malloc((m_C+1)*sizeof(int));
+	print_matrix_device( &C, C->m );
 
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
-	typeVal *h_cscValD;
-	int *h_cscRowIndD, *h_cscColPtrD;
-    h_cscValD = (typeVal*)malloc(edge*sizeof(typeVal));
-    h_cscRowIndD = (int*)malloc(edge*sizeof(int));
-    h_cscColPtrD = (int*)malloc((m+1)*sizeof(int));
-    buildMatrix<typeVal>( h_cscColPtrD, h_cscRowIndD, h_cscValD, m, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
+    buildMatrix<typeVal>( &D, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
 	float AGGRO_FACTOR = 0.5;  // a value in (0-1] that describes how close to 
 								// shared mem threshold
 	float k_A = (float)edge/m;
@@ -294,17 +274,9 @@ void runBfs(int argc, char**argv) {
 
 	printf("Mem: %f; Size: %f; Num: %f\n", MEMORY, (int)TARGET_PART_SIZE, TARGET_PART_NUM);
 
-    // 11. Compare with CPU BFS for errors
-    cudaMemcpy(h_cscRowIndC, d_cscRowIndC, edge_C*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_cscColPtrC, d_cscColPtrC, (m_C+1)*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_cscValC, d_cscValC, edge_C*sizeof(typeVal), cudaMemcpyDeviceToHost);
-    //printf("Matrix C: %dx%d with %d nnz\n", m, m, edge_C);
-    //print_matrix( h_cscValC, h_cscColPtrC, h_cscRowIndC, m );
-
-    histogramHorz( h_cscColPtrA, h_cscRowIndA, m, (int)TARGET_PART_SIZE );
-    histogramVert( h_cscColPtrD, h_cscRowIndD, m, (int)TARGET_PART_SIZE );
-
-	histogramBlock( h_cscColPtrC, h_cscRowIndC, m, (int)TARGET_PART_SIZE );*/
+    histogramHorz( &A, (int)TARGET_PART_SIZE );
+    histogramVert( &D, (int) TARGET_PART_SIZE );
+	histogramBlock( &C, (int)TARGET_PART_SIZE );
 }
 
 int main(int argc, char**argv) {
