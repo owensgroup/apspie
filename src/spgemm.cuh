@@ -14,18 +14,21 @@ template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
-
+/*
 // Matrix multiplication kernel 
-/*__global__ void spgemmKernel(Matrix A, Matrix B, Matrix C, int partSize) {
+__global__ void spgemmKernel(d_matrix *C, d_matrix *A, d_matrix B, const int partSize, const int aggroFactor) {
+	// 1. Load A_sub (CSR)
+	
 
+	// 2. Convert CSR->CSC (matrix A_sub), CSC->CSR (matrix B_sub)
 }
 
 // Matrix multiplication (Host code)
-void spgemm( Matrix A, Matrix B, Matrix C, int partSize ) {
+void spgemm( d_matrix *C, d_matrix *A, d_matrix B, const int partSize, const int aggroFactor ) {
 
 	// Set 48kB shared memory 
     cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
-	spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize );
+	spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
 }*/
 
 // Uses cuSPARSE SpMV

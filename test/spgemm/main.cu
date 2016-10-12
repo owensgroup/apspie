@@ -23,12 +23,91 @@
 #include <matrix.hpp>
 #include <matrix.cpp>
 
+void computeBlockHorz( int *block_size, d_matrix *A, const int MEMORY )
+{
+	int block_num = A->nnz/MEMORY;
+	block_size[0] = 0;
+	block_size[block_num] = A->m;
+	int target = MEMORY;
+	int count=1;
+
+	for( int i=1; i<A->m+1; i++ )
+	{
+		if( A->h_cscColPtr[i]>=target )
+		{
+			block_size[count] = i;
+			target+=MEMORY;
+			//printf("%d %d\n", count, i);
+			count++;
+		}
+		if( count==block_num )
+			break;
+	}
+	if( block_size[block_num] != A->m )
+		printf("Error: last block_size has been overwritten!\n");
+}
+
+// Counts number of nnz in 2D partition
+void histogramSBlock( d_matrix *A, d_matrix *B, d_matrix *C, const int part_size )
+{
+	std::ofstream outf2;
+	outf2.open("histogramD.csv", std::ofstream::out | std::ofstream::app);
+	outf2 << "New matrix\n";
+
+	int curr_ind = 0;
+	int last_ind = 0;
+
+	int block_num = A->nnz/part_size;
+	int *block_sizeA = (int*) malloc( (block_num+1)*sizeof(int));
+	int *block_sizeB = (int*) malloc( (block_num+1)*sizeof(int));
+
+	computeBlockHorz( block_sizeA, A, part_size );
+	computeBlockHorz( block_sizeB, B, part_size );
+
+	int *block = (int*) malloc( block_num*block_num*sizeof(int));
+	for( int i=0; i<block_num*block_num; i++ )
+		block[i] = 0;
+
+	for( int i=1; i<block_num; i++ )
+	{
+		last_ind = curr_ind;
+		curr_ind = C->h_cscColPtr[block_sizeA[i]];
+		for( int j=last_ind; j<=curr_ind; j++ ) 
+		{
+			int bin = 0;
+			// Need to do range query to find which bin of block_sizeB j belongs to
+			// Do linear scan since easier to implement than binary search
+			for( int k=0; k<block_num; k++ )
+			{
+				if( block_sizeB[k+1] > C->h_cscRowInd[j] )
+				{
+					//printf("%d: %d %d\n", j, i, k);
+					bin = k;
+					break;
+				}
+			}
+			block[i*block_num+bin]++;
+		}
+	}
+
+	long long sum = 0;
+	int max = 0;
+	for( int i=0; i<block_num*block_num; i++ )
+	{
+		sum += block[i];
+		if( block[i] > max )
+			max = block[i];
+		//if( block[i]!=0 )
+		//	outf2 << i/block_num << " " << i%block_num << " " << block[i] << "\n";
+	}
+	printf("Avg: %f, Max: %d\n", (float)sum/block_num/block_num, max);
+}
+
 // Counts number of nnz in 1D partition
 void histogramHorz( d_matrix *A, const int part_size )
 {
 	std::ofstream outf;
 	outf.open("histogramA.csv", std::ofstream::out | std::ofstream::app);
-	printf("Partition size: %d\n", part_size);
 	outf << "New matrix\n";
 	int curr_ind = 0;
 	int last_ind = 0;
@@ -45,7 +124,6 @@ void histogramVert( d_matrix *A, const int part_size )
 {
 	std::ofstream outf;
 	outf.open("histogramB.csv", std::ofstream::out | std::ofstream::app);
-	printf("Partition size: %d\n", part_size);
 	outf << "New matrix\n";
 	int curr_ind = 0;
 	int last_ind = 0;
@@ -60,17 +138,15 @@ void histogramVert( d_matrix *A, const int part_size )
 // Counts number of nnz in 2D partition
 void histogramBlock( d_matrix *A, const int part_size )
 {
-	std::ofstream outf, outf2;
+	std::ofstream outf2;
 	outf2.open("histogramC.csv", std::ofstream::out | std::ofstream::app);
 	outf2 << "New matrix\n";
 
-	printf("Partition size: %d\n", part_size);
 	int curr_ind = 0;
 	int last_ind = 0;
 
     int block_size = (A->m+part_size-1)/part_size;
 	int *block = (int*) malloc( block_size*block_size*sizeof(int));
-	printf("Block size: %d\n", block_size);
 	for( int i=0; i<block_size*block_size; i++ )
 		block[i] = 0;
 
@@ -236,7 +312,7 @@ void runBfs(int argc, char**argv) {
     printf("The max degree is: %d\n", maxDegree(m, A.h_cscColPtr));
     printf("Square degree sum is: %lld\n", squareDegree(m, A.h_cscColPtr));
 
-    print_matrix( &A, A.m );
+    print_matrix( &A );
 
     // 6. Copy data from host to device
 	matrix_copy( &B, &A );
@@ -260,7 +336,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
-	print_matrix_device( &C, C->m );
+	print_matrix_device( &C );
 
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
@@ -270,13 +346,32 @@ void runBfs(int argc, char**argv) {
 	float k_A = (float)edge/m;
 	float MEMORY = 128000.0;
 	float TARGET_PART_SIZE = AGGRO_FACTOR*MEMORY/k_A;
-	float TARGET_PART_NUM = edge/MEMORY/AGGRO_FACTOR;
+	float TARGET_PART_NUM = (float)edge/MEMORY/AGGRO_FACTOR;
 
-	printf("Mem: %f; Size: %f; Num: %f\n", MEMORY, (int)TARGET_PART_SIZE, TARGET_PART_NUM);
+	printf("Mem: %f; Size: %d; Num: %d\n", MEMORY, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM);
 
     histogramHorz( &A, (int)TARGET_PART_SIZE );
     histogramVert( &D, (int) TARGET_PART_SIZE );
 	histogramBlock( &C, (int)TARGET_PART_SIZE );
+
+	float SMEMORY = AGGRO_FACTOR*1000.0;
+	float SPART_NUM = (float)edge/SMEMORY;
+	printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
+
+    //csr2csc<typeVal>( A.m, A.nnz, A.d_cscVal, A.d_cscColPtr, A.d_cscRowInd, B.d_cscVal, B.d_cscRowInd, B.d_cscColPtr );
+
+	d_matrix Asub, Bsub;
+	matrix_new(&Asub, (int)TARGET_PART_SIZE, m);
+	matrix_new(&Bsub, (int)TARGET_PART_SIZE, m);
+	printf("Matrix 1:\n");
+	extract_csr2csc<typeVal>( &Asub, &A );
+	printf("Matrix 2:\n");
+	extract_csr2csc<typeVal>( &Bsub, &D );
+
+	print_matrix_device( &Asub );
+	print_matrix_device( &Bsub, Bsub.m );
+	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
+	//spgemm( &C, &A, &B, (int)TARGET_PART_SIZE, SMEMORY );
 }
 
 int main(int argc, char**argv) {

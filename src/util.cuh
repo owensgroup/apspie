@@ -49,12 +49,26 @@ void print_end( T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_array( T *array, int length=40 ) {
+void print_array( const T *array, int length=40 ) {
     if( length>40 ) length=40;
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
     }
     std::cout << "\n";
+}
+
+template<typename T>
+void print_array_device( const T *d_data, int length=40 ) {
+	if( length>40 ) length=40;
+
+    // Allocate array on host
+    T *h_data = (T*) malloc(length * sizeof(T));
+
+	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
+	print_array( h_data, length );
+
+    // Cleanup
+    if (h_data) free(h_data);
 }
 
 template<typename T>
@@ -450,6 +464,30 @@ void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *
 
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, CUSPARSE_ACTION_SYMBOLIC, CUSPARSE_INDEX_BASE_ZERO);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("csr2csc conversion successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+    }
 
     // Important: destroy handle
     cusparseDestroy(handle);

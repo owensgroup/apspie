@@ -11,8 +11,8 @@ void matrix_new( d_matrix *A, int m, int n )
 
 	// RowInd and Val will be allocated in buildMatrix rather than here
 	// since nnz may be unknown
-    //A->h_cscRowInd = (int*)malloc((nnz)*sizeof(int));
-    //A->h_cscVal = (float*)malloc((nnz)*sizeof(float));
+    A->h_cscRowInd = NULL;
+    A->h_cscVal = NULL;
 
 	// Device alloc
     cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int));
@@ -121,12 +121,13 @@ void matrix_copy( d_matrix *B, d_matrix *A )
     cudaMemcpy(B->d_cscRowInd, A->h_cscRowInd, B->nnz*sizeof(int),cudaMemcpyHostToDevice);
 }
 
-void print_matrix( d_matrix *A, int length, bool val=false ) {
+void print_matrix( d_matrix *A, bool val=false ) {
     std::cout << "Matrix:\n";
-    if( length>20 ) length=20;
-    for( int i=0; i<length; i++ ) {
+	int num_row = A->m>20 ? 20 : A->m;
+	int num_col = A->n>20 ? 20 : A->n; 
+    for( int i=0; i<num_row; i++ ) {
         int count = A->h_cscColPtr[i];
-        for( int j=0; j<length; j++ ) {
+        for( int j=0; j<num_col; j++ ) {
             if( count>=A->h_cscColPtr[i+1] || A->h_cscRowInd[count] != j )
                 std::cout << "0 ";
             else {
@@ -141,11 +142,13 @@ void print_matrix( d_matrix *A, int length, bool val=false ) {
     }
 }
 
-void print_matrix_device( d_matrix *A, int length, bool val=false ) {
+void print_matrix_device( d_matrix *A, bool val=false ) {
 
-	// If buildMatrix not run, then need host alloc 
+	// If buildMatrix not run, then need host alloc
+	// Both pointers set to NULL in matrix_new 
 	if( A->h_cscRowInd == NULL && A->h_cscVal == NULL )
 	{
+		//std::cout << "Allocating memory for print.\n";
     	A->h_cscRowInd = (int*)malloc(A->nnz*sizeof(int));
     	A->h_cscVal = (float*)malloc(A->nnz*sizeof(float));	
 	}
@@ -155,5 +158,80 @@ void print_matrix_device( d_matrix *A, int length, bool val=false ) {
     cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost);	
     cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
 	
-	print_matrix( A, length, val );
+	print_matrix( A, val );
+}
+
+// Special case of csr2csc that fuses:
+// 1. extract( Asub, A ) - extract subgraph B of A
+// 2. csr2csc( B, Asub ) - convert subgraph to CSC
+template<typename typeVal>
+void extract_csr2csc( d_matrix *B, const d_matrix *A )
+{
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+
+    /*// Allocate memory for B->nnz
+    B->nnz = A->h_cscColPtr[B->m];
+	std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
+    B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
+    B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
+
+    cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
+    cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
+
+	print_array_device(A->d_cscColPtr,40);
+	print_array_device(A->d_cscRowInd,40);
+	print_array_device(A->d_cscVal,40);
+
+    // For CUDA 5.0+
+    cusparseStatus_t status = cusparseScsr2csc(handle, B->m, B->n, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);*/
+
+    // Allocate memory for B->nnz
+    B->nnz = A->h_cscColPtr[2];
+	B->m = 2;
+	std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
+    B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
+    B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
+
+    cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
+    cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
+
+	print_array_device(A->d_cscColPtr,10);
+	print_array_device(A->d_cscRowInd,10);
+	print_array_device(A->d_cscVal,10);
+
+    // For CUDA 5.0+
+    cusparseStatus_t status = cusparseScsr2csc(handle, B->m, B->n, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);
+
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("csr2csc conversion successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+	}
+
+	printf("Matrix B:\n");
+	print_array_device(B->d_cscColPtr,40);
+	print_array_device(B->d_cscRowInd,40);
+	print_array_device(B->d_cscVal,40);
+
+    // Important: destroy handle
+    cusparseDestroy(handle);
 }
