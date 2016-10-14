@@ -23,6 +23,17 @@
 #include <matrix.hpp>
 #include <matrix.cpp>
 
+void countNNZ( d_matrix *A )
+{
+	cudaMemcpy( A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int), cudaMemcpyDeviceToHost );
+
+	int count = 0;
+	for( int i=0; i<A->m; i++ )
+		if( A->h_cscColPtr[i+1]==A->h_cscColPtr[i] )
+			count++;
+	printf("Count: %d\n", count);
+}
+
 void computeBlockHorz( int *block_size, d_matrix *A, const int MEMORY )
 {
 	int block_num = A->nnz/MEMORY;
@@ -361,17 +372,34 @@ void runBfs(int argc, char**argv) {
     //csr2csc<typeVal>( A.m, A.nnz, A.d_cscVal, A.d_cscColPtr, A.d_cscRowInd, B.d_cscVal, B.d_cscRowInd, B.d_cscColPtr );
 
 	d_matrix Asub, Bsub;
-	matrix_new(&Asub, (int)TARGET_PART_SIZE, m);
-	matrix_new(&Bsub, (int)TARGET_PART_SIZE, m);
-	printf("Matrix 1:\n");
+	matrix_new(&Asub, m, (int)TARGET_PART_SIZE);
+	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
+
+    GpuTimer gpu_timer2, gpu_timer3;
+    float elapsed2 = 0.0f;
+    float elapsed3 = 0.0f;
+
+	gpu_timer2.Start();
 	extract_csr2csc<typeVal>( &Asub, &A );
-	printf("Matrix 2:\n");
+	gpu_timer2.Stop();
+
+	elapsed2 += gpu_timer2.ElapsedMillis();
+	printf("CSR->CSC: %f\n", elapsed2);
+
+	gpu_timer3.Start();
 	extract_csr2csc<typeVal>( &Bsub, &D );
+	gpu_timer3.Stop();
+
+	elapsed3 += gpu_timer3.ElapsedMillis();
+	printf("CSR->CSC: %f\n", elapsed3);
 
 	print_matrix_device( &Asub );
-	print_matrix_device( &Bsub, Bsub.m );
+	print_matrix_device( &Bsub );
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
-	//spgemm( &C, &A, &B, (int)TARGET_PART_SIZE, SMEMORY );
+	spgemm( &C, &A, &B, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
+
+	countNNZ( &Asub );
+	countNNZ( &Bsub );
 }
 
 int main(int argc, char**argv) {

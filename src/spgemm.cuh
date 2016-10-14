@@ -5,6 +5,7 @@
 #include "mXv.cuh"
 #include "scratch.hpp"
 #include "matrix.hpp"
+#include "spgemmKernel.cuh"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
@@ -14,22 +15,32 @@ template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
-/*
-// Matrix multiplication kernel 
-__global__ void spgemmKernel(d_matrix *C, d_matrix *A, d_matrix B, const int partSize, const int aggroFactor) {
-	// 1. Load A_sub (CSR)
-	
-
-	// 2. Convert CSR->CSC (matrix A_sub), CSC->CSR (matrix B_sub)
-}
 
 // Matrix multiplication (Host code)
-void spgemm( d_matrix *C, d_matrix *A, d_matrix B, const int partSize, const int aggroFactor ) {
+void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int smemSize, mgpu::CudaContext& context ) {
 
 	// Set 48kB shared memory 
-    cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
-	spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
-}*/
+    //cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
+
+	long tc_count = LaunchKernel
+      <IntersectionKernelPolicy, TCProblem, TCFunctor>(
+      //statistics[0],
+      //attributes[0],
+      d_data_slice,
+      graph_slice->row_offsets.GetPointer(util::DEVICE),
+      graph_slice->column_indices.GetPointer(util::DEVICE),
+      data_slice->d_src_node_ids.GetPointer(util::DEVICE),
+      graph_slice->column_indices.GetPointer(util::DEVICE),
+      data_slice->d_degrees.GetPointer(util::DEVICE),
+      data_slice->d_edge_tc.GetPointer(util::DEVICE),
+      d_output_triplets,
+      graph_slice->edges/2,
+      graph_slice->nodes,
+      graph_slice->edges/2,
+      //work_progress[0],
+      context);
+	//spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
+}
 
 // Uses cuSPARSE SpMV
 template<typename T>

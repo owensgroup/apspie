@@ -13,6 +13,8 @@ void matrix_new( d_matrix *A, int m, int n )
 	// since nnz may be unknown
     A->h_cscRowInd = NULL;
     A->h_cscVal = NULL;
+	A->d_cscRowInd = NULL;
+	A->d_cscVal = NULL;
 
 	// Device alloc
     cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int));
@@ -170,10 +172,11 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
     cusparseHandle_t handle;
     cusparseCreate(&handle);
 
-    /*// Allocate memory for B->nnz
-    B->nnz = A->h_cscColPtr[B->m];
+    // Allocate memory for B->nnz
+    B->nnz = A->h_cscColPtr[B->n];
 	std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
-    B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
+
+	B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
     B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
 
     cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
@@ -184,24 +187,7 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 	print_array_device(A->d_cscVal,40);
 
     // For CUDA 5.0+
-    cusparseStatus_t status = cusparseScsr2csc(handle, B->m, B->n, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);*/
-
-    // Allocate memory for B->nnz
-    B->nnz = A->h_cscColPtr[2];
-	B->m = 2;
-	std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
-    B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
-    B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
-
-    cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
-    cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
-
-	print_array_device(A->d_cscColPtr,10);
-	print_array_device(A->d_cscRowInd,10);
-	print_array_device(A->d_cscVal,10);
-
-    // For CUDA 5.0+
-    cusparseStatus_t status = cusparseScsr2csc(handle, B->m, B->n, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);
+    cusparseStatus_t status = cusparseScsr2csc(handle, B->n, B->m, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);
 
     switch( status ) {
         case CUSPARSE_STATUS_SUCCESS:
