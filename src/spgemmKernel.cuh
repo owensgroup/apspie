@@ -1,3 +1,7 @@
+#include "triple.hpp"
+
+#define __GR_CUDA_ARCH__ 300
+
 /**
  * Arch dispatch
  */
@@ -203,49 +207,40 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
 }
 
 // Kernel Entry point for performing batch intersection computation
-template <typename KernelPolicy, typename ProblemData, typename Functor>
-    float LaunchKernel(
+template <typename typeVal>//, typename ProblemData, typename Functor>
+    float LaunchKernel( d_matrix *C, d_matrix *A, d_matrix *B, 
         //gunrock::app::EnactorStats              &enactor_stats,
         //gunrock::app::FrontierAttribute<typename KernelPolicy::SizeT>
-                                                &frontier_attribute,
-        typename ProblemData::DataSlice         *data_slice,
-        typename KernelPolicy::SizeT            *d_row_offsets,
-        typename KernelPolicy::VertexId         *d_column_indices,
-        typename KernelPolicy::VertexId         *d_src_node_ids,
-        typename KernelPolicy::VertexId         *d_dst_node_ids,
-        typename KernelPolicy::VertexId         *d_degrees,
-        typename KernelPolicy::SizeT            *d_output_counts,
-        typename KernelPolicy::SizeT            *d_output_total,
-        typename KernelPolicy::SizeT            input_length,
-        typename KernelPolicy::SizeT            max_vertex,
-        typename KernelPolicy::SizeT            max_edge,
+        //                                        &frontier_attribute,
+        //typename ProblemData::DataSlice         *data_slice,
+  // d_matrix A
+        //typename KernelPolicy::SizeT            *d_row_offsets,
+        //typename KernelPolicy::VertexId         *d_column_indices,
+  // d_matrix B
+        //typename KernelPolicy::VertexId         *d_src_node_ids,
+        //typename KernelPolicy::VertexId         *d_dst_node_ids,
+        //typename KernelPolicy::VertexId         *d_degrees,
+        d_triple *d_output_counts,
+        int *d_output_total,
+  // d_matrix->nnz
+        //typename KernelPolicy::SizeT            input_length,
+        //typename KernelPolicy::SizeT            max_vertex,
+        //typename KernelPolicy::SizeT            max_edge,
         //util::CtaWorkProgress                   work_progress,
         mgpu::CudaContext                             &context)
 {
-    typedef typename KernelPolicy::SizeT        SizeT;
-    typedef typename KernelPolicy::VertexId     VertexId;
-    typedef typename KernelPolicy::Value        Value;
-
-    size_t stride = (input_length + KernelPolicy::BLOCKS * KernelPolicy::THREADS - 1)
+    int stride = (A->nnz + KernelPolicy::BLOCKS * KernelPolicy::THREADS - 1)
                         >> (KernelPolicy::LOG_THREADS + KernelPolicy::LOG_BLOCKS);
     
-    IntersectTwoSmallNL<KernelPolicy, ProblemData, Functor>
+    IntersectTwoSmallNL<typeVal>
     <<<KernelPolicy::BLOCKS, KernelPolicy::THREADS>>>(
-            d_row_offsets,
-            d_column_indices,
-            d_src_node_ids,
-            d_dst_node_ids,
-            d_degrees,
-            data_slice,
+			C, A, B,
             d_output_counts,
             d_output_total,
-            input_length,
-            stride,
-            max_vertex,
-            max_edge);
+            stride);
 
-    long total = mgpu::Reduce(d_output_total, input_length, context);
-    long tc_count = mgpu::Reduce(d_output_counts, input_length, context);
+    long total = mgpu::Reduce(d_output_total, A->nnz, context);
+    long tc_count = mgpu::Reduce(d_output_counts, C->nnz, context);
     printf("tc_total:%ld\n, tc_count:%ld\n", total, tc_count);
     return (float)tc_count / (float)total;
     //return total_counts[0];

@@ -6,6 +6,7 @@
 #include "scratch.hpp"
 #include "matrix.hpp"
 #include "spgemmKernel.cuh"
+#include "triple.hpp"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
@@ -22,23 +23,12 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	// Set 48kB shared memory 
     //cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
 
-	long tc_count = LaunchKernel
-      <IntersectionKernelPolicy, TCProblem, TCFunctor>(
-      //statistics[0],
-      //attributes[0],
-      d_data_slice,
-      graph_slice->row_offsets.GetPointer(util::DEVICE),
-      graph_slice->column_indices.GetPointer(util::DEVICE),
-      data_slice->d_src_node_ids.GetPointer(util::DEVICE),
-      graph_slice->column_indices.GetPointer(util::DEVICE),
-      data_slice->d_degrees.GetPointer(util::DEVICE),
-      data_slice->d_edge_tc.GetPointer(util::DEVICE),
-      d_output_triplets,
-      graph_slice->edges/2,
-      graph_slice->nodes,
-      graph_slice->edges/2,
-      //work_progress[0],
-      context);
+	d_triple *d_output_triples;
+	cudaMalloc(&d_output_triples, C->nnz*sizeof(d_triple));
+	int *d_output_total; 
+	cudaMalloc(&d_output_total, sizeof(int));
+
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, context );
 	//spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
 }
 
