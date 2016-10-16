@@ -396,7 +396,15 @@ void runBfs(int argc, char**argv) {
 	print_matrix_device( &Asub );
 	print_matrix_device( &Bsub );
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );*/
+    GpuTimer gpu_timer2;
+    float elapsed2 = 0.0f;
+	gpu_timer2.Start();
+
 	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
+
+	gpu_timer2.Stop();
+	elapsed2 += gpu_timer2.ElapsedMillis();
+	printf("my memory alloc+spgemm: %f ms\n", elapsed2);
 
 	//countNNZ( &Asub );
 	//countNNZ( &Bsub );
