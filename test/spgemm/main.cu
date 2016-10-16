@@ -347,7 +347,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
-	print_matrix_device( &C );
+	print_matrix_device( &C, true );
 
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
@@ -371,7 +371,7 @@ void runBfs(int argc, char**argv) {
 
     //csr2csc<typeVal>( A.m, A.nnz, A.d_cscVal, A.d_cscColPtr, A.d_cscRowInd, B.d_cscVal, B.d_cscRowInd, B.d_cscColPtr );
 
-	d_matrix Asub, Bsub;
+	/*d_matrix Asub, Bsub;
 	matrix_new(&Asub, m, (int)TARGET_PART_SIZE);
 	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
 
@@ -395,8 +395,8 @@ void runBfs(int argc, char**argv) {
 
 	print_matrix_device( &Asub );
 	print_matrix_device( &Bsub );
-	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
-	spgemm( &C, &A, &B, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
+	//histogramSBlock( &A, &D, &C, (int)SMEMORY );*/
+	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
 
 	//countNNZ( &Asub );
 	//countNNZ( &Bsub );

@@ -21,16 +21,26 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrVa
 void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int smemSize, mgpu::CudaContext& context ) {
 
 	// Set 48kB shared memory 
-    //cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
+    cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
 
 	//d_triple *d_output_triples;
 	//cudaMalloc(&d_output_triples, C->nnz*sizeof(d_triple));
 	int *d_output_triples;
 	cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
-	int *d_output_total; 
-	cudaMalloc(&d_output_total, A->nnz*sizeof(int));
+	float *d_output_total; 
+	cudaMalloc(&d_output_total, A->nnz*sizeof(float));
 
-	//long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, context );
+	int *zeroInt = (int*)malloc(A->nnz*sizeof(int));
+	float *zeroFloat = (float*)malloc(A->nnz*sizeof(float));
+	for( int i=0; i<A->nnz; i++ ) { zeroInt[i]=0; zeroFloat[i]=0.0; }
+	cudaMemcpy(d_output_triples, zeroInt, A->nnz*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_output_total, zeroFloat, A->nnz*sizeof(float), cudaMemcpyHostToDevice);
+
+	print_array_device(A->d_cscColPtr, A->m+1);
+	print_array_device(A->d_cscRowInd, A->nnz);
+	print_array_device(B->d_cscColPtr, B->m+1);
+	print_array_device(B->d_cscRowInd, B->nnz);
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, context );
 	//spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
 }
 
