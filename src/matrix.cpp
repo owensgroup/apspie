@@ -174,7 +174,7 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 
     // Allocate memory for B->nnz
     B->nnz = A->h_cscColPtr[B->n];
-	std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
+	//std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
 
 	B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
     B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
@@ -182,9 +182,9 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
     cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
     cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
 
-	print_array_device(A->d_cscColPtr,40);
-	print_array_device(A->d_cscRowInd,40);
-	print_array_device(A->d_cscVal,40);
+	//print_array_device(A->d_cscColPtr,40);
+	//print_array_device(A->d_cscRowInd,40);
+	//print_array_device(A->d_cscVal,40);
 
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, B->n, B->m, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);
@@ -214,9 +214,9 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 	}
 
 	printf("Matrix B:\n");
-	print_array_device(B->d_cscColPtr,40);
-	print_array_device(B->d_cscRowInd,40);
-	print_array_device(B->d_cscVal,40);
+	//print_array_device(B->d_cscColPtr,40);
+	//print_array_device(B->d_cscRowInd,40);
+	//print_array_device(B->d_cscVal,40);
 
     // Important: destroy handle
     cusparseDestroy(handle);

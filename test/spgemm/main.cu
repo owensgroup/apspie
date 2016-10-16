@@ -257,9 +257,9 @@ void runBfs(int argc, char**argv) {
     
     // 2. Reads in number of edges, number of nodes
     readEdge( m, n, edge, stdin );
+	if( undirected )
+		edge = 2*edge;
     printf("Graph has %d nodes, %d edges\n", m, edge);
-    if( undirected )
-      edge=2*edge;
 
     // 3. Allocate memory depending on how many edges are present
     typeVal *h_cooValA;
@@ -297,7 +297,7 @@ void runBfs(int argc, char**argv) {
 		buildVal( edge, h_cooValA );
     cpu_timerMake.Start();
     if( undirected ) {
-		edge = makeSymmetric( edge, h_cooColIndA, h_cooRowIndA, h_cooValA );
+		edge = makeSymmetric( edge/2, h_cooColIndA, h_cooRowIndA, h_cooValA );
     	printf("\nUndirected graph has %d nodes, %d edges\n", m, edge);
 	}
     //print_matrixCOO( h_cooValA, h_cooRowIndA, h_cooColIndA, m, edge );
@@ -398,8 +398,8 @@ void runBfs(int argc, char**argv) {
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
 	spgemm( &C, &A, &B, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
 
-	countNNZ( &Asub );
-	countNNZ( &Bsub );
+	//countNNZ( &Asub );
+	//countNNZ( &Bsub );
 }
 
 int main(int argc, char**argv) {

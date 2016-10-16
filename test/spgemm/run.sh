@@ -3,8 +3,8 @@
 ARCH="GEN_SM10"
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
-	./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
-	#./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx -undirected
+	#./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
+	./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx -undirected
 	#./test /data/gunrock_dataset/large/hood/hood.mtx -undirected
 	#./test /data/gunrock_dataset/large/pwtk/pwtk.mtx -undirected
 	#./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx

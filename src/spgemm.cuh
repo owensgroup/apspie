@@ -23,12 +23,14 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	// Set 48kB shared memory 
     //cudaFuncSetCacheConfig(spgemmKernel, cudaFuncCachePreferShared);
 
-	d_triple *d_output_triples;
-	cudaMalloc(&d_output_triples, C->nnz*sizeof(d_triple));
+	//d_triple *d_output_triples;
+	//cudaMalloc(&d_output_triples, C->nnz*sizeof(d_triple));
+	int *d_output_triples;
+	cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
 	int *d_output_total; 
-	cudaMalloc(&d_output_total, sizeof(int));
+	cudaMalloc(&d_output_total, A->nnz*sizeof(int));
 
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, context );
+	//long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, context );
 	//spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
 }
 

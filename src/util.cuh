@@ -555,65 +555,73 @@ void makeTranspose( int edge, int *h_cooColIndA, int *h_cooRowIndA, typeVal *h_c
 template<typename typeVal>
 int makeSymmetric( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
 
-    int realEdge = edge/2;
     int shift = 0;
-    
-    for( int i=0; i<realEdge; i++ ) {
+ 
+    for( int i=0; i<edge; i++ ) {
 		if( h_cooColInd[i] != h_cooRowInd[i] )
 		{
-			h_cooRowInd[realEdge+i-shift] = h_cooColInd[i];
-       		h_cooColInd[realEdge+i-shift] = h_cooRowInd[i];
-			h_cooVal[realEdge+i-shift] = h_cooVal[i];
+			h_cooRowInd[edge+i-shift] = h_cooColInd[i];
+       		h_cooColInd[edge+i-shift] = h_cooRowInd[i];
+			h_cooVal[edge+i-shift] = h_cooVal[i];
 		}
 		else shift++;
     }
 
-	//print_array(h_randVec);
+	edge = 2*edge-shift;
+	//print_array(h_cooRowInd);
+	//print_array(h_cooColInd);
 
     // Sort
     struct arrayset work = { h_cooRowInd, h_cooColInd, h_cooVal };
-    custom_sort(&work, edge-shift);
-	//print_array(h_randVec);
+    custom_sort(&work, edge);
+	//print_array(h_cooRowInd);
+	//print_array(h_cooColInd);
 
     // Check for self-loops and repetitions, mark with -1
     // TODO: make self-loops and repetitions contingent on whether we 			  
 	// are doing graph algorithm or matrix multiplication
-    /*int curr = h_csrColIndA[0];
+    int curr = h_cooColInd[0];
     int last;
-    int curr_row = h_cooRowIndA[0];
+    int curr_row = h_cooRowInd[0];
     int last_row;
-    int shift = 0;
-    if( curr_row == curr )
-        h_cooRowIndA[0] = -1;
+
+	// Self-loops
+    //if( curr_row == curr )
+    //    h_cooRowInd[0] = -1;
     
 	for( int i=1; i<edge; i++ ) {
         last = curr;
         last_row = curr_row;
-        curr = h_csrColIndA[i];
-        curr_row = h_cooRowIndA[i];
+        curr = h_cooColInd[i];
+        curr_row = h_cooRowInd[i];
 
         // Self-loops (TODO: make self-loops and repetitions contingent on whether we 
 		// are doing graph algorithm or matrix multiplication)
         //if( curr_row == curr )
-        //    h_csrColIndA[i] = -1;
+        //    h_csrColInd[i] = -1;
         // Repetitions
-        //if( curr == last && curr_row == last_row )
-        //    h_csrColIndA[i] = -1;
+        if( curr == last && curr_row == last_row )
+		{
+			//printf("Curr: %d, Last: %d, Curr_row: %d, Last_row: %d\n", curr, last, curr_row, last_row );
+            h_cooColInd[i] = -1;
+		}
     }
+
+	shift=0;
 
     // Remove self-loops and repetitions.
     int back = 0;
     for( int i=0; i+shift<edge; i++ ) {
-        if(h_csrColIndA[i] == -1) {
+        if(h_cooColInd[i] == -1) {
             for( shift; back<=edge; shift++ ) {
                 back = i+shift;
-                if( h_csrColIndA[back] != -1 ) {
+                if( h_cooColInd[back] != -1 ) {
                     //printf("Swapping %d with %d\n", i, back ); 
-                    h_csrColIndA[i] = h_csrColIndA[back];
-                    h_cooRowIndA[i] = h_cooRowIndA[back];
-                    h_csrColIndA[back] = -1;
+                    h_cooColInd[i] = h_cooColInd[back];
+                    h_cooRowInd[i] = h_cooRowInd[back];
+                    h_cooColInd[back] = -1;
                     break;
-    }}}}*/
+    }}}}
     return edge-shift;
 }
 
