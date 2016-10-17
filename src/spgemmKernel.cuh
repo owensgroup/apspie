@@ -68,8 +68,8 @@ __device__ int BinarySearchKey(int* keys, int count, int key) {
         bool larger = (item > key);
         if (larger) end = mid;
         else begin = mid+1;
-        }
-        return 0;
+    }
+    return 0;
 }
 
 __device__ unsigned ilog2(unsigned int v)
@@ -147,13 +147,13 @@ __device__ void deviceIntersectTwoSmallNL(
                 while ( min_it < min_end) {
                     int small_edge = d_column_indices[min_it++];
                     count += BinarySearch(keys, max_nl, small_edge);
-					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, small_edge: %d\n", idx, src_it, src_end, dst_it, dst_end, small_edge);
+					printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, small_edge: %d\n", idx, src_it, src_end, dst_it, dst_end, small_edge);
                 }
             } else {
-                //int src_edge = __ldg(d_cscRowIndA+src_it);
-                //int dst_edge = __ldg(d_cscRowIndB+dst_it);
-                int src_edge = d_cscRowIndA[src_it];
-                int dst_edge = d_cscRowIndB[dst_it];
+                int src_edge = __ldg(d_cscRowIndA+src_it);
+                int dst_edge = __ldg(d_cscRowIndB+dst_it);
+                //int src_edge = d_cscRowIndA[src_it];
+                //int dst_edge = d_cscRowIndB[dst_it];
                 while (src_it < src_end && dst_it < dst_end) {
                     int diff = src_edge - dst_edge;
 					sum += (diff == 0) ? s_cscValA[src_it]*s_cscValB[dst_it] : 0;
@@ -162,7 +162,7 @@ __device__ void deviceIntersectTwoSmallNL(
                     dst_edge = (diff >= 0) ? __ldg(d_cscRowIndB+(++dst_it)) : dst_edge;
                     count += (diff == 0);
                 }
-            //}
+            }
 			//if( sum > 0.001 )
 
 			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );
