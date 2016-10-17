@@ -6,7 +6,7 @@
 #define LOG_THREADS 10
 #define LOG_BLOCKS 8
 #define CTA_OCCUPANCY 1
-#define SHARED 2048
+#define SHARED 1024
 
 #define CUDA_ERROR_CHECK
 #define CudaCheckError()    __cudaCheckError( __FILE__, __LINE__ )
@@ -58,7 +58,7 @@ __device__ int BinarySearch(int* keys, int count, int key) {
         return 0;
 }
 
-__device__ int BinarySearch(int* keys, int count, int key) {
+__device__ int BinarySearchKey(int* keys, int count, int key) {
     int begin = 0;
     int end = count;
     while (begin < end) {
@@ -100,20 +100,26 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ int s_cscColPtrA[SHARED];	
 		__shared__ int s_cscRowIndA[SHARED];	
 		__shared__ float s_cscValA[SHARED];	
+		__shared__ int s_cscColPtrB[SHARED];	
+		__shared__ int s_cscRowIndB[SHARED];	
+		__shared__ float s_cscValB[SHARED];	
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
         SizeT start = threadIdx.x + blockIdx.x * blockDim.x;
 		SizeT tid = threadIdx.x;
 
-        for (SizeT idx = start; idx < partSize*m; idx += stride) {
+        for (SizeT idx = start; idx < m; idx += stride) {
         //for (SizeT idx = start; idx < m*m; idx += stride) {
 			int idx_row = idx/m;//partSize;
 			int idx_col = idx%m;//%partSize;
 			//printf("idx:%d, m:%lld, idx_row:%d, idx_col:%d\n", idx, m, idx_row, idx_col);
-			s_cscRowIndA[idx/SHARED] = __ldg(d_cscColPtrA+idx_row);
-			s_cscValA[idx/SHARED] = __ldg(d_cscValA+idx_row);
-			s_cscRowIndB[idx/SHARED] = __ldg(d_cscColPtrB+idx_row);
-			s_cscValB[idx/SHARED] = __ldg(d_cscValB+idx_row);
+			//for( int i=0; i<SHARED; i++ ) 
+			s_cscRowIndA[tid] = __ldg(d_cscColPtrA+idx_row);
+			s_cscValA[tid] = __ldg(d_cscValA+idx_row);
+			s_cscRowIndB[tid] = __ldg(d_cscColPtrB+idx_col);
+			s_cscValB[tid] = __ldg(d_cscValB+idx_col);
+
+			__syncthreads();
 
 			int block_row = tid%THREADS;
             int count = 0;
@@ -123,10 +129,6 @@ __device__ void deviceIntersectTwoSmallNL(
             int src_end = __ldg(d_cscColPtrA+idx_row+1);
             int dst_it = __ldg(d_cscColPtrB+idx_col);
             int dst_end = __ldg(d_cscColPtrB+idx_col+1);
-			/*int src_it = d_cscColPtrA[idx_row];
-			int src_end = d_cscColPtrA[idx_row+1];
-			int dst_it = d_cscColPtrB[idx_col];
-			int dst_end = d_cscColPtrB[idx_col+1];*/
 			//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, dst_end:%d, dst_end:%d\n", idx, src_it, src_end, dst_it, dst_end, dst_end, dst_end);
 			//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, dst_end:%d, dst_end:%d\n", idx, src_it, src_end, dst_it, dst_end, dst_end, dst_end);
 
@@ -137,7 +139,7 @@ __device__ void deviceIntersectTwoSmallNL(
             int max_nl = (src_nl_size < dst_nl_size) ? dst_nl_size : src_nl_size;
             if ( min_nl * ilog2((unsigned int)(max_nl)) * 10 < min_nl + max_nl ) {
                 // search
-            	int *d_column_indices = (src_nl_size < dst_nl_size) ? d_cscRowIndB  : d_cscRowIndA;
+            	int *d_column_indices = (src_nl_size < dst_nl_size) ? s_cscRowIndB  : s_cscRowIndA;
                 int min_it = (src_nl_size < dst_nl_size) ? src_it : dst_it;
                 int min_end = min_it + min_nl;
                 int max_it = (src_nl_size < dst_nl_size) ? dst_it : src_it;
@@ -154,22 +156,17 @@ __device__ void deviceIntersectTwoSmallNL(
                 int dst_edge = d_cscRowIndB[dst_it];
                 while (src_it < src_end && dst_it < dst_end) {
                     int diff = src_edge - dst_edge;
-					sum += (diff == 0) ? __ldg(d_cscValA+src_it)*__ldg(d_cscValB+dst_it) : 0;
+					sum += (diff == 0) ? s_cscValA[src_it]*s_cscValB[dst_it] : 0;
 					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, src_edge:%d, dst_edge:%d\n", idx, src_it, src_end, dst_it, dst_end, src_edge, dst_edge);
                     src_edge = (diff <= 0) ? __ldg(d_cscRowIndA+(++src_it)) : src_edge;
                     dst_edge = (diff >= 0) ? __ldg(d_cscRowIndB+(++dst_it)) : dst_edge;
-					/*sum += (diff == 0) ? d_cscValA[src_it]*d_cscValB[dst_it] : 0;
-					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, src_edge:%d, dst_edge:%d\n", idx, src_it, src_end, dst_it, dst_end, src_edge, dst_edge);
-                    src_edge = (diff <= 0) ? d_cscRowIndA[++src_it] : src_edge;
-                    dst_edge = (diff >= 0) ? d_cscRowIndB[++dst_it] : dst_edge;*/
                     count += (diff == 0);
                 }
-            }
-			if( sum > 0.001 )
-			//	block[idx_col/SHARED] = sum;
+            //}
+			//if( sum > 0.001 )
 
 			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );
-				d_output_total[idx_col] = block[idx_col/SHARED];
+			//	d_output_total[idx_col] = block[idx_col/SHARED];
             //d_output_counts[idx] = src_end;
             //d_output_counts[idx_col] += count;
     	}
@@ -240,6 +237,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferL1));
     CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
    
+	CudaCheckError();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
 	gpu_timer.Start();
