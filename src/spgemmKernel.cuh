@@ -108,7 +108,7 @@ __device__ void deviceIntersectTwoSmallNL(
         SizeT start = threadIdx.x + blockIdx.x * blockDim.x;
 		SizeT tid = threadIdx.x;
 
-        for (SizeT idx = start; idx < m; idx += stride) {
+        for (SizeT idx = start; idx < partSize*m; idx += stride) {
         //for (SizeT idx = start; idx < m*m; idx += stride) {
 			int idx_row = idx/m;//partSize;
 			int idx_col = idx%m;//%partSize;
@@ -139,7 +139,8 @@ __device__ void deviceIntersectTwoSmallNL(
             int max_nl = (src_nl_size < dst_nl_size) ? dst_nl_size : src_nl_size;
             if ( min_nl * ilog2((unsigned int)(max_nl)) * 10 < min_nl + max_nl ) {
                 // search
-            	int *d_column_indices = (src_nl_size < dst_nl_size) ? s_cscRowIndB  : s_cscRowIndA;
+            	int *d_column_indices = (src_nl_size < dst_nl_size) ? d_cscRowIndB  : d_cscRowIndA;
+            	//int *d_column_indices = (src_nl_size < dst_nl_size) ? s_cscRowIndB  : s_cscRowIndA;
                 int min_it = (src_nl_size < dst_nl_size) ? src_it : dst_it;
                 int min_end = min_it + min_nl;
                 int max_it = (src_nl_size < dst_nl_size) ? dst_it : src_it;
@@ -147,16 +148,17 @@ __device__ void deviceIntersectTwoSmallNL(
                 while ( min_it < min_end) {
                     int small_edge = d_column_indices[min_it++];
                     count += BinarySearch(keys, max_nl, small_edge);
-					printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, small_edge: %d\n", idx, src_it, src_end, dst_it, dst_end, small_edge);
+					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, small_edge: %d\n", idx, src_it, src_end, dst_it, dst_end, small_edge);
                 }
             } else {
                 int src_edge = __ldg(d_cscRowIndA+src_it);
                 int dst_edge = __ldg(d_cscRowIndB+dst_it);
-                //int src_edge = d_cscRowIndA[src_it];
-                //int dst_edge = d_cscRowIndB[dst_it];
+                //int src_edge = s_cscRowIndA[src_it];
+                //int dst_edge = s_cscRowIndB[dst_it];
                 while (src_it < src_end && dst_it < dst_end) {
                     int diff = src_edge - dst_edge;
-					sum += (diff == 0) ? s_cscValA[src_it]*s_cscValB[dst_it] : 0;
+					sum += (diff == 0) ? __ldg(d_cscValA+src_it)*__ldg(d_cscValB+dst_it) : 0;
+					//sum += (diff == 0) ? s_cscValA[src_it]*s_cscValB[dst_it] : 0;
 					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, src_edge:%d, dst_edge:%d\n", idx, src_it, src_end, dst_it, dst_end, src_edge, dst_edge);
                     src_edge = (diff <= 0) ? __ldg(d_cscRowIndA+(++src_it)) : src_edge;
                     dst_edge = (diff >= 0) ? __ldg(d_cscRowIndB+(++dst_it)) : dst_edge;
