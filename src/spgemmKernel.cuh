@@ -6,7 +6,7 @@
 #define LOG_THREADS 10
 #define LOG_BLOCKS 8
 #define CTA_OCCUPANCY 1
-#define SHARED 1536
+#define SHARED 2048
 
 #define CUDA_ERROR_CHECK
 #define CudaCheckError()    __cudaCheckError( __FILE__, __LINE__ )
@@ -58,6 +58,20 @@ __device__ int BinarySearch(int* keys, int count, int key) {
         return 0;
 }
 
+__device__ int BinarySearch(int* keys, int count, int key) {
+    int begin = 0;
+    int end = count;
+    while (begin < end) {
+        int mid = (begin + end) >> 1;
+        int item = keys[mid];
+        if (item == key) return 1;
+        bool larger = (item > key);
+        if (larger) end = mid;
+        else begin = mid+1;
+        }
+        return 0;
+}
+
 __device__ unsigned ilog2(unsigned int v)
 {
     register unsigned int t, tt;
@@ -83,7 +97,9 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int stride)
     {
 		//__shared__ float block[THREADS];	
-		__shared__ float block[SHARED];	
+		__shared__ int s_cscColPtrA[SHARED];	
+		__shared__ int s_cscRowIndA[SHARED];	
+		__shared__ float s_cscValA[SHARED];	
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
         SizeT start = threadIdx.x + blockIdx.x * blockDim.x;
@@ -94,6 +110,10 @@ __device__ void deviceIntersectTwoSmallNL(
 			int idx_row = idx/m;//partSize;
 			int idx_col = idx%m;//%partSize;
 			//printf("idx:%d, m:%lld, idx_row:%d, idx_col:%d\n", idx, m, idx_row, idx_col);
+			s_cscRowIndA[idx/SHARED] = __ldg(d_cscColPtrA+idx_row);
+			s_cscValA[idx/SHARED] = __ldg(d_cscValA+idx_row);
+			s_cscRowIndB[idx/SHARED] = __ldg(d_cscColPtrB+idx_row);
+			s_cscValB[idx/SHARED] = __ldg(d_cscValB+idx_row);
 
 			int block_row = tid%THREADS;
             int count = 0;
@@ -145,10 +165,11 @@ __device__ void deviceIntersectTwoSmallNL(
                     count += (diff == 0);
                 }
             }
-			//block[block_row]  = sum;
-			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );
 			if( sum > 0.001 )
-				d_output_total[idx_col] = sum;
+			//	block[idx_col/SHARED] = sum;
+
+			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );
+				d_output_total[idx_col] = block[idx_col/SHARED];
             //d_output_counts[idx] = src_end;
             //d_output_counts[idx_col] += count;
     	}
