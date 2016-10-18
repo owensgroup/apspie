@@ -8,6 +8,23 @@
 #define CTA_OCCUPANCY 1
 #define SHARED 1024
 
+#define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
+  cudaError err = call;                                                 \
+  if( cudaSuccess != err) {                                             \
+    fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",       \
+                __FILE__, __LINE__, cudaGetErrorString( err) );         \
+    exit(EXIT_FAILURE);                                                 \
+    } } while (0)
+
+#define CUDA_SAFE_CALL( call) do {                                      \
+  CUDA_SAFE_CALL_NO_SYNC(call);                                         \
+  cudaError err = cudaThreadSynchronize();                              \
+  if( cudaSuccess != err) {                                             \
+     fprintf(stderr, "Cuda error in file '%s' in line %i : %s.\n",      \
+                 __FILE__, __LINE__, cudaGetErrorString( err) );        \
+     exit(EXIT_FAILURE);                                                \
+     } } while (0)
+
 #define CUDA_ERROR_CHECK
 #define CudaCheckError()    __cudaCheckError( __FILE__, __LINE__ )
 
@@ -119,7 +136,7 @@ __device__ void deviceIntersectTwoSmallNL(
 			s_cscRowIndB[tid] = __ldg(d_cscColPtrB+idx_col);
 			s_cscValB[tid] = __ldg(d_cscValB+idx_col);
 
-			__syncthreads();
+			//__syncthreads();
 
 			int block_row = tid%THREADS;
             int count = 0;

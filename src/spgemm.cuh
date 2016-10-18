@@ -8,6 +8,8 @@
 #include "spgemmKernel.cuh"
 #include "triple.hpp"
 
+#include "bhsparse.h"
+
 #define NTHREADS 512
 #define MAX_SHARED 49152
 
@@ -15,6 +17,43 @@
 template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
+}
+
+int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
+{
+	int err = 0;
+    bhsparse *bh_sparse = new bhsparse();
+
+	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
+	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
+	platforms[BHSPARSE_CUDA] = true;
+    err = bh_sparse->initPlatform(platforms);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    err = bh_sparse->initData(A->m, A->n, B->n,
+                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
+                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
+                          C->h_cscColPtr);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    for (int i = 0; i < 3; i++)
+    {
+        err = bh_sparse->warmup();
+        if(err != BHSPARSE_SUCCESS) return err;
+    }
+
+    err = bh_sparse->spgemm();
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    // read back C
+    C->nnz = bh_sparse->get_nnzC();
+    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
+    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
+
+    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+	return BHSPARSE_SUCCESS;
 }
 
 // Matrix multiplication (Host code)
@@ -33,16 +72,15 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	cudaMemcpy(d_output_triples, zeroInt, A->nnz*sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_output_total, zeroFloat, A->nnz*sizeof(float), cudaMemcpyHostToDevice);
 
-	print_array_device(A->d_cscColPtr, A->m+1);
+	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);
+	print_array_device(B->d_cscRowInd, B->nnz);*/
 	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, context );
-	print_array_device(A->d_cscColPtr, A->m+1);
+	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);
-	//spgemmKernel<<<a, b, MAX_SHARED>>>( A, B, C, partSize, aggroFactor );
+	print_array_device(B->d_cscRowInd, B->nnz);*/
 }
 
 // Uses cuSPARSE SpMV

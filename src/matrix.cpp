@@ -36,6 +36,13 @@ void matrix_new( d_matrix *A, int m, int n )
 // @param[in] h_cooVal
 // @param[out] A
 
+void matrix_delete( d_matrix *A )
+{
+	cudaFree( A->d_cscColPtr );
+	if( A->d_cscRowInd != NULL ) cudaFree( A->d_cscRowInd );
+	if( A->d_cscVal != NULL ) cudaFree( A->d_cscVal );
+}
+
 template<typename typeVal>
 void buildMatrix( d_matrix *A,
                     int numEdge,
@@ -144,6 +151,23 @@ void print_matrix( d_matrix *A, bool val=false ) {
     }
 }
 
+void copy_matrix_device( d_matrix *A ) {
+
+	// If buildMatrix not run, then need host alloc
+	// Both pointers set to NULL in matrix_new 
+	if( A->h_cscRowInd == NULL && A->h_cscVal == NULL )
+	{
+		//std::cout << "Allocating memory for print.\n";
+    	A->h_cscRowInd = (int*)malloc(A->nnz*sizeof(int));
+    	A->h_cscVal = (float*)malloc(A->nnz*sizeof(float));	
+	}
+
+	// Copy from device
+    cudaMemcpy(A->h_cscVal, A->d_cscVal, A->nnz*sizeof(float),cudaMemcpyDeviceToHost);
+    cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost);	
+    cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+}
+
 void print_matrix_device( d_matrix *A, bool val=false ) {
 
 	// If buildMatrix not run, then need host alloc
@@ -161,6 +185,29 @@ void print_matrix_device( d_matrix *A, bool val=false ) {
     cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
 	
 	print_matrix( A, val );
+}
+
+// extract( Asub, A ) - extract subgraph B of A
+template<typename typeVal>
+void extract( d_matrix *B, const d_matrix *A )
+{
+    // Allocate memory for B->nnz
+    B->nnz = A->h_cscColPtr[B->m];
+	//std::cout << B->m << " " << B->n << " " << B->nnz << " \n";
+
+	if( B->h_cscRowInd == NULL && B->h_cscVal == NULL )
+	{
+		B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
+    	B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
+
+    	cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
+    	cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
+	}
+
+    cudaMemcpy(B->d_cscColPtr, A->d_cscColPtr, (B->m+1)*sizeof(int),cudaMemcpyDeviceToDevice);
+    cudaMemcpy(B->d_cscVal, A->d_cscVal, B->nnz*sizeof(float),cudaMemcpyDeviceToDevice);
+    cudaMemcpy(B->d_cscRowInd, A->d_cscRowInd, B->nnz*sizeof(int),cudaMemcpyDeviceToDevice);
+
 }
 
 // Special case of csr2csc that fuses:
@@ -182,9 +229,9 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
     cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
     cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
 
-	print_array_device(A->d_cscColPtr,40);
-	print_array_device(A->d_cscRowInd,40);
-	print_array_device(A->d_cscVal,40);
+	//print_array_device(A->d_cscColPtr,40);
+	//print_array_device(A->d_cscRowInd,40);
+	//print_array_device(A->d_cscVal,40);
 
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, B->n, B->m, B->nnz, A->d_cscVal, A->d_cscColPtr, A->d_cscRowInd, B->d_cscVal, B->d_cscRowInd, B->d_cscColPtr, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO);
@@ -213,10 +260,10 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
             break;
 	}
 
-	printf("Matrix B:\n");
-	print_array_device(B->d_cscColPtr,40);
-	print_array_device(B->d_cscRowInd,40);
-	print_array_device(B->d_cscVal,40);
+	//printf("Matrix B:\n");
+	//print_array_device(B->d_cscColPtr,40);
+	//print_array_device(B->d_cscRowInd,40);
+	//print_array_device(B->d_cscVal,40);
 
     // Important: destroy handle
     cusparseDestroy(handle);

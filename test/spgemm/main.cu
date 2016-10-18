@@ -23,6 +23,10 @@
 #include <matrix.hpp>
 #include <matrix.cpp>
 
+#include <cusp/csr_matrix.h>
+#include "common.h"
+#include "bhsparse.h"
+
 void countNNZ( d_matrix *A )
 {
 	cudaMemcpy( A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int), cudaMemcpyDeviceToHost );
@@ -31,7 +35,7 @@ void countNNZ( d_matrix *A )
 	for( int i=0; i<A->m; i++ )
 		if( A->h_cscColPtr[i+1]==A->h_cscColPtr[i] )
 			count++;
-	printf("Count: %d\n", count);
+	printf("Count: %d\n", A->m-count);
 }
 
 void computeBlockHorz( int *block_size, d_matrix *A, const int MEMORY )
@@ -347,7 +351,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
-	print_matrix_device( &C, true );
+	//print_matrix_device( &C );
 
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
@@ -369,22 +373,22 @@ void runBfs(int argc, char**argv) {
 	float SPART_NUM = (float)edge/SMEMORY;
 	printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
 
-    //csr2csc<typeVal>( A.m, A.nnz, A.d_cscVal, A.d_cscColPtr, A.d_cscRowInd, B.d_cscVal, B.d_cscRowInd, B.d_cscColPtr );
-
-	/*d_matrix Asub, Bsub;
-	matrix_new(&Asub, m, (int)TARGET_PART_SIZE);
+	/*d_matrix Asub, Bsub, Csub;
+	matrix_new(&Asub, (int)TARGET_PART_SIZE, m );
 	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
+	matrix_new(&Csub, (int)TARGET_PART_SIZE, (int)TARGET_PART_SIZE);
 
     GpuTimer gpu_timer2, gpu_timer3;
     float elapsed2 = 0.0f;
     float elapsed3 = 0.0f;
 
 	gpu_timer2.Start();
+	//extract<typeVal>( &Asub, &A );
 	extract_csr2csc<typeVal>( &Asub, &A );
 	gpu_timer2.Stop();
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("CSR->CSC: %f\n", elapsed2);
+	printf("Extract submatrix from A: %f\n", elapsed2);
 
 	gpu_timer3.Start();
 	extract_csr2csc<typeVal>( &Bsub, &D );
@@ -393,9 +397,23 @@ void runBfs(int argc, char**argv) {
 	elapsed3 += gpu_timer3.ElapsedMillis();
 	printf("CSR->CSC: %f\n", elapsed3);
 
-	print_matrix_device( &Asub );
-	print_matrix_device( &Bsub );
-	//histogramSBlock( &A, &D, &C, (int)SMEMORY );*/
+	copy_matrix_device( &Asub );
+	copy_matrix_device( &Bsub );
+	printf("A: %d %d %f\n", Asub.h_cscColPtr[Asub.m], Asub.h_cscRowInd[Asub.nnz-1], Asub.h_cscVal[Asub.nnz-1]);
+	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);
+	//print_matrix( &Asub );
+	//print_matrix( &Bsub );
+	//print_matrix_device( &Asub );
+	//print_matrix_device( &Bsub );
+	matrix_delete(&A);
+	matrix_delete(&B);
+	matrix_delete(&C);
+	matrix_delete(&D);
+
+	//bhsparseSpgemm( &Csub, &Asub, &Bsub );*/
+
+	//print_matrix( &Csub );
+	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
     GpuTimer gpu_timer2;
     float elapsed2 = 0.0f;
 	gpu_timer2.Start();
