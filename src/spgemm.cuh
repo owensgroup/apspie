@@ -8,10 +8,11 @@
 #include "spgemmKernel.cuh"
 #include "triple.hpp"
 
-#include "bhsparse.h"
+//#include "bhsparse.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
+#define SHARED 1024
 
 // Uses MGPU SpMV
 template<typename T>
@@ -19,7 +20,7 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrVa
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
-int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
+/*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
 {
 	int err = 0;
     bhsparse *bh_sparse = new bhsparse();
@@ -54,13 +55,12 @@ int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
     if(err != BHSPARSE_SUCCESS) return err;
 
 	return BHSPARSE_SUCCESS;
-}
+}*/
 
 // Matrix multiplication (Host code)
-void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int smemSize, mgpu::CudaContext& context ) {
+void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
-	//d_triple *d_output_triples;
-	//cudaMalloc(&d_output_triples, C->nnz*sizeof(d_triple));
+	// Some test arrays
 	int *d_output_triples;
 	cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
 	float *d_output_total; 
@@ -72,11 +72,27 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	cudaMemcpy(d_output_triples, zeroInt, A->nnz*sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_output_total, zeroFloat, A->nnz*sizeof(float), cudaMemcpyHostToDevice);
 
-	/*print_array_device(A->d_cscColPtr, A->m+1);
+	// Make some useful const arrays
+	int *h_nnzPartA = (int*)malloc(partNum*sizeof(int));
+	int *h_nnzPartB = (int*)malloc(partNum*sizeof(int));
+	int *h_numBlockA= (int*)malloc(partNum*sizeof(int));
+	int *h_numBlockB= (int*)malloc(partNum*sizeof(int));
+	h_nnzPartA[partNum-1] = A->h_cscColPtr[A->m]-A->h_cscColPtr[(partNum-1)*partSize];
+	h_nnzPartB[partNum-1] = B->h_cscColPtr[B->m]-B->h_cscColPtr[(partNum-1)*partSize];
+	for( int i=0; i<partNum-2; i++ )
+	{
+		h_nnzPartA[i] = A->h_cscColPtr[(i+1)*partSize]-A->h_cscColPtr[i*partSize];
+		h_nnzPartB[i] = B->h_cscColPtr[(i+1)*partSize]-B->h_cscColPtr[i*partSize];
+		h_numBlockA[i]= (h_nnzPartA[i]+SHARED-1)/SHARED;
+		h_numBlockB[i]= (h_nnzPartB[i]+SHARED-1)/SHARED;
+	}
+
+	printf("First block threads: %d, blocks:%d\n", h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
+	print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);*/
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, context );
+	print_array_device(B->d_cscRowInd, B->nnz);
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, h_nnzPartA, h_nnzPartB, h_numBlockA, h_numBlockB, context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);

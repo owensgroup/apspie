@@ -23,9 +23,9 @@
 #include <matrix.hpp>
 #include <matrix.cpp>
 
-#include <cusp/csr_matrix.h>
-#include "common.h"
-#include "bhsparse.h"
+//#include <cusp/csr_matrix.h>
+//#include "common.h"
+//#include "bhsparse.h"
 
 void countNNZ( d_matrix *A )
 {
@@ -369,9 +369,9 @@ void runBfs(int argc, char**argv) {
     histogramVert( &D, (int) TARGET_PART_SIZE );
 	histogramBlock( &C, (int)TARGET_PART_SIZE );
 
-	float SMEMORY = AGGRO_FACTOR*1000.0;
-	float SPART_NUM = (float)edge/SMEMORY;
-	printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
+	//float SMEMORY = AGGRO_FACTOR*1000.0;
+	//float SPART_NUM = (float)edge/SMEMORY;
+	//printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
 
 	/*d_matrix Asub, Bsub, Csub;
 	matrix_new(&Asub, (int)TARGET_PART_SIZE, m );
@@ -418,7 +418,7 @@ void runBfs(int argc, char**argv) {
     float elapsed2 = 0.0f;
 	gpu_timer2.Start();
 
-	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)SMEMORY, *context );
+	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
 	gpu_timer2.Stop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
