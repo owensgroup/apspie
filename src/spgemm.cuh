@@ -87,12 +87,23 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		h_numBlockB[i]= (h_nnzPartB[i]+SHARED-1)/SHARED;
 	}
 
+	// Copy to device
+	int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
+	cudaMalloc( &d_nnzPartA, partNum*sizeof(int) );
+	cudaMalloc( &d_nnzPartB, partNum*sizeof(int) );
+	cudaMalloc( &d_numBlockA, partNum*sizeof(int) );
+	cudaMalloc( &d_numBlockB, partNum*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartA, h_nnzPartA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartB, h_nnzPartB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
+
 	printf("First block threads: %d, blocks:%d\n", h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
 	print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, h_nnzPartA, h_nnzPartB, h_numBlockA, h_numBlockB, context );
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, d_nnzPartA, d_nnzPartB, d_numBlockA, d_numBlockB, context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);

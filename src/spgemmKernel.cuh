@@ -151,6 +151,7 @@ __device__ void deviceIntersectTwoSmallNL(
         SizeT gid = start-tid;
 		//int begin_ColPtr = __ldg(d_cscColPtrA+i*partSize);
 
+		printf("idx:%d\n", start);
         //for (SizeT idx = start; idx < numBlockA*numBlockB*SHARED; idx += stride) {
         for (SizeT idx = start; idx < m; idx += stride) {
 			int idx_A = idx/numBlockB*SHARED+tid;
@@ -251,14 +252,15 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int nnz,
 		const int partSize,
 		const int partNum,
-		const int *h_nnzPartA,
-		const int *h_nnzPartB,
-		const int *h_numBlockA,
-		const int *h_numBlockB,
+		const int *d_nnzPartA,
+		const int *d_nnzPartB,
+		const int *d_numBlockA,
+		const int *d_numBlockB,
 		const int stride)
 {
 	//for( int i=0; i<partNum; i++ )
 	//	for( int j=0; j<partNum; j++ )
+	printf("Not frozen yet\n");/*
 	for( int i=0; i<1; i++ )
 		for( int j=0; j<1; j++ )
     deviceIntersectTwoSmallNL<long long>( C, 
@@ -271,11 +273,15 @@ __device__ void deviceIntersectTwoSmallNL(
 		d_output_counts, d_output_total, m, nnz, partSize, partNum, 
 		i,
 		j,
-		h_nnzPartA[i],
-		h_nnzPartB[j],
-		h_numBlockA[i],
-		h_numBlockB[j],
-		stride );
+		__ldg(d_nnzPartA+i),
+		__ldg(d_nnzPartB+j),
+		__ldg(d_numBlockA+i),
+		__ldg(d_numBlockB+j),
+		d_nnzPartA[i],
+		d_nnzPartB[j],
+		d_numBlockA[i],
+		d_numBlockB[j],
+		stride );*/
 }
 
 // Kernel Entry point for performing batch intersection computation
@@ -286,10 +292,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
         float *d_output_total,
 		const int partSize,
 		const int partNum,
-		const int *h_nnzPartA,
-		const int *h_nnzPartB,
-		const int *h_numBlockA,
-		const int *h_numBlockB,
+		const int *d_nnzPartA,
+		const int *d_nnzPartB,
+		const int *d_numBlockA,
+		const int *d_numBlockB,
         mgpu::CudaContext                             &context)
 {
 	//const int BLOCKS = (A->m*A->m+THREADS-1)/THREADS;
@@ -304,6 +310,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
 	gpu_timer.Start();
+	printf("Not frozen yet\n");
 
     IntersectTwoSmallNL<<<BLOCKS, THREADS>>>(
 			C,
@@ -319,10 +326,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			A->nnz,
 			partSize,
 			partNum,
-			h_nnzPartA,
-			h_nnzPartB,
-			h_numBlockA,
-			h_numBlockB,
+			d_nnzPartA,
+			d_nnzPartB,
+			d_numBlockA,
+			d_numBlockB,
             stride);
 
 	gpu_timer.Stop();
