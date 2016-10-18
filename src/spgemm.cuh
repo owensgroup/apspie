@@ -79,12 +79,17 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	int *h_numBlockB= (int*)malloc(partNum*sizeof(int));
 	h_nnzPartA[partNum-1] = A->h_cscColPtr[A->m]-A->h_cscColPtr[(partNum-1)*partSize];
 	h_nnzPartB[partNum-1] = B->h_cscColPtr[B->m]-B->h_cscColPtr[(partNum-1)*partSize];
+	h_numBlockA[partNum-1]= (h_nnzPartA[partNum-1]+SHARED-1)/SHARED;
+	h_numBlockB[partNum-1]= (h_nnzPartB[partNum-1]+SHARED-1)/SHARED;
+	int maxBlockA = h_numBlockA[partNum-1], maxBlockB = h_numBlockB[partNum-1];
 	for( int i=0; i<partNum-2; i++ )
 	{
 		h_nnzPartA[i] = A->h_cscColPtr[(i+1)*partSize]-A->h_cscColPtr[i*partSize];
 		h_nnzPartB[i] = B->h_cscColPtr[(i+1)*partSize]-B->h_cscColPtr[i*partSize];
 		h_numBlockA[i]= (h_nnzPartA[i]+SHARED-1)/SHARED;
 		h_numBlockB[i]= (h_nnzPartB[i]+SHARED-1)/SHARED;
+		if( h_numBlockA[i]>maxBlockA ) maxBlockA = h_numBlockA[i];
+		if( h_numBlockB[i]>maxBlockB ) maxBlockB = h_numBlockB[i];
 	}
 
 	// Copy to device
@@ -98,12 +103,14 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 
-	printf("First block threads: %d, blocks:%d\n", h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
+	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
+	print_array(h_numBlockA, 5);
+	print_array(h_numBlockB, 5);
 	print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, d_nnzPartA, d_nnzPartB, d_numBlockA, d_numBlockB, context );
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, d_nnzPartA, d_nnzPartB, d_numBlockA, d_numBlockB, context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
