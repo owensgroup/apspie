@@ -135,7 +135,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int *numBlockB,
 		const int stride)
     {
-		//__shared__ float block[THREADS];	
 		__shared__ int s_cscColPtrA[SHARED];	
 		__shared__ int s_cscRowIndA[SHARED];	
 		__shared__ float s_cscValA[SHARED];	
@@ -146,7 +145,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_nnzPart[2];		  //[0]: A,		[1]: B
 		__shared__ int s_numBlock[2];		  //[0]: A,		[1]: B
-		__shared__ int s_cscColPtr_begin;		  //[0]: A,		[1]: B
 
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
@@ -156,39 +154,36 @@ __device__ void deviceIntersectTwoSmallNL(
 
 		int maxBlockAB = maxBlockA*maxBlockB;
 		//printf("idx:%d, nBlockA:%d, nBlockB:%d\n", start, numBlockA, numBlockB);
-        for (SizeT idx = (long long) maxBlockAB*SHARED; idx < (long long) (10+maxBlockAB)*SHARED; idx += (long long)stride) {
+        //for (SizeT idx = start; idx < (long long) 2*SHARED; idx += (long long)stride) {
         //for (SizeT idx = start; idx < (long long) maxBlockAB*SHARED; idx += stride) {
-        //for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockA*maxBlockB*SHARED; idx += stride) {
-			int part_A=(maxBlockAB+blockIdx.x)/maxBlockAB;
-			int part_B=(maxBlockAB+blockIdx.x)%maxBlockAB;
+        for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockAB*SHARED; idx += stride) {
+			int part_AB= blockIdx.x/maxBlockAB;
+			int part_A = part_AB/partNum;
+			int part_B = part_AB%partNum;
 
-			int rank_A=(maxBlockAB+blockIdx.x) - part_A;
-			int rank_B=(maxBlockAB+blockIdx.x) - part_B;
+			int block_AB= blockIdx.x%maxBlockAB;
+			int block_A = block_AB/maxBlockB;
+			int block_B = block_AB%maxBlockB;
 
-			if( tid==0 ) s_nnzPart[0] = __ldg( nnzPartA+part_A );
+			/*if( tid==0 ) s_nnzPart[0] = __ldg( nnzPartA+part_A );
 			if( tid==1 ) s_nnzPart[1] = __ldg( nnzPartB+part_B );
 			if( tid==2 ) s_numBlock[0]= __ldg( numBlockA+part_A );
-			if( tid==3 ) s_numBlock[1]= __ldg( numBlockB+part_B );
-			if( tid==4 ) s_cscColPtr_begin=__ldg(d_cscColPtrA+part_A*partSize);
+			if( tid==3 ) s_numBlock[1]= __ldg( numBlockB+part_B );*/
 
-			//int idx_A = rank_A+tid;
-			//int idx_B = idx%s_numBlock[1];
+			__syncthreads();
 
-			if( rank_A >= s_numBlock[0] || rank_B >=s_numBlock[1] ) continue; 
-			printf("idx:%d, partA:%d, partB:%d, rankA:%d, rankB:%d, rankB:%d\n", idx, part_A, part_B, rank_A, rank_B, rank_B);
-			printf("idx:%d, i:%d, j:%d, blockA:%d, blockB:%d, begin: %d, begin:%d, idx_B:%d, idx_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], s_cscColPtr_begin, s_cscColPtr_begin);
+			if( block_A >= 43 || block_B >= 67 ) continue; 
+			//if( block_A >= s_numBlock[0] || block_B >=s_numBlock[1] ) continue; 
+			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
-			/*int idx_A = idx/s_numBlock[1]*SHARED+tid;
-			int idx_B = idx%s_numBlock[1];
-			//if( idx<128 ) printf("idx:%d, i:%d, j:%d, begin: %d, idx_A:%d, idx_B:%d, idx_B:%d\n", idx, i, j, begin_ColPtr, idx_A, idx_B, idx_B);
-			if( idx_A < s_nnzPart[0] )
-			{
-				s_cscRowIndA[tid] = __ldg(d_cscRowIndA+idx_A+s_cscColPtr_begin);
-				s_cscValA[tid] = __ldg(d_cscValA+idx_A+s_cscColPtr_begin);
-			}
-			//s_cscRowIndB[tid] = __ldg(d_cscRowIndB+idx);
-			//s_cscValB[tid] = __ldg(d_cscValB+idx);
+			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
+			s_cscRowIndA[tid] = __ldg(d_cscRowIndA+block_A*SHARED+tid);
+			s_cscValA[tid] = __ldg(d_cscValA+block_A*SHARED+tid);
+			s_cscRowIndB[tid] = __ldg(d_cscRowIndB+block_B*SHARED+tid);
+			s_cscValB[tid] = __ldg(d_cscValB+block_B*SHARED+tid);
 
+			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
+			/*
 			// Generate cscColPtrA that is local to cscRowIndA[0 ... 1023]
 			if( tid==0 )
 				s_cscColPtrA_bound[0] = BinarySearchStart( d_cscColPtrA, m, gid );
@@ -247,11 +242,11 @@ __device__ void deviceIntersectTwoSmallNL(
             }
 			//if( sum > 0.001 )
 
-			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );
-			d_output_counts[idx_B] = s_cscRowIndA[tid];
-			d_output_counts[idx_B] = s_cscRowIndB[tid];
-			d_output_total[idx_B] = s_cscRowIndA[tid];
-			d_output_total[idx_B] = s_cscRowIndB[tid];*/
+			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );*/
+			d_output_counts[tid] = s_cscRowIndA[tid];
+			d_output_counts[tid] = s_cscRowIndB[tid];
+			d_output_total[tid] = s_cscValA[tid];
+			d_output_total[tid] = s_cscValB[tid];
     	}
 }
 
