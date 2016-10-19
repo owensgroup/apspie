@@ -1,14 +1,14 @@
 #include "triple.hpp"
 
 #define __GR_CUDA_ARCH__ 300
-#define THREADS 512
+#define THREADS 1024
 #define BLOCKS 480  // 32*NUM_SM
 //#define BLOCKS 1
 #define LOG_THREADS 10
 #define LOG_BLOCKS 8
 #define CTA_OCCUPANCY 1
 #define SHARED 1024
-#define UNROLL 2  // SHARED/THREADS
+#define UNROLL 1  // SHARED/THREADS
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
   cudaError err = call;                                                 \
@@ -173,12 +173,13 @@ __device__ void deviceIntersectTwoSmallNL(
 
 			__syncthreads();
 
-			if( block_A >= 218 || block_B >= 218 ) continue; 
+			if( block_A >= 98 || block_B >= 129 ) continue; 
+
 			//if( block_A >= s_numBlock[0] || block_B >=s_numBlock[1] ) continue; 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
-			int tid_thread = tid;
+			int tid_thread = tid-THREADS;
 			#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
@@ -250,10 +251,11 @@ __device__ void deviceIntersectTwoSmallNL(
 			//if( sum > 0.001 )
 
 			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );*/
-			tid_thread = tid;
+			tid_thread = tid-THREADS;
 			#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
+				tid_thread += THREADS;
 				d_output_counts[tid_thread] = s_cscRowIndA[tid_thread];
 				d_output_counts[tid_thread] = s_cscRowIndB[tid_thread];
 				d_output_total[tid_thread] = s_cscValA[tid_thread];
