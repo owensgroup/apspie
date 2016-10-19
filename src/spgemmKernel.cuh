@@ -199,10 +199,10 @@ __device__ void deviceIntersectTwoSmallNL(
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
-				s_cscRowIndA[tid_thread] = __ldg(d_cscRowIndA+block_A*SHARED+tid_thread);
-				s_cscValA[tid_thread] = __ldg(d_cscValA+block_A*SHARED+tid_thread);
-				s_cscRowIndB[tid_thread] = __ldg(d_cscRowIndB+block_B*SHARED+tid_thread);
-				s_cscValB[tid_thread] = __ldg(d_cscValB+block_B*SHARED+tid_thread);
+				s_cscRowIndA[tid_thread] = d_cscRowIndA[block_A*SHARED+tid_thread];
+				s_cscValA[tid_thread] = d_cscValA[block_A*SHARED+tid_thread];
+				s_cscRowIndB[tid_thread] = d_cscRowIndB[block_B*SHARED+tid_thread];
+				s_cscValB[tid_thread] = d_cscValB[block_B*SHARED+tid_thread];
 			}
 
 			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
