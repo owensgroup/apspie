@@ -9,6 +9,7 @@
 #define CTA_OCCUPANCY 1
 #define SHARED 1024
 #define UNROLL 1  // SHARED/THREADS
+#define MAX_PART 114
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
   cudaError err = call;                                                 \
@@ -54,6 +55,11 @@ inline void __cudaCheckError( const char *file, const int line )
 
     return;
 }
+
+__constant__ int nnzPartA[MAX_PART];
+__constant__ int nnzPartB[MAX_PART];
+__constant__ int numBlockA[MAX_PART];
+__constant__ int numBlockB[MAX_PART];
 
 __device__ static const char logtable[256] =
 {
@@ -130,10 +136,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int partNum,
 		const int maxBlockA,
 		const int maxBlockB,
-		const int *nnzPartA,
-		const int *nnzPartB,
-		const int *numBlockA,
-		const int *numBlockB,
+		const int maxBlockAB,
 		const int stride)
     {
 		__shared__ int s_cscColPtrA[SHARED];	
@@ -144,8 +147,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ float s_cscValB[SHARED];
 		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
-		__shared__ int s_nnzPart[2];		  //[0]: A,		[1]: B
-		__shared__ int s_numBlock[2];		  //[0]: A,		[1]: B
 
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
@@ -153,7 +154,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		SizeT tid = threadIdx.x;
         SizeT gid = start-tid;
 
-		int maxBlockAB = maxBlockA*maxBlockB;
+		//int maxBlockAB = maxBlockA*maxBlockB;
 		//printf("idx:%d, nBlockA:%d, nBlockB:%d\n", start, numBlockA, numBlockB);
         //for (SizeT idx = start; idx < (long long) 2*SHARED; idx += (long long)stride) {
         //for (SizeT idx = start; idx < (long long) maxBlockAB*SHARED; idx += stride) {
@@ -166,16 +167,12 @@ __device__ void deviceIntersectTwoSmallNL(
 			int block_A = block_AB/maxBlockB;
 			int block_B = block_AB%maxBlockB;
 
-			/*if( tid==0 ) s_nnzPart[0] = __ldg( nnzPartA+part_A );
-			if( tid==1 ) s_nnzPart[1] = __ldg( nnzPartB+part_B );
-			if( tid==2 ) s_numBlock[0]= __ldg( numBlockA+part_A );
-			if( tid==3 ) s_numBlock[1]= __ldg( numBlockB+part_B );*/
-
-			__syncthreads();
-
-			if( block_A >= 98 || block_B >= 129 ) continue; 
-
-			//if( block_A >= s_numBlock[0] || block_B >=s_numBlock[1] ) continue; 
+			if( block_A >= numBlockA[part_A] || block_B >= numBlockB[part_B] ) continue; 
+			//if( block_A == numBlockA[part_A]-1 && block_B == numBlockB[part_B]-1 )
+			//{
+			//	if( tid >= nnzPartA[part_A]% ||
+			//}
+			
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
@@ -256,10 +253,10 @@ __device__ void deviceIntersectTwoSmallNL(
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
-				d_output_counts[tid_thread] = s_cscRowIndA[tid_thread];
-				d_output_counts[tid_thread] = s_cscRowIndB[tid_thread];
-				d_output_total[tid_thread] = s_cscValA[tid_thread];
-				d_output_total[tid_thread] = s_cscValB[tid_thread];
+				d_output_counts[tid_thread] = s_cscRowIndA[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
 			}
     	}
 }
@@ -286,10 +283,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int partNum,
 		const int maxBlockA,
 		const int maxBlockB,
-		int *d_nnzPartA,
-		int *d_nnzPartB,
-		int *d_numBlockA,
-		int *d_numBlockB,
+		const int maxBlockAB,
 		const int stride)
 {
 	//for( int i=0; i<partNum; i++ )
@@ -306,10 +300,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		d_output_counts, d_output_total, m, nnz, partSize, partNum, 
 		maxBlockA,
 		maxBlockB,
-		d_nnzPartA,
-		d_nnzPartB,
-		d_numBlockA,
-		d_numBlockB,
+		maxBlockAB,
 		stride );
 }
 
@@ -323,10 +314,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		const int partNum,
 		const int maxBlockA,
 		const int maxBlockB,
-		int *d_nnzPartA,
-		int *d_nnzPartB,
-		int *d_numBlockA,
-		int *d_numBlockB,
+		const int maxBlockAB,
         mgpu::CudaContext                             &context)
 {
 	//const int BLOCKS = (A->m*A->m+THREADS-1)/THREADS;
@@ -359,10 +347,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			partNum,
 			maxBlockA,
 			maxBlockB,
-			d_nnzPartA,
-			d_nnzPartB,
-			d_numBlockA,
-			d_numBlockB,
+			maxBlockAB,
             stride);
 
 	gpu_timer.Stop();

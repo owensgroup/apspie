@@ -90,9 +90,15 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		if( h_numBlockA[i]>maxBlockA ) maxBlockA = h_numBlockA[i];
 		if( h_numBlockB[i]>maxBlockB ) maxBlockB = h_numBlockB[i];
 	}
+	int maxBlockAB = maxBlockA*maxBlockB;
 
 	// Copy to device
-	int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
+	if( partNum > MAX_PART ){ printf("Error: Too many partitions!\n"); return;}
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartA, h_nnzPartA, partNum*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartB, h_nnzPartB, partNum*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockA, h_numBlockA, partNum*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockB, h_numBlockB, partNum*sizeof(int) ));
+	/*int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
 	cudaMalloc( &d_nnzPartA, partNum*sizeof(int) );
 	cudaMalloc( &d_nnzPartB, partNum*sizeof(int) );
 	cudaMalloc( &d_numBlockA, partNum*sizeof(int) );
@@ -100,7 +106,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartA, h_nnzPartA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartB, h_nnzPartB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));*/
 
 	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
 	print_array(h_numBlockA, 5);
@@ -109,7 +115,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, d_nnzPartA, d_nnzPartB, d_numBlockA, d_numBlockB, context );
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, maxBlockAB, context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
