@@ -63,6 +63,7 @@ __constant__ int nnzPartA[MAX_PART];
 __constant__ int nnzPartB[MAX_PART];
 __constant__ int numBlockA[MAX_PART];
 __constant__ int numBlockB[MAX_PART];
+__constant__ int numBlockAB[MAX_PART*MAX_PART+1];
 
 __device__ static const char logtable[256] =
 {
@@ -86,7 +87,7 @@ __device__ int BinarySearch(int* keys, int count, int key) {
         return 0;
 }
 
-__device__ int BinarySearchStart(int* keys, int count, int key) {
+__device__ int BinarySearchBelow(int* keys, int count, int key) {
     int begin = 0;
     int end = count;
     while (begin < end) {
@@ -100,7 +101,7 @@ __device__ int BinarySearchStart(int* keys, int count, int key) {
     return end-1;
 }
 
-__device__ int BinarySearchEnd(int* keys, int count, int key) {
+__device__ int BinarySearchAbove(int* keys, int count, int key) {
     int begin = 0;
     int end = count;
     while (begin < end) {
@@ -137,8 +138,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int nnz,
 		const int partSize,
 		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
 		const int maxBlockAB,
 		const int stride)
     {
@@ -150,6 +149,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ float s_cscValB[SHARED];
 		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
+		__shared__ int s_part_AB;
 		//__shared__ cub::BlockReduce<float, THREADS>::TempStorage temp;
 
         // each thread process NV edge pairs
@@ -160,23 +160,37 @@ __device__ void deviceIntersectTwoSmallNL(
 
 		//int maxBlockAB = maxBlockA*maxBlockB;
 		//printf("idx:%d, nBlockA:%d, nBlockB:%d\n", start, numBlockA, numBlockB);
-        //for (SizeT idx = start; idx < (long long) 2*SHARED; idx += (long long)stride) {
-        //for (SizeT idx = start; idx < (long long) maxBlockAB*SHARED; idx += stride) {
-        for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockAB*THREADS; idx += stride) {
-			int part_AB= blockIdx.x/maxBlockAB;
-			int part_A = part_AB/partNum;
-			int part_B = part_AB%partNum;
+        for (SizeT idx = start; idx < (long long) maxBlockAB*THREADS; idx += stride) {
+			if( tid==0 ) s_part_AB= BinarySearchBelow( numBlockAB, partNum*partNum+1, blockIdx.x);
+			//int part_AB= BinarySearchBelow( numBlockAB, partNum*partNum+1, blockIdx.x);
+			//int part_AB= blockIdx.x/maxBlockAB; // Old Method 1
 
-			int block_AB= blockIdx.x%maxBlockAB;
-			int block_A = block_AB/maxBlockB;
-			int block_B = block_AB%maxBlockB;
+			__syncthreads();
 
-			if( block_A >= numBlockA[part_A] || block_B >= numBlockB[part_B] ) continue; 
-			//if( block_A == numBlockA[part_A]-1 && block_B == numBlockB[part_B]-1 )
-			//{
-			//	if( tid >= nnzPartA[part_A]% ||
-			//}
-			
+			int part_A = s_part_AB/partNum;
+			int part_B = s_part_AB%partNum;
+
+			int block_AB=blockIdx.x-numBlockAB[s_part_AB];
+			//int block_AB= blockIdx.x%maxBlockAB; // Old Method 1
+			int block_A = block_AB/numBlockB[part_B];
+			int block_B = block_AB%numBlockB[part_B];
+
+			// Old Method 1 Ideas
+			// -first condition: can be skipped since no wasted blocks
+			// -second condition: can be more easily implemented
+			//if( block_A >= numBlockA[part_A] || block_B >= numBlockB[part_B] ) continue;
+			int idx_A = block_A*SHARED + tid;
+			int idx_B = block_B*SHARED + tid;
+			/*if( idx_A < nnzPartA[part_A] )
+			{
+				s_cscRowIndA[tid] = __ldg(d_cscRowIndA+idx_A);
+				s_cscValA[tid] = __ldg(d_cscValA+idx_A);
+			}
+			if( idx_B < nnzPartB[part_B] )
+			{
+				s_cscRowIndB[tid] = __ldg(d_cscRowIndB+idx_B);
+				s_cscValB[tid] = __ldg(d_cscValB+idx_B);
+			}*/
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
@@ -192,9 +206,8 @@ __device__ void deviceIntersectTwoSmallNL(
 			}
 
 			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
-			/*
 			// Generate cscColPtrA that is local to cscRowIndA[0 ... 1023]
-			if( tid==0 )
+			/*if( tid==0 )
 				s_cscColPtrA_bound[0] = BinarySearchStart( d_cscColPtrA, m, gid );
 			if( tid==1 )
 				s_cscColPtrA_bound[1] = BinarySearchEnd( d_cscColPtrA, m, gid+blockDim.x-1 );
@@ -259,10 +272,10 @@ __device__ void deviceIntersectTwoSmallNL(
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
-				d_output_counts[tid_thread] += s_cscRowIndA[SHARED-tid_thread-1];
-				d_output_counts[tid_thread] += s_cscRowIndB[SHARED-tid_thread-1];
-				d_output_total[tid_thread] += s_cscValA[SHARED-tid_thread-1];
-				d_output_total[tid_thread] += s_cscValB[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] = s_cscRowIndA[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
 			}
     	}
 }
@@ -287,8 +300,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		const int nnz,
 		const int partSize,
 		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
 		const int maxBlockAB,
 		const int stride)
 {
@@ -304,8 +315,6 @@ __device__ void deviceIntersectTwoSmallNL(
 		d_cscRowIndB,
 		d_cscValB, 
 		d_output_counts, d_output_total, m, nnz, partSize, partNum, 
-		maxBlockA,
-		maxBlockB,
 		maxBlockAB,
 		stride );
 }
@@ -318,8 +327,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
         float *d_output_total,
 		const int partSize,
 		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
 		const int maxBlockAB,
         mgpu::CudaContext                             &context)
 {
@@ -351,8 +358,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			A->nnz,
 			partSize,
 			partNum,
-			maxBlockA,
-			maxBlockB,
 			maxBlockAB,
             stride);
 

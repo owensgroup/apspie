@@ -81,7 +81,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	h_numBlockA[partNum-1]= (h_nnzPartA[partNum-1]+SHARED-1)/SHARED;
 	h_numBlockB[partNum-1]= (h_nnzPartB[partNum-1]+SHARED-1)/SHARED;
 	int maxBlockA = h_numBlockA[partNum-1], maxBlockB = h_numBlockB[partNum-1];
-	for( int i=0; i<partNum-2; i++ )
+	for( int i=0; i<partNum-1; i++ )
 	{
 		h_nnzPartA[i] = A->h_cscColPtr[(i+1)*partSize]-A->h_cscColPtr[i*partSize];
 		h_nnzPartB[i] = B->h_cscColPtr[(i+1)*partSize]-B->h_cscColPtr[i*partSize];
@@ -90,32 +90,42 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		if( h_numBlockA[i]>maxBlockA ) maxBlockA = h_numBlockA[i];
 		if( h_numBlockB[i]>maxBlockB ) maxBlockB = h_numBlockB[i];
 	}
-	int maxBlockAB = maxBlockA*maxBlockB;
 
-	// Copy to device
+	// (Method 1: maxBlockAB)
+	//int maxBlockAB = maxBlockA*maxBlockB;
+
+	// Copy to device (Method 1: maxBlockAB)
 	if( partNum > MAX_PART ){ printf("Error: Too many partitions!\n"); return;}
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartA, h_nnzPartA, partNum*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartB, h_nnzPartB, partNum*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockA, h_numBlockA, partNum*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockB, h_numBlockB, partNum*sizeof(int) ));
-	/*int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
-	cudaMalloc( &d_nnzPartA, partNum*sizeof(int) );
-	cudaMalloc( &d_nnzPartB, partNum*sizeof(int) );
-	cudaMalloc( &d_numBlockA, partNum*sizeof(int) );
-	cudaMalloc( &d_numBlockB, partNum*sizeof(int) );
-	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartA, h_nnzPartA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartB, h_nnzPartB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));*/
 
-	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
+	// (Method 2: scanArray)
+	int *h_numBlockAB = (int*)malloc((partNum*partNum+1)*sizeof(int));
+	for( int i=0; i<partNum; i++ )
+		for( int j=0; j<partNum; j++ )
+		{
+			if( i==0 && j==0 )
+				h_numBlockAB[0] = h_numBlockA[i]*h_numBlockB[j];
+			else
+				h_numBlockAB[partNum*i+j] = h_numBlockAB[partNum*i+j-1]+h_numBlockA[i]*h_numBlockB[j];
+		}
+	for( int i=partNum*partNum; i>0; i-- )
+		h_numBlockAB[i]=h_numBlockAB[i-1];
+	h_numBlockAB[0] = 0;
+
+	// Copy to device
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockAB, h_numBlockAB, (partNum*partNum+1)*sizeof(int)));
+
 	print_array(h_numBlockA, 5);
 	print_array(h_numBlockB, 5);
+	print_array(h_numBlockAB);
 	print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, maxBlockAB, context );
+	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, h_numBlockAB[partNum*partNum], context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
