@@ -1,3 +1,6 @@
+#include <cub/cub.cuh>
+#define BLOCKSIZE 32
+
 #include "triple.hpp"
 
 #define __GR_CUDA_ARCH__ 300
@@ -147,6 +150,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ float s_cscValB[SHARED];
 		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
+		//__shared__ cub::BlockReduce<float, THREADS>::TempStorage temp;
 
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
@@ -244,19 +248,21 @@ __device__ void deviceIntersectTwoSmallNL(
                     //dst_edge = (diff >= 0) ? __ldg(d_cscRowIndB+(++dst_it)) : dst_edge;
                     count += (diff == 0);
                 }
-            }
-			//if( sum > 0.001 )
+            }*/
 
-			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );*/
+			//float result;
+    		//result = cub::BlockReduce<float, THREADS>(temp).Sum(s_cscValA[idx]);
+			//if(tid==0) d_output_total[blockIdx.x] = result;
+
 			tid_thread = tid-THREADS;
 			#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
-				d_output_counts[tid_thread] = s_cscRowIndA[SHARED-tid_thread-1];
-				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
-				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
-				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] += s_cscRowIndA[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] += s_cscRowIndB[SHARED-tid_thread-1];
+				d_output_total[tid_thread] += s_cscValA[SHARED-tid_thread-1];
+				d_output_total[tid_thread] += s_cscValB[SHARED-tid_thread-1];
 			}
     	}
 }
