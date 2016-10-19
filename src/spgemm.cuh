@@ -12,7 +12,6 @@
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
-#define SHARED 1024
 
 // Uses MGPU SpMV
 template<typename T>

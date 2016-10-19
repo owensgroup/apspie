@@ -1,13 +1,14 @@
 #include "triple.hpp"
 
 #define __GR_CUDA_ARCH__ 300
-#define THREADS 1024
-#define BLOCKS 480
+#define THREADS 512
+#define BLOCKS 480  // 32*NUM_SM
 //#define BLOCKS 1
 #define LOG_THREADS 10
 #define LOG_BLOCKS 8
 #define CTA_OCCUPANCY 1
 #define SHARED 1024
+#define UNROLL 2  // SHARED/THREADS
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
   cudaError err = call;                                                 \
@@ -156,7 +157,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		//printf("idx:%d, nBlockA:%d, nBlockB:%d\n", start, numBlockA, numBlockB);
         //for (SizeT idx = start; idx < (long long) 2*SHARED; idx += (long long)stride) {
         //for (SizeT idx = start; idx < (long long) maxBlockAB*SHARED; idx += stride) {
-        for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockAB*SHARED; idx += stride) {
+        for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockAB*THREADS; idx += stride) {
 			int part_AB= blockIdx.x/maxBlockAB;
 			int part_A = part_AB/partNum;
 			int part_B = part_AB%partNum;
@@ -172,15 +173,21 @@ __device__ void deviceIntersectTwoSmallNL(
 
 			__syncthreads();
 
-			if( block_A >= 43 || block_B >= 67 ) continue; 
+			if( block_A >= 218 || block_B >= 218 ) continue; 
 			//if( block_A >= s_numBlock[0] || block_B >=s_numBlock[1] ) continue; 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
-			s_cscRowIndA[tid] = __ldg(d_cscRowIndA+block_A*SHARED+tid);
-			s_cscValA[tid] = __ldg(d_cscValA+block_A*SHARED+tid);
-			s_cscRowIndB[tid] = __ldg(d_cscRowIndB+block_B*SHARED+tid);
-			s_cscValB[tid] = __ldg(d_cscValB+block_B*SHARED+tid);
+			int tid_thread = tid;
+			#pragma unroll
+			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
+			{
+				tid_thread += THREADS;
+				s_cscRowIndA[tid_thread] = __ldg(d_cscRowIndA+block_A*SHARED+tid_thread);
+				s_cscValA[tid_thread] = __ldg(d_cscValA+block_A*SHARED+tid_thread);
+				s_cscRowIndB[tid_thread] = __ldg(d_cscRowIndB+block_B*SHARED+tid_thread);
+				s_cscValB[tid_thread] = __ldg(d_cscValB+block_B*SHARED+tid_thread);
+			}
 
 			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
 			/*
@@ -243,10 +250,15 @@ __device__ void deviceIntersectTwoSmallNL(
 			//if( sum > 0.001 )
 
 			//printf("blk_row:%d, idx:%d, val:%f\n", block_row, idx, sum );*/
-			d_output_counts[tid] = s_cscRowIndA[tid];
-			d_output_counts[tid] = s_cscRowIndB[tid];
-			d_output_total[tid] = s_cscValA[tid];
-			d_output_total[tid] = s_cscValB[tid];
+			tid_thread = tid;
+			#pragma unroll
+			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
+			{
+				d_output_counts[tid_thread] = s_cscRowIndA[tid_thread];
+				d_output_counts[tid_thread] = s_cscRowIndB[tid_thread];
+				d_output_total[tid_thread] = s_cscValA[tid_thread];
+				d_output_total[tid_thread] = s_cscValB[tid_thread];
+			}
     	}
 }
 
