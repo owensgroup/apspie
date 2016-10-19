@@ -417,11 +417,12 @@ bool readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) 
 	return weighted;
 }
 
-bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bool &undirected ) {
+bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bool &undirected, float &aggro ) {
     bool error = false;
     source = 0;
     device = 0;
     delta = 0.1;
+	aggro = 1.0;
 
     for( int i=2; i<argc; i+=2 ) {
        if( strstr(argv[i], "-source") != NULL )
@@ -432,6 +433,8 @@ bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bo
            delta = atof(argv[i+1]);
        else if( strstr(argv[i], "-undirected") != NULL )
            undirected = true;
+       else if( strstr(argv[i], "-aggro") != NULL )
+           aggro = atof(argv[i+1]);
     }
     return error;
 }

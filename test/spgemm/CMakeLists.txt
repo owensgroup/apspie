@@ -36,12 +36,12 @@ set(CMAKE_EXE_LINKER_FLAGS "-lpthread")
 #set(CMAKE_EXE_LINKER_FLAGS "-Xlinker --verbose")
 
 # ptx generation
-#include_directories( ${PROJ_INCLUDES} )
+#include_directories( ${PROJ_INCLUDES} ${PROJ_HEADERS} )
 #cuda_compile_ptx( cuda_ptx_files main.cu )
-#add_custom_target( ptx ALL DEPENDS ${cuda_ptx_files} ${PROJ_HEADERS} main.cu SOURCES main.cu ${PROJ_HEADERS} )
+#add_custom_target( ptx ALL DEPENDS ${cuda_ptx_files} ${PROJ_SOURCES} ${mgpu_SRC_FILES} )
 
 # standard compilation
 include_directories( ${PROJ_INCLUDES} )
 cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
-cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES} ${bhsparse_SRC_FILES})
+cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
 target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )

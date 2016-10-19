@@ -1,5 +1,5 @@
 #include <cub/cub.cuh>
-#define BLOCKSIZE 32
+#include <cuda_profiler_api.h>
 
 #include "triple.hpp"
 
@@ -12,7 +12,8 @@
 #define CTA_OCCUPANCY 1
 #define SHARED 1024
 #define UNROLL 1  // SHARED/THREADS
-#define MAX_PART 114
+#define MAX_PART 200
+#define BLOCK_SIZE 1024
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
   cudaError err = call;                                                 \
@@ -150,7 +151,7 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ float s_cscValB[SHARED];
 		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
-		//__shared__ cub::BlockReduce<float, THREADS>::TempStorage temp;
+		__shared__ cub::BlockReduce<float, BLOCK_SIZE>::TempStorage temp;
 
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
@@ -172,6 +173,7 @@ __device__ void deviceIntersectTwoSmallNL(
 			int block_B = block_AB%maxBlockB;
 
 			if( block_A >= numBlockA[part_A] || block_B >= numBlockB[part_B] ) continue; 
+			if( blockIdx.x == numBlockA[block_A]-1 || blockIdx.x == numBlockB[block_B]-1 ) continue;
 			//if( block_A == numBlockA[part_A]-1 && block_B == numBlockB[part_B]-1 )
 			//{
 			//	if( tid >= nnzPartA[part_A]% ||
@@ -250,20 +252,20 @@ __device__ void deviceIntersectTwoSmallNL(
                 }
             }*/
 
-			//float result;
-    		//result = cub::BlockReduce<float, THREADS>(temp).Sum(s_cscValA[idx]);
-			//if(tid==0) d_output_total[blockIdx.x] = result;
+			float result;
+    		if(idx<THREADS) result = cub::BlockReduce<float, BLOCK_SIZE>(temp).Sum(s_cscValA[idx]);
+			if(tid==0) d_output_total[blockIdx.x] = result;
 
-			tid_thread = tid-THREADS;
+			/*tid_thread = tid-THREADS;
 			#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
-				d_output_counts[tid_thread] += s_cscRowIndA[SHARED-tid_thread-1];
-				d_output_counts[tid_thread] += s_cscRowIndB[SHARED-tid_thread-1];
-				d_output_total[tid_thread] += s_cscValA[SHARED-tid_thread-1];
-				d_output_total[tid_thread] += s_cscValB[SHARED-tid_thread-1];
-			}
+				d_output_counts[tid_thread] = s_cscRowIndA[SHARED-tid_thread-1];
+				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
+				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
+			}*/
     	}
 }
 
@@ -332,6 +334,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
    
 	CudaCheckError();
+	cudaProfilerStart();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
 	gpu_timer.Start();
@@ -357,6 +360,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
             stride);
 
 	gpu_timer.Stop();
+	cudaProfilerStop();
 	elapsed += gpu_timer.ElapsedMillis();
 	printf("my spgemm: %f ms\n", elapsed);
 	//CudaCheckError();

@@ -252,7 +252,8 @@ void runBfs(int argc, char**argv) {
     float delta;
     bool undirected = false;
 	bool weighted = false;
-    if( parseArgs( argc, argv, source, device, delta, undirected )==true ) {
+	float aggro = 1.0;  // a value in (0-1] that describes how close to 
+    if( parseArgs( argc, argv, source, device, delta, undirected, aggro )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
@@ -356,12 +357,10 @@ void runBfs(int argc, char**argv) {
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
     buildMatrix<typeVal>( &D, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
-	float AGGRO_FACTOR = 1.0;  // a value in (0-1] that describes how close to 
-								// shared mem threshold
 	float k_A = (float)edge/m;
 	float MEMORY = 128000.0;
-	float TARGET_PART_SIZE = AGGRO_FACTOR*MEMORY/k_A;
-	float TARGET_PART_NUM = (float)edge/MEMORY/AGGRO_FACTOR;
+	float TARGET_PART_SIZE = aggro*MEMORY/k_A;
+	float TARGET_PART_NUM = (float)edge/MEMORY/aggro;
 
 	printf("Mem: %f; Size: %d; Num: %d\n", MEMORY, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM);
 
@@ -369,7 +368,7 @@ void runBfs(int argc, char**argv) {
     histogramVert( &D, (int) TARGET_PART_SIZE );
 	histogramBlock( &C, (int)TARGET_PART_SIZE );
 
-	//float SMEMORY = AGGRO_FACTOR*1000.0;
+	//float SMEMORY = aggro*1000.0;
 	//float SPART_NUM = (float)edge/SMEMORY;
 	//printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
 
