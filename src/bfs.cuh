@@ -327,7 +327,6 @@ void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const in
             // Exchange send prefix sums
 			//MPI_Barrier( MPI_COMM_WORLD );
             MPI_Alltoall( h_sendHist, 1, MPI_INT, h_recvHist, 1, MPI_INT, MPI_COMM_WORLD );
-			MPI_Barrier( MPI_COMM_WORLD );
 			fprintArray("RecvHist", outf, h_recvHist, multi);
 
 			// Linear prefix sum using CPU
@@ -340,7 +339,6 @@ void bfsSparse( const int vertex, const int new_nnz, const int old_nnz, const in
 
             // Exchange vectors
 			outf.flush();
-			//MPI_Barrier( MPI_COMM_WORLD );
 
             MPI_Alltoallv( d_spmvSwapInd, h_sendHist, h_sendScan, MPI_INT, d_spmvResultInd, h_recvHist, h_recvScan, MPI_INT, MPI_COMM_WORLD );
             outf << "Passed first level!\n";

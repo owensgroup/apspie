@@ -114,11 +114,6 @@ void runBfs(int argc, char**argv) {
         if(rank==0)printf("\nDirected graph has %d nodes, %d nnzs\n", m, nnz);
     }
     cpu_timerBuild.Start();
-    } else {
-        readMtx<typeVal>( nnz, h_cooColIndA, h_cooRowIndA, h_cooValA );
-        if(rank==0)printf("\nDirected graph has %d nodes, %d nnzs\n", m, nnz);
-    }
-    cpu_timerBuild.Start();
     buildMatrix<typeVal>( h_csrRowPtrA, h_csrColIndA, h_csrValA, m, nnz, h_cooRowIndA, h_cooColIndA, h_cooValA );
     cpu_timerBuild.Stop();
     float elapsedRead = cpu_timerRead.ElapsedMillis();
@@ -312,3 +307,8 @@ void runBfs(int argc, char**argv) {
     free(h_bfsResultCPU);*/
 
     MPI_Finalize();
+}
+
+int main( int argc, char**argv ) {
+    runBfs( argc, argv );
+}
