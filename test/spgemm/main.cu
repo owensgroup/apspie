@@ -372,7 +372,7 @@ void runBfs(int argc, char**argv) {
 	//float SPART_NUM = (float)edge/SMEMORY;
 	//printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
 
-	/*d_matrix Asub, Bsub, Csub;
+	d_matrix Asub, Bsub, Csub;
 	matrix_new(&Asub, (int)TARGET_PART_SIZE, m );
 	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
 	matrix_new(&Csub, (int)TARGET_PART_SIZE, (int)TARGET_PART_SIZE);
@@ -396,10 +396,10 @@ void runBfs(int argc, char**argv) {
 	elapsed3 += gpu_timer3.ElapsedMillis();
 	printf("CSR->CSC: %f\n", elapsed3);
 
-	copy_matrix_device( &Asub );
+	/*copy_matrix_device( &Asub );
 	copy_matrix_device( &Bsub );
 	printf("A: %d %d %f\n", Asub.h_cscColPtr[Asub.m], Asub.h_cscRowInd[Asub.nnz-1], Asub.h_cscVal[Asub.nnz-1]);
-	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);
+	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);*/
 	//print_matrix( &Asub );
 	//print_matrix( &Bsub );
 	//print_matrix_device( &Asub );
@@ -413,7 +413,7 @@ void runBfs(int argc, char**argv) {
 
 	//print_matrix( &Csub );
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
-    GpuTimer gpu_timer2;
+    /*GpuTimer gpu_timer2;
     float elapsed2 = 0.0f;
 	gpu_timer2.Start();
 
@@ -421,10 +421,10 @@ void runBfs(int argc, char**argv) {
 
 	gpu_timer2.Stop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("my memory alloc+spgemm: %f ms\n", elapsed2);
+	printf("my memory alloc+spgemm: %f ms\n", elapsed2);*/
 
-	//countNNZ( &Asub );
-	//countNNZ( &Bsub );
+	countNNZ( &Asub );
+	countNNZ( &Bsub );
 }
 
 int main(int argc, char**argv) {
