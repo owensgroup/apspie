@@ -15,6 +15,11 @@ void matrix_new( d_matrix *A, int m, int n )
     A->h_cscVal = NULL;
 	A->d_cscRowInd = NULL;
 	A->d_cscVal = NULL;
+	A->d_dcscPartPtr = NULL;
+	A->d_dcscColPtr_ind = NULL;
+	A->d_dcscColPtr_off = NULL;
+	A->d_dcscRowInd = NULL;
+	A->d_dcscVal = NULL;
 
 	// Device alloc
     cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int));
@@ -59,6 +64,10 @@ void buildMatrix( d_matrix *A,
 	// Device malloc
     cudaMalloc(&(A->d_cscVal), A->nnz*sizeof(typeVal));
     cudaMalloc(&(A->d_cscRowInd), A->nnz*sizeof(int));
+
+	// DCSC malloc
+    cudaMalloc(&(A->d_dcscVal), A->nnz*sizeof(typeVal));
+    cudaMalloc(&(A->d_dcscRowInd), A->nnz*sizeof(int));
 
 	// Convert to CSC/CSR
     int temp;
@@ -267,4 +276,12 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 
     // Important: destroy handle
     cusparseDestroy(handle);
+}
+
+// Wrapper for device code
+template <typename typeVal>
+void csr_to_dcsc( d_matrix *A, int partSize )
+{
+	A->part = partSize;
+
 }
