@@ -13,51 +13,39 @@
 #define NTHREADS 512
 #define MAX_SHARED 49152
 
+// Obtains bit array if left element != right element
+/*void lookRight( int *output_array, const int *input_array, const int num )
+{
+	for( int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<num-1; idx+=blockDim.x*blockIdx.x )
+		if( input_array[idx]!=output_array[idx+1] ) d_output_array[idx]=1;
+}*/
+
 // Uses MGPU SpMV
 template<typename T>
 void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrValA, const int *d_csrRowPtrA, const int *d_csrColIndA, T *d_spmvResult, mgpu::CudaContext& context) {
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
-/*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
-{
-	int err = 0;
-    bhsparse *bh_sparse = new bhsparse();
-
-	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
-	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
-	platforms[BHSPARSE_CUDA] = true;
-    err = bh_sparse->initPlatform(platforms);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    err = bh_sparse->initData(A->m, A->n, B->n,
-                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
-                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
-                          C->h_cscColPtr);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    for (int i = 0; i < 3; i++)
-    {
-        err = bh_sparse->warmup();
-        if(err != BHSPARSE_SUCCESS) return err;
-    }
-
-    err = bh_sparse->spgemm();
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    // read back C
-    C->nnz = bh_sparse->get_nnzC();
-    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
-    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
-
-    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-	return BHSPARSE_SUCCESS;
-}*/
-
 // Matrix multiplication (Host code)
 void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
+
+	// Main goal 1: 
+	//	-A in CSR -> A in DCSC
+	//  -B in CSC -> B in DCSR
+
+	csr_to_dcsc<float>( A, partSize, partNum, true );
+	csr_to_dcsc<float>( A, partSize, partNum );
+
+	//d_csr_to_dcsc( B, partSize, partNum, true );
+	//d_csr_to_dcsc( B, partSize, partNum );
+
+	// Main goal 2:
+	//	-spgemmKernel
+	//  -obtain C in CSR?
+}
+
+// Matrix multiplication (Host code)
+void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
 	// Some test arrays
 	int *d_output_triples;
@@ -121,6 +109,43 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);*/
 }
+
+/*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
+{
+	int err = 0;
+    bhsparse *bh_sparse = new bhsparse();
+
+	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
+	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
+	platforms[BHSPARSE_CUDA] = true;
+    err = bh_sparse->initPlatform(platforms);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    err = bh_sparse->initData(A->m, A->n, B->n,
+                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
+                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
+                          C->h_cscColPtr);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    for (int i = 0; i < 3; i++)
+    {
+        err = bh_sparse->warmup();
+        if(err != BHSPARSE_SUCCESS) return err;
+    }
+
+    err = bh_sparse->spgemm();
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    // read back C
+    C->nnz = bh_sparse->get_nnzC();
+    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
+    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
+
+    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+	return BHSPARSE_SUCCESS;
+}*/
 
 // Uses cuSPARSE SpMV
 template<typename T>

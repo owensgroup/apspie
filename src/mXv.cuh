@@ -34,8 +34,8 @@ __global__ void diff( const int *d_cscColPtr, int *d_cscColDiff, const int m ) {
 __global__ void lookRight( const int *d_cscSwapInd, const int total, int *d_cscFlag) {
     
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<total; idx+=blockDim.x*gridDim.x) {
-        if( d_cscSwapInd[idx]!=d_cscSwapInd[idx+1] ) d_cscFlag[idx]=0;
-        else d_cscFlag[idx]=1;
+        if( d_cscSwapInd[idx]!=d_cscSwapInd[idx+1] ) d_cscFlag[idx]=1;
+        else d_cscFlag[idx]=0;
     }
 }
 

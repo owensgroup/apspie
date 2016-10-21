@@ -1,5 +1,8 @@
-#include <matrix.hpp>
 #include <iomanip>
+#include <cub/cub.cuh>
+#include <mgpu/
+
+#include "matrix.hpp"
 
 void matrix_new( d_matrix *A, int m, int n )
 {
@@ -12,17 +15,17 @@ void matrix_new( d_matrix *A, int m, int n )
 	// RowInd and Val will be allocated in buildMatrix rather than here
 	// since nnz may be unknown
     A->h_cscRowInd = NULL;
-    A->h_cscVal = NULL;
+	A->h_cscVal = NULL;
 	A->d_cscRowInd = NULL;
 	A->d_cscVal = NULL;
 	A->d_dcscPartPtr = NULL;
-	A->d_dcscColPtr_ind = NULL;
-	A->d_dcscColPtr_off = NULL;
 	A->d_dcscRowInd = NULL;
 	A->d_dcscVal = NULL;
 
 	// Device alloc
     cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int));
+	cudaMalloc(&(A->d_dcscColPtr_ind), 2*A->n*sizeof(int));
+	cudaMalloc(&(A->d_dcscColPtr_off), 2*A->n*sizeof(int));
 }
 
 // This function converts function from COO to CSC/CSR representation
@@ -139,7 +142,7 @@ void matrix_copy( d_matrix *B, d_matrix *A )
     cudaMemcpy(B->d_cscRowInd, A->h_cscRowInd, B->nnz*sizeof(int),cudaMemcpyHostToDevice);
 }
 
-void print_matrix( d_matrix *A, bool val=false ) {
+void print_matrix( d_matrix *A, bool val ) {
     std::cout << "Matrix:\n";
 	int num_row = A->m>20 ? 20 : A->m;
 	int num_col = A->n>20 ? 20 : A->n; 
@@ -177,7 +180,7 @@ void copy_matrix_device( d_matrix *A ) {
     cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
 }
 
-void print_matrix_device( d_matrix *A, bool val=false ) {
+void print_matrix_device( d_matrix *A, bool val ) {
 
 	// If buildMatrix not run, then need host alloc
 	// Both pointers set to NULL in matrix_new 
@@ -280,8 +283,75 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 
 // Wrapper for device code
 template <typename typeVal>
-void csr_to_dcsc( d_matrix *A, int partSize )
+void csr_to_dcsc( d_matrix *A, int partSize, int partNum, bool alloc )
 {
-	A->part = partSize;
+	if( alloc )
+	{
+		A->part = partNum;
 
+		cudaMalloc(&(A->d_dcscPartPtr), (partNum+1)*sizeof(int));
+	} else {
+	// Step 0: Preallocations for scratchpad memory
+	int *d_flagArray, *d_tempArray;
+	CUDA_SAFE_CALL(cudaMalloc(&d_flagArray, A->nnz*sizeof(int)));
+	CUDA_SAFE_CALL(cudaMalloc(&d_tempArray, A->nnz*sizeof(int)));
+
+	// Step 1: Segmented Sort RowInd of CSC 
+	// Set up parameters
+		void *d_temp_storage = NULL;
+		size_t temp_storage_bytes = 0;
+		int *d_keys_in = A->d_cscRowInd;
+		int *d_keys_out= A->d_dcscRowInd;
+		int num_items = A->nnz;
+		int num_segments = partNum;
+
+		// CUDA mallocs
+		int *h_offsets = (int*)malloc((partNum+1)*sizeof(int));
+		for( int i=0; i<partNum; i++ ) h_offsets[i]=A->h_cscColPtr[i*partSize];
+		h_offsets[partNum] = A->nnz;
+		int *d_offsets;
+		cudaMalloc(&d_offsets, (partNum+1)*sizeof(int));
+		cudaMemcpy(d_offsets,h_offsets,(partNum+1)*sizeof(int),cudaMemcpyHostToDevice);
+
+		// Determine temporary device storage requirements
+		print_array_device(d_keys_out+A->nnz-40);
+		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, d_keys_in, d_keys_out, num_items, num_segments, d_offsets, d_offsets + 1);
+		//CudaCheckError();
+
+		// Allocate temporary storage
+		cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+		// Run sorting operation
+		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, d_keys_in, d_keys_out, num_items, num_segments, d_offsets, d_offsets + 1);
+		//CudaCheckError();
+
+		// Check results
+		print_array_device(d_keys_in);
+		print_array_device(d_keys_out);
+		cudaFree(d_temp_storage);
+
+	// Step 2: SegReduce
+	// Determine temporary device storage requirements
+		d_temp_storage = NULL;
+		temp_storage_bytes = 0;
+		int *d_in = d_keys_out;
+		d_offsets = A->d_dcscColPtr_ind;
+
+		// Obtain d_offsets. In this case, d_offsets is actually our d_dcscColPtr_off
+		lookRight<<<BLOCKS,THREADS>>>( d_flagArray, num_items, d_in );
+		mgpu::Scan<mgpu::MgpuScanTypeExc>( d_flagArray, num_items, 0, mgpu::plus<int>(), (int*)0, &(A->col_length), d_tempArray, context );
+		if( A->col_length > 2*A->n ) printf("Error: array too long\n");
+	 	streamCompact<<<BLOCKS,THREADS>>>( d_flagArray, d_tempArray, A->d_dcscColPtr_ind, num_items );
+
+		/*cub::DeviceSegmentedReduce::Reduce(d_temp_storage, temp_storage_bytes, d_in, d_out, num_segments, d_offsets, d_offsets + 1, min_op, initial_value);
+
+		// Allocate temporary storage
+		cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+		// Run reduction
+		cub::DeviceSegmentedReduce::Reduce(d_temp_storage, temp_storage_bytes, d_in, d_out, num_segments, d_offsets, d_offsets + 1, min_op, initial_value);
+
+		// Alternative SegReduce
+		ReduceByKey( d_keys_in, d_vals_in, num_items, (float)0, mgpu::plus<int>(), mgpu::equal_to<int>(), d_keys_out, d_vals_out, &h_cscVecCount, &, context );*/
+	}
 }
