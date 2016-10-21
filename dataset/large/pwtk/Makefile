@@ -1,4 +1,4 @@
-GRAPH_NAME = wind_tunnel 
+GRAPH_NAME = pwtk
 GRAPH_URL = http://www.cise.ufl.edu/research/sparse/MM/Boeing/pwtk.tar.gz
 
 
