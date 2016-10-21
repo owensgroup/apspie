@@ -13,12 +13,27 @@
 #define NTHREADS 512
 #define MAX_SHARED 49152
 
-// Obtains bit array if left element != right element
-/*void lookRight( int *output_array, const int *input_array, const int num )
+__global__ void gather( const int *input_array, const int* indices, const int length, int *output_array )
 {
-	for( int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<num-1; idx+=blockDim.x*blockIdx.x )
-		if( input_array[idx]!=output_array[idx+1] ) d_output_array[idx]=1;
-}*/
+    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<length; idx+=blockDim.x*gridDim.x) {
+        output_array[idx]=input_array[indices[idx]];
+		printf("%d: %d %d\n", idx, indices[idx], output_array[idx]);
+    }	
+}
+
+__global__ void shiftRight( int *input_array, const int length )
+{
+    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<length-1; idx+=blockDim.x*gridDim.x) {
+        input_array[idx+1]=input_array[idx];
+    }	
+}
+
+__global__ void specialScatter( const int *input_array, const int partNum, int *output_array )
+{
+    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<=partNum; idx+=blockDim.x*gridDim.x) {
+        if( idx>0 ) output_array[input_array[idx]-1]=1;
+    }	
+}
 
 // Uses MGPU SpMV
 template<typename T>
@@ -33,8 +48,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	//	-A in CSR -> A in DCSC
 	//  -B in CSC -> B in DCSR
 
-	csr_to_dcsc<float>( A, partSize, partNum, true );
-	csr_to_dcsc<float>( A, partSize, partNum );
+	csr_to_dcsc<float>( A, partSize, partNum, context, true );
+	csr_to_dcsc<float>( A, partSize, partNum, context );
 
 	//d_csr_to_dcsc( B, partSize, partNum, true );
 	//d_csr_to_dcsc( B, partSize, partNum );
@@ -97,12 +112,12 @@ void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));*/
 
 	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
-	print_array(h_numBlockA, 5);
-	print_array(h_numBlockB, 5);
-	print_array_device(A->d_cscColPtr, A->m+1);
-	print_array_device(A->d_cscRowInd, A->nnz);
-	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);
+	print_array("number of nnz in A", h_numBlockA, 5);
+	print_array("number of nnz in B", h_numBlockB, 5);
+	print_array_device("A ColPtr", A->d_cscColPtr, A->m+1);
+	print_array_device("A RowInd", A->d_cscRowInd, A->nnz);
+	print_array_device("B ColPtr", B->d_cscColPtr, B->m+1);
+	print_array_device("B RowInd", B->d_cscRowInd, B->nnz);
 	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, maxBlockAB, context );
 	/*print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);

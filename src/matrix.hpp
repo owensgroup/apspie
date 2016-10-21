@@ -1,11 +1,15 @@
 #ifndef MATRIX_HPP
 #define MATRIX_HPP
 
+#include <moderngpu.cuh>
+
 typedef struct matrix{
+	static const int DCSC = 4;
+
 	//DCSC cudaMallocs
 	int *d_dcscPartPtr;    // part+1
-	int *d_dcscColPtr_ind; // O(n) in expectation: use 2n to be safe
-	int *d_dcscColPtr_off; // O(n) in expectation: use 2n to be safe
+	int *d_dcscColPtr_ind; // O(n) in expectation: use DCSC*min(m,n) to be safe
+	int *d_dcscColPtr_off; // O(n) in expectation: use DCSC*min(m,n) to be safe
 	int *d_dcscRowInd;     // nnz
 	float *d_dcscVal;      // nnz)
 
@@ -40,6 +44,6 @@ void extract( d_matrix *B, const d_matrix *A );
 template<typename typeVal>
 void extract_csr2csc( d_matrix *B, const d_matrix *A );
 template <typename typeVal>
-void csr_to_dcsc( d_matrix *A, int partSize, int partNum, bool alloc=false );
+void csr_to_dcsc( d_matrix *A, int partSize, int partNum, mgpu::CudaContext& context, bool alloc=false );
 
 #endif

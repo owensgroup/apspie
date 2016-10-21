@@ -367,8 +367,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
     float total = mgpu::Reduce(d_output_total, A->m, context);
     long tc_count = mgpu::Reduce(d_output_counts, A->m, context);
-	print_array_device( d_output_total, A->m );
-	print_array_device( d_output_counts, A->m );
+	print_array_device( "float output", d_output_total, A->m );
+	print_array_device( "count output", d_output_counts, A->m );
     printf("tc_total:%f, tc_count:%ld\n", total, tc_count);
     return (float)tc_count / (float)total;
 }

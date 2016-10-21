@@ -13,6 +13,7 @@
 #include <cuda.h>
 #include <deque>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 
 #include <util.cuh>
 #include <spgemm.cuh>

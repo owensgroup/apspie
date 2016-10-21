@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <scratch.hpp>
+#include <stdint.h>
 
 #include <vector>
 #include <utility>
@@ -25,6 +26,15 @@ typedef struct pair {
 
 // Forward declare
 void custom_sort( arrayset *v, size_t size );
+
+static inline uint32_t log2(const uint32_t x) {
+  uint32_t y;
+  asm ( "\tbsr %1, %0\n"
+      : "=r"(y)
+      : "r" (x)
+  );
+  return y;
+}
 
 template<typename T>
 void print_end_interesting( T *array, int length=10 ) {
@@ -49,8 +59,9 @@ void print_end( T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_array( const T *array, int length=40 ) {
+void print_array( const char* str, const T *array, int length=40 ) {
     if( length>40 ) length=40;
+	std::cout << str << ":\n";
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
     }
@@ -58,14 +69,14 @@ void print_array( const T *array, int length=40 ) {
 }
 
 template<typename T>
-void print_array_device( const T *d_data, int length=40 ) {
+void print_array_device( const char* str, const T *d_data, int length=40 ) {
 	if( length>40 ) length=40;
 
     // Allocate array on host
     T *h_data = (T*) malloc(length * sizeof(T));
 
 	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
-	print_array( h_data, length );
+	print_array( str, h_data, length );
 
     // Cleanup
     if (h_data) free(h_data);
