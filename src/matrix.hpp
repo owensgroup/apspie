@@ -18,6 +18,9 @@ typedef struct matrix{
 	int *d_cscRowInd;
 	float *d_cscVal;
 
+	//DCSC host mallocs
+	int *h_dcscPartPtr;
+
 	//Host mallocs
 	int *h_cscColPtr;
 	int *h_cscRowInd;
@@ -45,5 +48,6 @@ template<typename typeVal>
 void extract_csr2csc( d_matrix *B, const d_matrix *A );
 template <typename typeVal>
 void csr_to_dcsc( d_matrix *A, int partSize, int partNum, mgpu::CudaContext& context, bool alloc=false );
+void copy_part( d_matrix *A );
 
 #endif

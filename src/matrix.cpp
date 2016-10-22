@@ -291,6 +291,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 	{
 		A->part = partNum;
 
+		A->h_dcscPartPtr = (int*)malloc((partNum+1)*sizeof(int));
 		cudaMalloc(&(A->d_dcscPartPtr), (partNum+1)*sizeof(int));
 	} else {
 	// Step 0: Preallocations for scratchpad memory
@@ -428,12 +429,14 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 	gpu_timer5.Stop();
 
 		// Check results
+	if( DEBUG )
+	{
 		printf("Number of partitions: %d\n", partNum);
 		printf("Doing radix sort on lower %d bits\n", end_bit);
 		printf("DCSC col length: %d\n", A->col_length);
 		CudaCheckError();
-		print_array_device("dcscRowInd", A->d_dcscRowInd, A->nnz+h_offsets[1]-1);
-		print_array_device("dcscVal", A->d_dcscVal, A->nnz+h_offsets[1]-1);
+		print_array_device("dcscRowInd", A->d_dcscRowInd, A->nnz);
+		print_array_device("dcscVal", A->d_dcscVal, A->nnz);
 		//print_array_device("dcscRowInd", A->d_dcscRowInd+h_offsets[1]-1, A->nnz);
 		//print_array_device("dcscRowInd", A->d_dcscRowInd+h_offsets[2]-1, A->nnz);
 		print_array_device("dcscColPtr_off", A->d_dcscColPtr_off, A->col_length);
@@ -441,6 +444,12 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		CudaCheckError();
 		print_array_device("dcscPartPtr", A->d_dcscPartPtr, partNum+1);
 		CudaCheckError();
+	}
+
+		cudaFree(d_temp_storage);
+		cudaFree(d_flagArray);
+		cudaFree(d_tempArray);
+		cudaFree(d_index);
 
 		elapsed1 += gpu_timer1.ElapsedMillis();
 		elapsed2 += gpu_timer2.ElapsedMillis();
@@ -453,4 +462,9 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		printf("Step 4: %f\n", elapsed4);
 		printf("Step 5: %f\n", elapsed5);
 	}
+}
+
+void copy_part( d_matrix *A )
+{
+	cudaMemcpy( A->h_dcscPartPtr, A->d_dcscPartPtr, A->part+1*sizeof(int), cudaMemcpyDeviceToHost);
 }

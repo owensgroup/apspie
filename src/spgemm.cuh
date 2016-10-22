@@ -2,16 +2,19 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
+#include <moderngpu.cuh>
 #include "mXv.cuh"
 #include "scratch.hpp"
 #include "matrix.hpp"
-#include "spgemmKernel.cuh"
+//#include "spgemmKernel.cuh"
+#include "spgemmKernel2.cuh"
 #include "triple.hpp"
 
 //#include "bhsparse.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
+#define MAX_GLOBAL 191000000
 
 template< typename typeVal >
 __global__ void populateRowIndVal( const int *d_cscColPtr, const int *d_cscRowInd, const typeVal *d_cscVal, int *d_dcscPartPtr, int *d_dcscColPtr_ind, int *d_dcscColPtr_off, int *d_dcscRowInd, typeVal *d_dcscVal, const int partNum, const int col_length, const int m, const int nnz )
@@ -64,24 +67,83 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrVa
 }
 
 // Matrix multiplication (Host code)
+void spgemmOuter( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
+
+
+
+}
+
+// Matrix multiplication (Host code)
 void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
 	// Main goal 1: 
 	//	-A in CSR -> A in DCSC
 	//  -B in CSC -> B in DCSR
-
 	csr_to_dcsc<float>( A, partSize, partNum, context, true );
 	csr_to_dcsc<float>( A, partSize, partNum, context );
 
-	//d_csr_to_dcsc( B, partSize, partNum, true );
-	//d_csr_to_dcsc( B, partSize, partNum );
+	csr_to_dcsc<float>( B, partSize, partNum, context, true );
+	csr_to_dcsc<float>( B, partSize, partNum, context );
 
 	// Main goal 2:
 	//	-spgemmKernel
 	//  -obtain C in CSR?
+
+	// Some test arrays
+	//int *d_output_triples;
+	//cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
+	//float *d_output_total; 
+	//cudaMalloc(&d_output_total, A->nnz*sizeof(float));
+
+	// Copy length to host
+	copy_part( A );
+	copy_part( B );
+
+    int *d_intersection;
+    CUDA_SAFE_CALL(cudaMalloc(&d_intersection, A->col_length*sizeof(int)));
+
+	float elapsed = 0.0f;
+    GpuTimer gpu_timer;
+	gpu_timer.Start();
+
+	// Form array to see how long each intersection is
+	int *h_inter = (int*)malloc((partNum*partNum+1)*sizeof(int));
+	h_inter[0] = 0;
+	int total=0;
+	int curr_A=0;
+	int curr_B=0;
+	int last_A;
+	int last_B;
+	print_array_device("B_dcscColPtr", A->d_dcscColPtr_ind+8670);
+	print_array_device("B_dcscColPtr", B->d_dcscColPtr_ind+8670);
+	for( int i=0; i<partNum; i++ ) printf("LengthA:%d, LengthB:%d\n", A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i], B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i]);
+
+/*	for( int i=0; i<partNum; i++ )
+	{
+		last_A = curr_A;
+		last_B = curr_B;
+		curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
+		curr_B = B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i];
+		printf("LengthA:%d, LengthB:%d, Total:%d\n", curr_A, curr_B, total);
+    	total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,
+        curr_A, B->d_dcscColPtr_ind+last_B, curr_B, d_intersection+total, context);
+		h_inter[i+1] = h_inter[i]+total;
+		CudaCheckError();
+	}*/
+	total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+A->h_dcscPartPtr[4],A->h_dcscPartPtr[5]-A->h_dcscPartPtr[4],B->d_dcscColPtr_ind+B->h_dcscPartPtr[5],B->h_dcscPartPtr[5]-B->h_dcscPartPtr[4], d_intersection, context);
+	gpu_timer.Stop();
+	elapsed += gpu_timer.ElapsedMillis();
+
+	printf("intersection took: %f\n", elapsed);
+	//mgpu::PrintArray(*d_intersection, "%4d", 10);
+	print_array_device("intersection", d_intersection, total);
+	//print_array("intersections",h_inter, partNum*partNum);
+
+	//long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, context );
+	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 
-// Matrix multiplication (Host code)
+/*// Matrix multiplication (Host code)
 void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
 	// Some test arrays
@@ -123,7 +185,7 @@ void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartB, h_nnzPartB, partNum*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockA, h_numBlockA, partNum*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockB, h_numBlockB, partNum*sizeof(int) ));
-	/*int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
+	int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
 	cudaMalloc( &d_nnzPartA, partNum*sizeof(int) );
 	cudaMalloc( &d_nnzPartB, partNum*sizeof(int) );
 	cudaMalloc( &d_numBlockA, partNum*sizeof(int) );
@@ -131,7 +193,7 @@ void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartA, h_nnzPartA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartB, h_nnzPartB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));*/
+	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
 
 	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
 	print_array("number of nnz in A", h_numBlockA, 5);
@@ -141,11 +203,11 @@ void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 	print_array_device("B ColPtr", B->d_cscColPtr, B->m+1);
 	print_array_device("B RowInd", B->d_cscRowInd, B->nnz);
 	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, maxBlockAB, context );
-	/*print_array_device(A->d_cscColPtr, A->m+1);
+	print_array_device(A->d_cscColPtr, A->m+1);
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);*/
-}
+	print_array_device(B->d_cscRowInd, B->nnz);
+}*/
 
 /*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
 {
