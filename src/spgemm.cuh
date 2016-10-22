@@ -13,6 +13,28 @@
 #define NTHREADS 512
 #define MAX_SHARED 49152
 
+template< typename typeVal >
+__global__ void populateRowIndVal( const int *d_cscColPtr, const int *d_cscRowInd, const typeVal *d_cscVal, int *d_dcscPartPtr, int *d_dcscColPtr_ind, int *d_dcscColPtr_off, int *d_dcscRowInd, typeVal *d_dcscVal, const int partNum, const int col_length, const int m, const int nnz )
+{
+	int start = threadIdx.x+blockIdx.x*blockDim.x;
+	int stride = gridDim.x*blockDim.x;
+	for( int idx=start; idx<m; idx+=stride )
+	{
+		int part = BinarySearchStart( d_dcscPartPtr, partNum+1, idx );
+
+		int row_start = __ldg( d_cscColPtr+idx );
+		int row_end = __ldg( d_cscColPtr+idx+1 );
+
+		while( row_start < row_end )
+		{
+			int k = __ldg( d_cscRowInd+row_start );
+
+			//int l = BinarySearchStart(
+			// Need to have lock
+		}
+	}
+}
+
 __global__ void gather( const int *input_array, const int* indices, const int length, int *output_array )
 {
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<length; idx+=blockDim.x*gridDim.x) {

@@ -359,8 +359,16 @@ void runBfs(int argc, char**argv) {
     buildMatrix<typeVal>( &D, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
 	float k_A = (float)edge/m;
 	float MEMORY = 128000.0;
-	float TARGET_PART_SIZE = aggro*MEMORY/k_A;
-	float TARGET_PART_NUM = (float)edge/MEMORY/aggro;
+	float TARGET_PART_SIZE;
+	float TARGET_PART_NUM;
+	if( edge > MEMORY*aggro )
+	{
+		TARGET_PART_SIZE = aggro*MEMORY/k_A;
+		TARGET_PART_NUM = (float)edge/MEMORY/aggro;
+	} else {
+		TARGET_PART_SIZE = (float)m;
+		TARGET_PART_NUM = 1.0;
+	}
 
 	printf("Mem: %f; Size: %d; Num: %d\n", MEMORY, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM);
 
