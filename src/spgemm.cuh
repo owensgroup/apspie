@@ -99,45 +99,82 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	copy_part( A );
 	copy_part( B );
 
-    int *d_intersection;
-    CUDA_SAFE_CALL(cudaMalloc(&d_intersection, A->col_length*sizeof(int)));
-
-	float elapsed = 0.0f;
-    GpuTimer gpu_timer;
-	gpu_timer.Start();
+	// Generate ColDiff
+	int *d_dcscColDiffA, *d_dcscColDiffB;
+    CUDA_SAFE_CALL(cudaMalloc(&d_dcscColDiffA, A->col_length*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_dcscColDiffB, B->col_length*sizeof(int)));
+    diff<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, d_dcscColDiffA, A->col_length );
+    diff<<<BLOCKS,THREADS>>>( B->d_dcscColPtr_off, d_dcscColDiffB, B->col_length );
 
 	// Form array to see how long each intersection is
 	int *h_inter = (int*)malloc((partNum*partNum+1)*sizeof(int));
 	h_inter[0] = 0;
 	int total=0;
-	int curr_A=0;
-	int curr_B=0;
-	int last_A;
-	int last_B;
-	print_array_device("B_dcscColPtr", A->d_dcscColPtr_ind+8670);
-	print_array_device("B_dcscColPtr", B->d_dcscColPtr_ind+8670);
-	for( int i=0; i<partNum; i++ ) printf("LengthA:%d, LengthB:%d\n", A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i], B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i]);
+	int curr_A=0; int curr_B=0;
+	int last_A; int last_B;
+	int max_A=0; int max_B=0;
+	for( int i=0; i<partNum; i++ ) { 
+		last_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
+		last_B = B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i];
+		printf("LengthA:%d, LengthB:%d\n", last_A, last_B);
+		if( last_A > max_A ) max_A = last_A;
+		if( last_B > max_B ) max_B = last_B;
+	}
+	printf("maxA:%d, maxB:%d\n", max_A, max_B);
+	printf("avgA:%d, avgB:%d\n", A->col_length/partNum, B->col_length/partNum);
 
-/*	for( int i=0; i<partNum; i++ )
-	{
-		last_A = curr_A;
-		last_B = curr_B;
-		curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
-		curr_B = B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i];
-		printf("LengthA:%d, LengthB:%d, Total:%d\n", curr_A, curr_B, total);
-    	total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,
-        curr_A, B->d_dcscColPtr_ind+last_B, curr_B, d_intersection+total, context);
-		h_inter[i+1] = h_inter[i]+total;
-		CudaCheckError();
-	}*/
-	total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+A->h_dcscPartPtr[4],A->h_dcscPartPtr[5]-A->h_dcscPartPtr[4],B->d_dcscColPtr_ind+B->h_dcscPartPtr[5],B->h_dcscPartPtr[5]-B->h_dcscPartPtr[4], d_intersection, context);
+	// Allocate maximum number of blocks
+    typedef mgpu::LaunchBoxVT<
+        128, 23, 0,
+        128, 11, 0,
+        128, 11, 0
+    > Tuning;
+    int2 launch = Tuning::GetLaunchParams(context);
+    const int NV = launch.x * launch.y;
+	int numBlocks = MGPU_DIV_UP( max_A+B->col_length, NV );
+	//int numBlocks = MGPU_DIV_UP( max_A+max_B, NV );
+	MGPU_MEM(int) countsDevice = context.Malloc<int>(numBlocks+1);
+	CudaCheckError();
+
+	// Allocate space for intersection indices
+    int *d_intersection, *d_interbalance;
+    CUDA_SAFE_CALL(cudaMalloc(&d_intersection, A->col_length*partNum*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_interbalance, A->col_length*partNum*sizeof(int)));
+
+	float elapsed = 0.0f;
+    GpuTimer gpu_timer;
+	gpu_timer.Start();
+
+	for( int i=0; i<partNum; i++ )
+		for( int j=0; j<partNum; j++ )
+		{
+			last_A = curr_A;
+			last_B = curr_B;
+			curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
+			//curr_B = B->col_length;
+			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
+			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
+    		total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B,d_dcscColDiffB+last_A, curr_B, d_intersection+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
+			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
+    		//total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,curr_A, B->d_dcscColPtr_ind, curr_B, d_intersection+h_inter[i], &countsDevice, context);
+			//h_inter[i+1] = h_inter[i]+total;
+			CudaCheckError();
+		}
+	/*last_A = A->h_dcscPartPtr[6+1]-A->h_dcscPartPtr[6];
+	last_B = B->h_dcscPartPtr[6+1]-B->h_dcscPartPtr[6];
+	curr_A = A->h_dcscPartPtr[1]-A->h_dcscPartPtr[0];
+	curr_B = B->h_dcscPartPtr[7+1]-B->h_dcscPartPtr[7];
+	printf("LengthA:%d, LengthB:%d, Total:%d\n", curr_A, curr_B, total);
+    total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, true, int>(A->d_dcscColPtr_ind,
+    curr_A, B->d_dcscColPtr_ind, B->col_length, d_intersection, context);*/
 	gpu_timer.Stop();
 	elapsed += gpu_timer.ElapsedMillis();
 
 	printf("intersection took: %f\n", elapsed);
-	//mgpu::PrintArray(*d_intersection, "%4d", 10);
-	print_array_device("intersection", d_intersection, total);
-	//print_array("intersections",h_inter, partNum*partNum);
+	print_array_device("intersection\n", d_intersection, partNum*partNum+1);
+	print_array_device("interbalance\n", d_interbalance, partNum*partNum+1);
+	print_array("intersection (first row scan)", h_inter, partNum+1);
+	printf("intersection (total): %d", h_inter[partNum*partNum]);
 
 	//long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, context );
 	//spgemmOuter( C, A, B, partSize, partNum, context );

@@ -367,7 +367,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		if( DEBUG ) print_array_device("flag_array after", d_flagArray, A->nnz);
 		if( DEBUG ) CudaCheckError();
 		mgpu::Scan<mgpu::MgpuScanTypeExc>( d_flagArray, A->nnz, 0, mgpu::plus<int>(), (int*)0, &(A->col_length), d_tempArray, context );
-		if( A->col_length > A->DCSC*min(A->m,A->n) ) { printf("Error: array too long\n"); return; }
+		if( A->col_length > A->DCSC*min(A->m,A->n) ) { printf("Error: array %d too long for %d\n", A->col_length, A->DCSC*min(A->m,A->n)); return; }
 	 	streamCompact<<<BLOCKS,THREADS>>>( d_flagArray, d_tempArray, A->d_dcscColPtr_off, A->nnz );
 
 	gpu_timer2.Stop();
@@ -466,5 +466,5 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 
 void copy_part( d_matrix *A )
 {
-	cudaMemcpy( A->h_dcscPartPtr, A->d_dcscPartPtr, A->part+1*sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy( A->h_dcscPartPtr, A->d_dcscPartPtr, (A->part+1)*sizeof(int), cudaMemcpyDeviceToHost);
 }
