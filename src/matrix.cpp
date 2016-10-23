@@ -375,8 +375,9 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 
 	// Step 3: Use d_dcscColPtr_off and segmented sort output to get d_dcscColPtr_ind
 		IntervalGather( A->col_length, A->d_dcscColPtr_off, d_index, A->col_length, A->d_dcscRowInd, A->d_dcscColPtr_ind, context );
-		shiftRight<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, A->col_length );
+		shiftRightAdd<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, A->col_length );
 		cudaMemset( A->d_dcscColPtr_off, 0, sizeof(int));
+		cudaMemcpy( A->d_dcscColPtr_off+A->col_length, &(A->nnz), sizeof(int), cudaMemcpyHostToDevice);
 		if( DEBUG ) CudaCheckError();
 
 	gpu_timer3.Stop();
@@ -439,7 +440,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		print_array_device("dcscVal", A->d_dcscVal, A->nnz);
 		//print_array_device("dcscRowInd", A->d_dcscRowInd+h_offsets[1]-1, A->nnz);
 		//print_array_device("dcscRowInd", A->d_dcscRowInd+h_offsets[2]-1, A->nnz);
-		print_array_device("dcscColPtr_off", A->d_dcscColPtr_off, A->col_length);
+		print_array_device("dcscColPtr_off", A->d_dcscColPtr_off, A->col_length+1);
 		print_array_device("dcscColPtr_ind", A->d_dcscColPtr_ind, A->col_length);
 		CudaCheckError();
 		print_array_device("dcscPartPtr", A->d_dcscPartPtr, partNum+1);

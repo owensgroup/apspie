@@ -46,10 +46,10 @@ __global__ void gather( const int *input_array, const int* indices, const int le
     }	
 }
 
-__global__ void shiftRight( int *input_array, const int length )
+__global__ void shiftRightAdd( int *input_array, const int length )
 {
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<length-1; idx+=blockDim.x*gridDim.x) {
-        input_array[idx+1]=input_array[idx];
+        input_array[idx+1]=input_array[idx]+1;
     }	
 }
 
@@ -105,6 +105,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_dcscColDiffB, B->col_length*sizeof(int)));
     diff<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, d_dcscColDiffA, A->col_length );
     diff<<<BLOCKS,THREADS>>>( B->d_dcscColPtr_off, d_dcscColDiffB, B->col_length );
+	print_array_device("DiffA", d_dcscColDiffA, A->col_length);
+	print_array_device("DiffB", d_dcscColDiffB, B->col_length);
 
 	// Form array to see how long each intersection is
 	int *h_inter = (int*)malloc((partNum*partNum+1)*sizeof(int));
@@ -154,11 +156,11 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 			//curr_B = B->col_length;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
-    		total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B,d_dcscColDiffB+last_A, curr_B, d_intersection+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
+    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersection+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
     		//total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,curr_A, B->d_dcscColPtr_ind, curr_B, d_intersection+h_inter[i], &countsDevice, context);
 			//h_inter[i+1] = h_inter[i]+total;
-			CudaCheckError();
+			//CudaCheckError();
 		}
 	/*last_A = A->h_dcscPartPtr[6+1]-A->h_dcscPartPtr[6];
 	last_B = B->h_dcscPartPtr[6+1]-B->h_dcscPartPtr[6];
@@ -171,10 +173,10 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	elapsed += gpu_timer.ElapsedMillis();
 
 	printf("intersection took: %f\n", elapsed);
-	print_array_device("intersection\n", d_intersection, partNum*partNum+1);
-	print_array_device("interbalance\n", d_interbalance, partNum*partNum+1);
+	print_array_device("intersection", d_intersection, h_inter[partNum*partNum]);
+	print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
 	print_array("intersection (first row scan)", h_inter, partNum+1);
-	printf("intersection (total): %d", h_inter[partNum*partNum]);
+	printf("intersection (total): %d\n", h_inter[partNum*partNum]);
 
 	//long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, context );
 	//spgemmOuter( C, A, B, partSize, partNum, context );
