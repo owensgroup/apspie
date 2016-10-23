@@ -183,6 +183,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     // Step 0: Preallocations for scratchpad memory
     int *d_flagArray, *d_tempArray, *d_lionArray, *d_sootArray, *d_index;
 	int *d_catmArray, *d_ouseArray, *d_rootArray, *d_beerArray;
+	float *d_tempValA, *d_tempValB;
     CUDA_SAFE_CALL(cudaMalloc(&d_flagArray, A->nnz*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_tempArray, 10*A->nnz*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_lionArray, A->nnz*sizeof(int)));
@@ -191,6 +192,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_ouseArray, 10*A->nnz*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_rootArray, A->nnz*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_beerArray, 10*A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_tempValA, 10*A->nnz*sizeof(float)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_tempValB, 10*A->nnz*sizeof(float)));
 
 	// d_index
     CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
@@ -239,6 +242,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	printf("lengthA:%d, lengthB:%d, size:%d, shift:%d\n", lengthA, lengthB, size, shift);
 
 // Step 2: Set-up for IntervalExpand A's RowInd
+// Symmetric to here:
 	if( length>A->nnz ) printf("Error: Length %d > %d\n", length, A->nnz);
 	//IntervalExpand(lengthA, d_sootArray, d_dcscColDiffA, size, C->d_cscRowInd, context);
 	IntervalExpand(lengthA, d_rootArray, d_sootArray, size, C->d_cscRowInd, context);
@@ -261,18 +265,13 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 
 	//h_interbalance[(i+1)*partNum];
 
-	if( i==0 ) { 
-		print_array_device( "ACol_off (good)", d_tempArray, lengthA);
-		print_array_device( "BCol_off (good)", d_flagArray, h_inter[partNum]);
-		print_array_device( "AColDiff (good)", d_lionArray, lengthA);
-		print_array_device( "AColDiff (good)", d_dcscColDiffA, h_inter[partNum]);
-		print_array_device( "BColDiff (good)", d_dcscColDiffB, h_inter[partNum]);
-		print_array_device( "A RowInd", d_catmArray, lengthA);
-		print_array_device( "B RowInd", d_ouseArray, lengthB);
-		print_array_device( "A expanded", C->d_cscRowInd, length);
-		print_array_device( "B expanded", C->d_cscColInd, length);
-		print_array_device( " expanded", d_rootArray, lengthA);
-		print_array_device( " expanded", d_sootArray, lengthB);
+	if( i==0 ) {
+		print_array_device( "A RowInd temp", d_catmArray, lengthA);
+		print_array_device( "B ColInd temp", d_ouseArray, lengthB);
+		print_array_device( "C RowInd", C->d_cscRowInd, length);
+		print_array_device( "C ColInd", C->d_cscColInd, length);
+		print_array_device( "A RowVal", C->d_cscVal, length);
+		print_array_device( "B ColVal", d_tempValA, length);
 		print_array_device( "scanbalance", d_scanbalance, h_inter[(i+1)*partNum]);
 		}
 	}
