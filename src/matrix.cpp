@@ -3,8 +3,7 @@
 #include <moderngpu.cuh>
 
 #include "matrix.hpp"
-
-#define DEBUG 1
+#include "common.hpp"
 
 void matrix_new( d_matrix *A, int m, int n )
 {
@@ -400,7 +399,9 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		if( DEBUG ) print_array_device("RowInd", A->d_cscRowInd, A->nnz);
 		if( DEBUG ) CudaCheckError();
 
-		// Generate cscColInd (d_tempArray)
+		// Generate cscColInd using cscColPtr => (d_tempArray)
+		// Note: Modern GPU 1.0 has bug in documentation under Host functions for
+		// 		 IntervalExpand
 		IntervalExpand( A->nnz, A->d_cscColPtr, d_index, A->m, d_tempArray, context );
 		if( DEBUG ) CudaCheckError();
 

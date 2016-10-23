@@ -8,6 +8,7 @@
 #include "matrix.hpp"
 //#include "spgemmKernel.cuh"
 #include "spgemmKernel2.cuh"
+#include "common.hpp"
 #include "triple.hpp"
 
 //#include "bhsparse.h"
@@ -105,8 +106,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_dcscColDiffB, B->col_length*sizeof(int)));
     diff<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, d_dcscColDiffA, A->col_length );
     diff<<<BLOCKS,THREADS>>>( B->d_dcscColPtr_off, d_dcscColDiffB, B->col_length );
-	print_array_device("DiffA", d_dcscColDiffA, A->col_length);
-	print_array_device("DiffB", d_dcscColDiffB, B->col_length);
+	//print_array_device("DiffA", d_dcscColDiffA, A->col_length);
+	//print_array_device("DiffB", d_dcscColDiffB, B->col_length);
 
 	// Form array to see how long each intersection is
 	int *h_inter = (int*)malloc((partNum*partNum+1)*sizeof(int));
@@ -118,7 +119,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	for( int i=0; i<partNum; i++ ) { 
 		last_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
 		last_B = B->h_dcscPartPtr[i+1]-B->h_dcscPartPtr[i];
-		printf("LengthA:%d, LengthB:%d\n", last_A, last_B);
+		//printf("LengthA:%d, LengthB:%d\n", last_A, last_B);
 		if( last_A > max_A ) max_A = last_A;
 		if( last_B > max_B ) max_B = last_B;
 	}
@@ -144,10 +145,12 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionA, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionB, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_interbalance, A->col_length*partNum*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_interbalance, A->col_length*partNum*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_scanbalance, A->col_length*partNum*sizeof(int)));
 
 	// C->ColInd
 	cudaMalloc(&(C->d_cscColInd), MAX_GLOBAL*sizeof(int));
+	cudaMalloc(&(C->d_cscRowInd), MAX_GLOBAL*sizeof(int));
+	cudaMalloc(&(C->d_cscVal), MAX_GLOBAL*sizeof(float));
 
 	float elapsed = 0.0f;
     GpuTimer gpu_timer;
@@ -159,42 +162,127 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 			last_A = curr_A;
 			last_B = curr_B;
 			curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
-			//curr_B = B->col_length;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
     		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
     		//total = mgpu::SetOpPairs2<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, A, B, C, context);
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
-    		//total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,curr_A, B->d_dcscColPtr_ind, curr_B, d_intersection+h_inter[i], &countsDevice, context);
-			//h_inter[i+1] = h_inter[i]+total;
-			//CudaCheckError();
 		}
 	gpu_timer.Stop();
 	elapsed += gpu_timer.ElapsedMillis();
 
 	printf("intersection took: %f\n", elapsed);
-	print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
-	print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
-	print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
-	print_array("intersection (first row scan)", h_inter, partNum+1);
-	printf("intersection (total): %d\n", h_inter[partNum*partNum]);
+	if( DEBUG ) { 
+		print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
+		print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
+		print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
+		print_array("intersection (first row scan)", h_inter, partNum+1);
+		printf("intersection (total): %d\n", h_inter[partNum*partNum]); }
 
+	// Important mallocs
+    // Step 0: Preallocations for scratchpad memory
+    int *d_flagArray, *d_tempArray, *d_lionArray, *d_sootArray, *d_index;
+	int *d_catmArray, *d_ouseArray, *d_rootArray, *d_beerArray;
+    CUDA_SAFE_CALL(cudaMalloc(&d_flagArray, A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_tempArray, 10*A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_lionArray, A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_sootArray, A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_catmArray, A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_ouseArray, 10*A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_rootArray, A->nnz*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_beerArray, 10*A->nnz*sizeof(int)));
+
+	// d_index
+    CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
+    int *h_index = (int*)malloc(A->nnz*sizeof(int));
+    for( int i=0; i<A->nnz;i++ ) h_index[i]=i;
+    cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),cudaMemcpyHostToDevice);
+
+	// h_interbalance
 	int *h_interbalance = (int*)malloc(h_inter[partNum*partNum]*sizeof(int));
-	cudaMemcpy( h_interbalance, d_interbalance, h_inter[partNum*partNum]*sizeof(int), cudaMemcpyDeviceToHost);
-	int max_balance=0;
-	long long sum_balance=0;
-	for( int i=0; i<h_inter[partNum*partNum]; i++ ) {if( h_interbalance[i]>max_balance ) max_balance = h_interbalance[i]; sum_balance+=(long long)h_interbalance[i];}
-	printf("Max:%d, Avg:%d, Sum:%lld\n", max_balance, sum_balance/h_inter[partNum*partNum], sum_balance);
+	cudaMemcpy(h_interbalance, d_interbalance, h_inter[partNum*partNum]*sizeof(int), cudaMemcpyDeviceToHost);
+	//print_array("interbalance", h_interbalance, h_inter[partNum*partNum]);
 
 	float elapsed2 = 0.0f;
 	GpuTimer gpu_timer2;
 	gpu_timer2.Start();
-	LaunchKernel<float>( C, A, B, d_intersectionA, d_intersectionB, d_interbalance, h_inter, max_AB, partSize, partNum, context );
+
+	for( int i=0; i<1; i++ ) {
+	//for( int i=0; i<partNum; i++ ) {
+
+	int size = h_inter[(i+1)*partNum]-h_inter[i*partNum];
+	int shift= h_inter[i*partNum];
+	int lengthA = 0;
+	int lengthB = 0;
+	int length;
+
+	CudaCheckError();
+// Step 1: IntervalGather d_intersection: dcscColPtr_off => dcscColPtr_off (good)
+	IntervalGather( size, d_intersectionA+shift, d_index, size, A->d_dcscColPtr_off, d_tempArray, context );
+	IntervalGather( size, d_intersectionB+shift, d_index, size, B->d_dcscColPtr_off, d_flagArray, context );
+	IntervalGather( size, d_intersectionA+shift, d_index, size, d_dcscColDiffA, d_lionArray, context );
+	IntervalGather( size, d_intersectionB+shift, d_index, size, d_dcscColDiffB, d_sootArray, context );
+
+// Step 1b: Must scan both good diffs - unnecessary since already have off good!
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lionArray, size, 0, mgpu::plus<int>(), (int*)0, &(lengthA), d_rootArray, context );
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_sootArray, size, 0, mgpu::plus<int>(), (int*)0, &(lengthB), d_beerArray, context );
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance, h_inter[(i+1)*partNum], 0, mgpu::plus<int>(), (int*)0, &(length), d_scanbalance, context );
+// But we need lengthA and lengthB!
+// Can get away with just a reduce
+
+// Step 1c: Must IntervalGather to form RowInd
+	IntervalGather( lengthA, d_tempArray, d_rootArray, size, A->d_dcscRowInd, d_catmArray, context );
+	IntervalGather( lengthA, d_tempArray, d_rootArray, size, A->d_dcscVal, d_tempValA, context );
+	IntervalGather( lengthB, d_flagArray, d_beerArray, size, B->d_dcscRowInd, d_ouseArray, context );
+	IntervalGather( lengthB, d_flagArray, d_beerArray, size, B->d_dcscVal, d_tempValB, context );
+	CudaCheckError();
+	printf("lengthA:%d, lengthB:%d, size:%d, shift:%d\n", lengthA, lengthB, size, shift);
+
+// Step 2: Set-up for IntervalExpand A's RowInd
+	if( length>A->nnz ) printf("Error: Length %d > %d\n", length, A->nnz);
+	//IntervalExpand(lengthA, d_sootArray, d_dcscColDiffA, size, C->d_cscRowInd, context);
+	IntervalExpand(lengthA, d_rootArray, d_sootArray, size, C->d_cscRowInd, context);
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( C->d_cscRowInd, lengthA, 0, mgpu::plus<int>(), (int*)0, &(length), d_tempArray, context );
+	IntervalExpand(length, d_tempArray, d_catmArray, lengthA, C->d_cscRowInd, context);
+	IntervalExpand(length, d_tempArray, d_tempValA, lengthA, C->d_cscVal, context);
+	CudaCheckError();
+
+// soot = ColDiffGoodB
+// Step 3: Set-up for IntervalExpand B's RowInd
+	IntervalExpand(lengthA, d_rootArray, d_sootArray, size, d_lionArray, context);
+	IntervalExpand(lengthA, d_rootArray, d_beerArray, size, d_flagArray, context);
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lionArray, lengthA, 0, mgpu::plus<int>(), (int*)0, &(length), d_beerArray, context);
+	IntervalGather( length, d_flagArray, d_beerArray, lengthA, d_ouseArray, C->d_cscColInd, context );
+	IntervalGather( length, d_flagArray, d_beerArray, lengthA, d_tempValB, d_tempValA, context );
+
+// Step 4: need to sort pairs (C->d_cscColInd, d_tempValA)
+
+// Step 5: ewiseMult into C->d_cscVal
+
+	//h_interbalance[(i+1)*partNum];
+
+	if( i==0 ) { 
+		print_array_device( "ACol_off (good)", d_tempArray, lengthA);
+		print_array_device( "BCol_off (good)", d_flagArray, h_inter[partNum]);
+		print_array_device( "AColDiff (good)", d_lionArray, lengthA);
+		print_array_device( "AColDiff (good)", d_dcscColDiffA, h_inter[partNum]);
+		print_array_device( "BColDiff (good)", d_dcscColDiffB, h_inter[partNum]);
+		print_array_device( "A RowInd", d_catmArray, lengthA);
+		print_array_device( "B RowInd", d_ouseArray, lengthB);
+		print_array_device( "A expanded", C->d_cscRowInd, length);
+		print_array_device( "B expanded", C->d_cscColInd, length);
+		print_array_device( " expanded", d_rootArray, lengthA);
+		print_array_device( " expanded", d_sootArray, lengthB);
+		print_array_device( "scanbalance", d_scanbalance, h_inter[(i+1)*partNum]);
+		}
+	}
+
+	//LaunchKernel<float>( C, A, B, d_intersectionA, d_intersectionB, d_interbalance, h_inter, max_AB, partSize, partNum, context );
 	gpu_timer2.Stop();
 
-	elapsed += gpu_timer.ElapsedMillis();
+	elapsed2 += gpu_timer2.ElapsedMillis();
 
-	printf("outer product took: %f\n", elapsed);
+	printf("outer product took: %f\n", elapsed2);
 	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 
