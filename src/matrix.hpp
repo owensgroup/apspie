@@ -13,6 +13,9 @@ typedef struct matrix{
 	int *d_dcscRowInd;     // nnz
 	float *d_dcscVal;      // nnz)
 
+	//COO cudaMallocs
+	int *d_cscColInd;
+
 	//Device cudaMallocs
 	int *d_cscColPtr;
 	int *d_cscRowInd;
