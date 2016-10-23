@@ -139,8 +139,9 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CudaCheckError();
 
 	// Allocate space for intersection indices
-    int *d_intersection, *d_interbalance;
-    CUDA_SAFE_CALL(cudaMalloc(&d_intersection, A->col_length*partNum*sizeof(int)));
+    int *d_intersectionA, *d_intersectionB, *d_interbalance;
+    CUDA_SAFE_CALL(cudaMalloc(&d_intersectionA, A->col_length*partNum*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_intersectionB, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_interbalance, A->col_length*partNum*sizeof(int)));
 
 	float elapsed = 0.0f;
@@ -156,7 +157,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 			//curr_B = B->col_length;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
-    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersection+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
+    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
     		//total = mgpu::SetOpKeys<mgpu::MgpuSetOpIntersection, false, int>(A->d_dcscColPtr_ind+last_A,curr_A, B->d_dcscColPtr_ind, curr_B, d_intersection+h_inter[i], &countsDevice, context);
 			//h_inter[i+1] = h_inter[i]+total;
@@ -173,7 +174,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	elapsed += gpu_timer.ElapsedMillis();
 
 	printf("intersection took: %f\n", elapsed);
-	print_array_device("intersection", d_intersection, h_inter[partNum*partNum]);
+	print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
+	print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
 	print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
 	print_array("intersection (first row scan)", h_inter, partNum+1);
 	printf("intersection (total): %d\n", h_inter[partNum*partNum]);
