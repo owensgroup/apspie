@@ -150,7 +150,8 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
 		__shared__ int s_part_AB;
-		//__shared__ cub::BlockReduce<float, THREADS>::TempStorage temp;
+		__shared__ cub::BlockReduce<float, THREADS>::TempStorage tempFloat;
+		__shared__ cub::BlockReduce<int, THREADS>::TempStorage tempInt;
 
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
@@ -185,12 +186,18 @@ __device__ void deviceIntersectTwoSmallNL(
 			{
 				s_cscRowIndA[tid] = __ldg(d_cscRowIndA+idx_A);
 				s_cscValA[tid] = __ldg(d_cscValA+idx_A);
-			}
+			} //else {
+			//	s_cscRowIndA[tid] = 0;
+			//	s_cscValA[tid] = 0.0f;
+			//}
 			if( idx_B < nnzPartB[part_B] )
 			{
 				s_cscRowIndB[tid] = __ldg(d_cscRowIndB+idx_B);
 				s_cscValB[tid] = __ldg(d_cscValB+idx_B);
-			}*/
+			} //else {
+			//	s_cscRowIndB[tid] = 0;
+			//	s_cscValB[tid] = 0.0f;
+			//}*/
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
@@ -263,11 +270,18 @@ __device__ void deviceIntersectTwoSmallNL(
                 }
             }*/
 
-			//float result;
-    		//result = cub::BlockReduce<float, THREADS>(temp).Sum(s_cscValA[idx]);
-			//if(tid==0) d_output_total[blockIdx.x] = result;
+			float result = 0.0f;
+			int result2 = 0;
+    		result += cub::BlockReduce<float, THREADS>(tempFloat).Sum(s_cscValA[tid]);
+    		result += cub::BlockReduce<float, THREADS>(tempFloat).Sum(s_cscValB[tid]);
+    		result2+= cub::BlockReduce<int, THREADS>(tempInt).Sum(s_cscRowIndA[tid]);
+    		result2+= cub::BlockReduce<int, THREADS>(tempInt).Sum(s_cscRowIndB[tid]);
+			if(tid==0) {
+				d_output_total[blockIdx.x] = result;
+				d_output_counts[blockIdx.x] = result2;
+			}
 
-			tid_thread = tid-THREADS;
+			/*tid_thread = tid-THREADS;
 			#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
@@ -276,7 +290,7 @@ __device__ void deviceIntersectTwoSmallNL(
 				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
 				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
 				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
-			}
+			}*/
     	}
 }
 
