@@ -155,7 +155,7 @@ __device__ int deviceIntersectTwoSmallNL(
 		
 
 		// Use col_lengthA for now (for symmetric matrices)
-        for (SizeT idx = gid; idx < h_inter1; idx += stride) {
+        for (SizeT idx = wid; idx < h_inter1; idx += stride) {
         //for (SizeT idx = gid; idx < h_inter1; idx += stride) {
         //for (SizeT idx = gid; idx < partNum*partNum*col_lengthA; idx += stride) {
 
@@ -193,15 +193,16 @@ __device__ int deviceIntersectTwoSmallNL(
 			float val1 = 0.0f;
 			float val2 = 0.0f;
 
-			
-			//for( SizeT idx2 = tid+src_it; idx2<src_end; idx2+=32 ) {
-			while( src_it < src_end ) {
-					col_idx += d_dcscRowIndA[src_it];
-					val1  += d_dcscValA[src_it];
-				src_it++;
+			for( SizeT idx2 = tid+src_it; idx2<src_end; idx2+=32 ) {
+				col_idx += d_dcscRowIndA[idx2];
+				val1  += d_dcscValA[idx2];
 			}
-				dst_it = dst_safe;
-				while( dst_it < dst_end ) {
+
+			for( SizeT idx2 = tid+dst_it; idx2<dst_end; idx2+=32 ) {
+				row_idx += d_dcscRowIndB[idx2];
+				val2 += d_dcscValB[idx2];
+			}
+			/*	while( dst_it < dst_end ) {
 					row_idx += d_dcscRowIndB[dst_it];
 					val2  += d_dcscValB[dst_it];
 					//d_cscColIndC[write] = col_idx;
@@ -210,18 +211,18 @@ __device__ int deviceIntersectTwoSmallNL(
 					write++;
 					dst_it++;
 					count++;
-				}
+				}*/
 
 			int result;
 			int result2;
 			float resultFloat;
-    		if(idx<THREADS) {
+    		if(tid<THREADS) {
 				result = cub::BlockReduce<int, THREADS>(temp).Sum(row_idx);
     			result2 = cub::BlockReduce<int, THREADS>(temp).Sum(col_idx);
 				resultFloat = cub::BlockReduce<float, THREADS>(tempFloat).Sum(val1);
 				resultFloat += cub::BlockReduce<float, THREADS>(tempFloat).Sum(val2);
 			}
-			if(idx==0) { 
+			if(tid==0) { 
 				//printf("Total: %d\n", result); 
 				d_cscColIndC[blockIdx.x] = result;
 				d_cscRowIndC[blockIdx.x] = result2;
