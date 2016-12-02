@@ -1,4 +1,5 @@
 #include <cub/cub.cuh>
+
 #define BLOCKSIZE 32
 
 #include "triple.hpp"
@@ -153,6 +154,10 @@ __device__ void deviceIntersectTwoSmallNL(
 		__shared__ cub::BlockReduce<float, THREADS>::TempStorage tempFloat;
 		__shared__ cub::BlockReduce<int, THREADS>::TempStorage tempInt;
 
+		const int NT = THREADS;
+		const int VT = UNROLL;
+		const int NV = NT*VT;
+
         // each thread process NV edge pairs
         // Each block get a block-wise intersect count
         SizeT start = threadIdx.x + blockIdx.x * blockDim.x;
@@ -202,7 +207,12 @@ __device__ void deviceIntersectTwoSmallNL(
 
 			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
 			int tid_thread = tid-THREADS;
-			#pragma unroll
+
+			mgpu::DeviceGlobalToShared<NT, VT, int*, int>( s_part_AB, d_cscRowIndA, tid, s_cscRowIndA );
+			mgpu::DeviceGlobalToShared<NT, VT, float*, float>( s_part_AB, d_cscValA, tid, s_cscValA );
+			mgpu::DeviceGlobalToShared<NT, VT, int*, int>( s_part_AB, d_cscRowIndB, tid, s_cscRowIndB );
+			mgpu::DeviceGlobalToShared<NT, VT, float*, float>( s_part_AB, d_cscValB, tid, s_cscValB );
+			/*#pragma unroll
 			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
 			{
 				tid_thread += THREADS;
@@ -210,7 +220,7 @@ __device__ void deviceIntersectTwoSmallNL(
 				s_cscValA[tid_thread] = d_cscValA[block_A*SHARED+tid_thread];
 				s_cscRowIndB[tid_thread] = d_cscRowIndB[block_B*SHARED+tid_thread];
 				s_cscValB[tid_thread] = d_cscValB[block_B*SHARED+tid_thread];
-			}
+			}*/
 
 			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
 			// Generate cscColPtrA that is local to cscRowIndA[0 ... 1023]
@@ -351,7 +361,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     // Set 48kB shared memory 
     //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferL1));
     CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
-   
+
+	printf("partSize: %d, partNum: %d\n", partSize, partNum);  
+ 
 	CudaCheckError();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;

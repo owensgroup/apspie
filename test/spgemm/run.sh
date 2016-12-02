@@ -3,21 +3,23 @@
 ARCH="GEN_SM10"
 
 if [ "$ARCH" = "GEN_SM5" ] ; then
-	./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
-	./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx
-	./test /data/gunrock_dataset/large/hood/hood.mtx
-	./test /data/gunrock_dataset/large/pwtk/pwtk.mtx 
-	./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx
-	./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx 
+	#./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
+	./test /data/gunrock_dataset/large/consph/consph.mtx
+	#./test /data/gunrock_dataset/large/hood/hood.mtx
+	#./test /data/gunrock_dataset/large/pwtk/pwtk.mtx 
+	#./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx
+	#./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx 
 fi
 
 if [ "$ARCH" = "GEN_SM10" ] ; then
+	./test /data/gunrock_dataset/large/consph/consph.mtx -undirected
+	./test /data/gunrock_dataset/large/webbase-1M/webbase-1M.mtx
 	./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
 	./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx -undirected
 	./test /data/gunrock_dataset/large/hood/hood.mtx -undirected
 	./test /data/gunrock_dataset/large/pwtk/pwtk.mtx -undirected
 	./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx
-	./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx -undirected
+	#./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx -undirected
 fi
 
 for i in mc2depi pdb1HYS hood pwtk mouse_gene
@@ -29,9 +31,9 @@ done
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx
-    #./test ../../dataset/small/test_bc.mtx
-    #./test ../../dataset/small/test_pr.mtx
-    #./test ../../dataset/small/chesapeake.mtx
+    ./test ../../dataset/small/test_bc.mtx
+    ./test ../../dataset/small/test_pr.mtx
+    ./test ../../dataset/small/chesapeake.mtx
 fi
 
 

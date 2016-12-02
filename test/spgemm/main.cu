@@ -238,6 +238,7 @@ int maxDegree( const int m, int *h_cscColPtrA ) {
 
 void runBfs(int argc, char**argv) { 
     int m, n, edge;
+	cudaSetDevice(1);
     mgpu::ContextPtr context = mgpu::CreateCudaDevice(0);
 
     // Define what filetype edge value should be stored
@@ -356,7 +357,7 @@ void runBfs(int argc, char**argv) {
 	// Statistics:
 	// MEMORY = 128000 (L2), 1000 (L1)
     buildMatrix<typeVal>( &D, edge, h_cooRowIndA, h_cooColIndA, h_cooValA );
-	float AGGRO_FACTOR = 0.5;  // a value in (0-1] that describes how close to 
+	float AGGRO_FACTOR = 1.0;  // a value in (0-1] that describes how close to 
 								// shared mem threshold
 	float k_A = (float)edge/m;
 	float MEMORY = 128000.0;
