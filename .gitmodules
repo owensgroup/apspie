@@ -8,3 +8,6 @@
 [submodule "ext/cudpp"]
 	path = ext/cudpp
 	url = https://github.com/cudpp/cudpp.git
+[submodule "ext/bhsparse"]
+	path = ext/bhsparse
+	url = https://github.com/bhSPARSE/Benchmark_SpGEMM_using_CSR.git
