@@ -11,12 +11,50 @@
 #include "common.hpp"
 #include "triple.hpp"
 
-//#include "bhsparse.h"
+#include "bhsparse.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
 #define MAX_GLOBAL 270000000
 
+int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
+{
+	int err = 0;
+    bhsparse *bh_sparse = new bhsparse();
+
+	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
+	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
+	platforms[BHSPARSE_CUDA] = true;
+    err = bh_sparse->initPlatform(platforms);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    err = bh_sparse->initData(A->m, A->n, B->n,
+                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
+                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
+                          C->h_cscColPtr);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    for (int i = 0; i < 3; i++)
+    {
+        err = bh_sparse->warmup();
+        if(err != BHSPARSE_SUCCESS) return err;
+    }
+
+    err = bh_sparse->spgemm();
+    if(err != BHSPARSE_SUCCESS) return err;
+
+    // read back C
+    C->nnz = bh_sparse->get_nnzC();
+    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
+    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
+
+    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
+    if(err != BHSPARSE_SUCCESS) return err;
+
+	return BHSPARSE_SUCCESS;
+}
+
+// Uses cuSPARSE SpGEMM
 template< typename typeVal >
 __global__ void populateRowIndVal( const int *d_cscColPtr, const int *d_cscRowInd, const typeVal *d_cscVal, int *d_dcscPartPtr, int *d_dcscColPtr_ind, int *d_dcscColPtr_off, int *d_dcscRowInd, typeVal *d_dcscVal, const int partNum, const int col_length, const int m, const int nnz )
 {
@@ -164,7 +202,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 			last_B = curr_B;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
-    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
+    		//total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
     		//total = mgpu::SetOpPairs2<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, A, B, C, context);
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
 		}
@@ -351,43 +389,6 @@ void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 	print_array_device(A->d_cscRowInd, A->nnz);
 	print_array_device(B->d_cscColPtr, B->m+1);
 	print_array_device(B->d_cscRowInd, B->nnz);
-}*/
-
-/*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
-{
-	int err = 0;
-    bhsparse *bh_sparse = new bhsparse();
-
-	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
-	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
-	platforms[BHSPARSE_CUDA] = true;
-    err = bh_sparse->initPlatform(platforms);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    err = bh_sparse->initData(A->m, A->n, B->n,
-                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
-                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
-                          C->h_cscColPtr);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    for (int i = 0; i < 3; i++)
-    {
-        err = bh_sparse->warmup();
-        if(err != BHSPARSE_SUCCESS) return err;
-    }
-
-    err = bh_sparse->spgemm();
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    // read back C
-    C->nnz = bh_sparse->get_nnzC();
-    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
-    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
-
-    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-	return BHSPARSE_SUCCESS;
 }*/
 
 // Uses cuSPARSE SpGEMM

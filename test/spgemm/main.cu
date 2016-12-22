@@ -24,8 +24,8 @@
 #include <matrix.cpp>
 
 //#include <cusp/csr_matrix.h>
-//#include "common.h"
-//#include "bhsparse.h"
+#include "common.h"
+#include "bhsparse.h"
 
 void countNNZ( d_matrix *A )
 {
@@ -252,8 +252,9 @@ void runBfs(int argc, char**argv) {
     float delta;
     bool undirected = false;
 	bool weighted = false;
-	float aggro = 1.0;  // a value in (0-1] that describes how close to 
-    if( parseArgs( argc, argv, source, device, delta, undirected, aggro )==true ) {
+	float aggro = 1.0;  // a value in (0-1] that describes how close to
+	int force;          // override number of partitions by choosing -force 4
+    if( parseArgs( argc, argv, source, device, delta, undirected, aggro, force )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
     }
@@ -352,6 +353,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
+	copy_matrix_device( &C );
 	//print_matrix_device( &C );
 
 	// Statistics:
@@ -361,8 +363,10 @@ void runBfs(int argc, char**argv) {
 	float MEMORY = 128000.0;
 	float TARGET_PART_SIZE;
 	float TARGET_PART_NUM;
-	if( edge > MEMORY*aggro )
-	{
+	if( force > 1 ) {
+		TARGET_PART_NUM = (float)force;
+		TARGET_PART_SIZE = (m+force-1)/force;
+	} else if( edge > MEMORY*aggro ) {
 		TARGET_PART_SIZE = aggro*MEMORY/k_A;
 		TARGET_PART_NUM = (float)edge/MEMORY/aggro;
 	} else {
@@ -380,18 +384,19 @@ void runBfs(int argc, char**argv) {
 	//float SPART_NUM = (float)edge/SMEMORY;
 	//printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
 
-	/*d_matrix Asub, Bsub, Csub;
+	d_matrix Asub, Bsub, Csub;
 	matrix_new(&Asub, (int)TARGET_PART_SIZE, m );
 	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
-	matrix_new(&Csub, (int)TARGET_PART_SIZE, (int)TARGET_PART_SIZE);
+	matrix_new(&Csub, m, (int)TARGET_PART_SIZE);
+	//matrix_new(&Csub, (int)TARGET_PART_SIZE, (int)TARGET_PART_SIZE);
 
     GpuTimer gpu_timer2, gpu_timer3;
     float elapsed2 = 0.0f;
     float elapsed3 = 0.0f;
 
 	gpu_timer2.Start();
-	//extract<typeVal>( &Asub, &A );
-	extract_csr2csc<typeVal>( &Asub, &A );
+	extract<typeVal>( &Asub, &A );
+	//extract_csr2csc<typeVal>( &Asub, &A );
 	gpu_timer2.Stop();
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
@@ -407,9 +412,9 @@ void runBfs(int argc, char**argv) {
 	copy_matrix_device( &Asub );
 	copy_matrix_device( &Bsub );
 	printf("A: %d %d %f\n", Asub.h_cscColPtr[Asub.m], Asub.h_cscRowInd[Asub.nnz-1], Asub.h_cscVal[Asub.nnz-1]);
-	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);*/
-	//print_matrix( &Asub );
-	//print_matrix( &Bsub );
+	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);
+	print_matrix( &Asub );
+	print_matrix( &Bsub );
 	//print_matrix_device( &Asub );
 	//print_matrix_device( &Bsub );*/
 	//matrix_delete(&A);
@@ -417,19 +422,24 @@ void runBfs(int argc, char**argv) {
 	//matrix_delete(&C);
 	//matrix_delete(&D);
 
-	//bhsparseSpgemm( &Csub, &Asub, &Bsub );*/
-
 	//print_matrix( &Csub );
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
-    GpuTimer gpu_timer2;
-    float elapsed2 = 0.0f;
-	gpu_timer2.Start();
+    GpuTimer gpu_timer4;
+    float elapsed4 = 0.0f;
+	gpu_timer4.Start();
 
-	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
+	//bhsparseSpgemm( &Csub, &A, &Bsub );
+	bhsparseSpgemm( &D, &A, &B );
+	//spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
-	gpu_timer2.Stop();
-	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("all memory alloc+spgemm: %f ms\n", elapsed2);
+	gpu_timer4.Stop();
+	elapsed4 += gpu_timer4.ElapsedMillis();
+	printf("all memory alloc+spgemm: %f ms\n", elapsed4);
+
+	//copy_matrix_device(&D);
+	verify( C.m, C.h_cscVal, D.h_cscVal );
+	verify( C.m, C.h_cscRowInd, D.h_cscRowInd );
+	verify( C.m, C.h_cscColPtr, D.h_cscColPtr );
 
 	//countNNZ( &Asub );
 	//countNNZ( &Bsub );
