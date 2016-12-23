@@ -253,7 +253,7 @@ void runBfs(int argc, char**argv) {
     bool undirected = false;
 	bool weighted = false;
 	float aggro = 1.0;  // a value in (0-1] that describes how close to
-	int force;          // override number of partitions by choosing -force 4
+	int force = 0;          // override number of partitions by choosing -force 4
     if( parseArgs( argc, argv, source, device, delta, undirected, aggro, force )==true ) {
         printf( "Usage: test apple.mtx -source 5\n");
         return;
@@ -363,7 +363,7 @@ void runBfs(int argc, char**argv) {
 	float MEMORY = 128000.0;
 	float TARGET_PART_SIZE;
 	float TARGET_PART_NUM;
-	if( force > 1 ) {
+	if( force > 0 ) {
 		TARGET_PART_NUM = (float)force;
 		TARGET_PART_SIZE = (m+force-1)/force;
 	} else if( edge > MEMORY*aggro ) {
@@ -379,67 +379,22 @@ void runBfs(int argc, char**argv) {
     //histogramHorz( &A, (int)TARGET_PART_SIZE );
     //histogramVert( &D, (int) TARGET_PART_SIZE );
 	//histogramBlock( &C, (int)TARGET_PART_SIZE );
-
-	//float SMEMORY = aggro*1000.0;
-	//float SPART_NUM = (float)edge/SMEMORY;
-	//printf("Mem: %f; Num: %d\n", SMEMORY, (int) SPART_NUM);
-
-	d_matrix Asub, Bsub, Csub;
-	matrix_new(&Asub, (int)TARGET_PART_SIZE, m );
-	matrix_new(&Bsub, m, (int)TARGET_PART_SIZE);
-	matrix_new(&Csub, m, (int)TARGET_PART_SIZE);
-	//matrix_new(&Csub, (int)TARGET_PART_SIZE, (int)TARGET_PART_SIZE);
-
-    GpuTimer gpu_timer2, gpu_timer3;
+    GpuTimer gpu_timer2;
     float elapsed2 = 0.0f;
-    float elapsed3 = 0.0f;
-
 	gpu_timer2.Start();
-	extract<typeVal>( &Asub, &A );
-	//extract_csr2csc<typeVal>( &Asub, &A );
-	gpu_timer2.Stop();
-
-	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("Extract submatrix from A: %f\n", elapsed2);
-
-	gpu_timer3.Start();
-	extract_csr2csc<typeVal>( &Bsub, &D );
-	gpu_timer3.Stop();
-
-	elapsed3 += gpu_timer3.ElapsedMillis();
-	printf("CSR->CSC: %f\n", elapsed3);
-
-	copy_matrix_device( &Asub );
-	copy_matrix_device( &Bsub );
-	printf("A: %d %d %f\n", Asub.h_cscColPtr[Asub.m], Asub.h_cscRowInd[Asub.nnz-1], Asub.h_cscVal[Asub.nnz-1]);
-	printf("B: %d %d %f\n", Bsub.h_cscColPtr[Bsub.n], Bsub.h_cscRowInd[Bsub.nnz-1], Bsub.h_cscVal[Bsub.nnz-1]);
-	print_matrix( &Asub );
-	print_matrix( &Bsub );
-	//print_matrix_device( &Asub );
-	//print_matrix_device( &Bsub );*/
-	//matrix_delete(&A);
-	//matrix_delete(&B);
-	//matrix_delete(&C);
-	//matrix_delete(&D);
-
-	//print_matrix( &Csub );
-	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
-    GpuTimer gpu_timer4;
-    float elapsed4 = 0.0f;
-	gpu_timer4.Start();
 
 	//bhsparseSpgemm( &Csub, &A, &Bsub );
-	bhsparseSpgemm( &D, &A, &B );
-	//spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
+	//bhsparseSpgemm( &D, &A, &B );
+	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
-	gpu_timer4.Stop();
-	elapsed4 += gpu_timer4.ElapsedMillis();
-	printf("all memory alloc+spgemm: %f ms\n", elapsed4);
+	gpu_timer2.Stop();
+	elapsed2 += gpu_timer2.ElapsedMillis();
+	printf("all memory alloc+spgemm: %f ms\n", elapsed2);
 
 	//copy_matrix_device(&D);
-	verify( C.m, C.h_cscVal, D.h_cscVal );
-	verify( C.m, C.h_cscRowInd, D.h_cscRowInd );
-	verify( C.m, C.h_cscColPtr, D.h_cscColPtr );
+	//verify( C.m, D.h_cscVal, C.h_cscVal );
+	//verify( C.m, D.h_cscRowInd, C.h_cscRowInd );
+	//verify( C.m, D.h_cscColPtr, C.h_cscColPtr );
 
 	//countNNZ( &Asub );
 	//countNNZ( &Bsub );

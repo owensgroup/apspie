@@ -226,11 +226,12 @@ int CompareResults(const float* computed, const float* reference, const int len,
     int flag = 0;
     for (int i = 0; i < len; i++) {
 
-        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1)) {
+        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1) && !(computed[i]-reference[i]<1e-3)) {
             printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
             std::cout << computed[i];
             printf(" != ");
             std::cout << reference[i];
+			std::cout << computed[i]-reference[i];
 
             printf("\nresult[...");
             for (size_t j = (i >= 5) ? i - 5 : 0; (j < i + 5) && (j < len); j++) {
@@ -434,7 +435,7 @@ bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bo
     device = 0;
     delta = 0.1;
 	aggro = 1.0;
-	force = 1;
+	force = 0;
 
     for( int i=2; i<argc; i+=2 ) {
        if( strstr(argv[i], "-source") != NULL )
