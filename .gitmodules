@@ -3,4 +3,4 @@
 	url = https://github.com/NVlabs/cub.git
 [submodule "ext/moderngpu"]
 	path = ext/moderngpu
-	url = https://github.com/NVlabs/moderngpu.git
+	url = https://ctcyang@github.com/ctcyang/moderngpu.git

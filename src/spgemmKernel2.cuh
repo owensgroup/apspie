@@ -128,15 +128,15 @@ __device__ int deviceIntersectTwoSmallNL(
 		int *d_cscColIndC,
 		int *d_cscRowIndC,
 		float *d_cscValC,
-		int h_inter1,
+		int d_numInter,        // d_inter[i+1]-d_inter[i]
 		int *d_intertarget,
-		//int *d_dcscPartPtrA,
+		int d_numPartPtrA,     // single int representing offset for ColPtr
 		int *d_intersectionA,
 		int *d_dcscColPtr_indA,
 		int *d_dcscColPtr_offA,
 		int *d_dcscRowIndA,
 		float *d_dcscValA,
-		//int *d_dcscPartPtrB,
+		int d_numPartPtrB,     // single int representing offset for ColPtr
 		int *d_intersectionB,
 		int *d_dcscColPtr_indB,
 		int *d_dcscColPtr_offB,
@@ -155,7 +155,7 @@ __device__ int deviceIntersectTwoSmallNL(
 		
 
 		// Use col_lengthA for now (for symmetric matrices)
-        for (SizeT idx = wid; idx < h_inter1; idx += stride) {
+        for (SizeT idx = wid; idx < d_numInter; idx += stride) {
         //for (SizeT idx = gid; idx < h_inter1; idx += stride) {
         //for (SizeT idx = gid; idx < partNum*partNum*col_lengthA; idx += stride) {
 
@@ -172,13 +172,13 @@ __device__ int deviceIntersectTwoSmallNL(
 			int nodeA = d_intersectionA[idx];
 			int nodeB = d_intersectionB[idx];
 
-			int write = d_intertarget[idx];
+			//int write = d_intertarget[idx];
 
             // get nls start and end index for two ids
-            int src_it = __ldg(d_dcscColPtr_offA+nodeA);
-            int src_end = __ldg(d_dcscColPtr_offA+nodeA+1);
-            int dst_it = __ldg(d_dcscColPtr_offB+nodeB);
-            int dst_end = __ldg(d_dcscColPtr_offB+nodeB+1);
+            int src_it = __ldg(d_dcscColPtr_offA+nodeA+d_numPartPtrA);
+            int src_end = __ldg(d_dcscColPtr_offA+nodeA+d_numPartPtrA+1);
+            int dst_it = __ldg(d_dcscColPtr_offB+nodeB+d_numPartPtrB);
+            int dst_end = __ldg(d_dcscColPtr_offB+nodeB+d_numPartPtrB+1);
             //int src_it = __ldg(d_dcscColPtr_offA+idx);
             //int src_end = __ldg(d_dcscColPtr_offA+idx+1);
             //int dst_it = __ldg(d_dcscColPtr_offB+idx);
@@ -242,15 +242,15 @@ __device__ int deviceIntersectTwoSmallNL(
 		int *d_cscColIndC,
 		int *d_cscRowIndC,
 		float *d_cscValC,
-		int h_inter1,
+		int *d_inter,
 		int *d_intertarget,
-		//int *d_dcscPartPtrA,
+		int *d_dcscPartPtrA,
 		int *d_intersectionA,
 		int *d_dcscColPtr_indA,
 		int *d_dcscColPtr_offA,
 		int *d_dcscRowIndA,
 		float *d_dcscValA,
-		//int *d_dcscPartPtrB,
+		int *d_dcscPartPtrB,
 		int *d_intersectionB,
 		int *d_dcscColPtr_indB,
 		int *d_dcscColPtr_offB,
@@ -267,16 +267,16 @@ __device__ int deviceIntersectTwoSmallNL(
 			d_cscColIndC,
 			d_cscRowIndC,
 			d_cscValC,
-			h_inter1,
+			d_inter[i*partNum+j+1]-d_inter[i*partNum+j],
 			d_intertarget,
-			//d_dcscPartPtrA,
-			d_intersectionA,
+			d_dcscPartPtrA[i],
+			d_intersectionA+d_inter[i*partNum+j],
 			d_dcscColPtr_indA,
 			d_dcscColPtr_offA,
 			d_dcscRowIndA,
 			d_dcscValA,
-			//d_dcscPartPtrB,
-			d_intersectionB,
+			d_dcscPartPtrB[j],
+			d_intersectionB+d_inter[i*partNum+j],
 			d_dcscColPtr_indB,
 			d_dcscColPtr_offB,
 			d_dcscRowIndB,
@@ -319,25 +319,23 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	float elapsed = 0.0f;
 	gpu_timer.Start();
 
-	for( int i=0; i<1; i++ ) {
-	//for( int i=0; i<partNum; i++ ) {
-		int length = 0;
-		mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance, h_inter[(i+1)*partNum], 0, mgpu::plus<int>(), (int*)0, &(length), d_intertarget, context );
+	int length = 0;
+	//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance, h_inter[(i+1)*partNum], 0, mgpu::plus<int>(), (int*)0, &(length), d_intertarget, context );
 		//print_array_device("intertarget", d_intertarget, h_inter[(i+1)*partNum]);
-		printf("Length:%d\n", length);
-    	IntersectTwoSmallNL<<<BLOCKS, THREADS>>>(
+	printf("Length:%d\n", length);
+    IntersectTwoSmallNL<<<BLOCKS, THREADS>>>(
 			C->d_cscColInd,
 			C->d_cscRowInd,
 			C->d_cscVal,
-			h_inter[(i+1)*partNum],
+			d_inter,
 			d_intertarget,
-			//A->d_dcscPartPtr,
+			A->d_dcscPartPtr,
 			d_intersectionA,
 			A->d_dcscColPtr_ind,
 			A->d_dcscColPtr_off,
 			A->d_dcscRowInd,
 			A->d_dcscVal,
-			//B->d_dcscPartPtr,
+			B->d_dcscPartPtr,
 			d_intersectionB,
 			B->d_dcscColPtr_ind,
 			B->d_dcscColPtr_off,
@@ -345,7 +343,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			B->d_dcscVal,
 			partNum, 
             stride);
-	}
 
 	gpu_timer.Stop();
 	cudaProfilerStop();
@@ -355,9 +352,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 	print_array("h_inter", h_inter, partNum);
 	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
-	print_array_device("Row", C->d_cscColInd, h_inter[1]);
-	print_array_device("Col", C->d_cscRowInd, h_inter[1]);
-	print_array_device("Val", C->d_cscVal, h_inter[1]);
+	print_array_device("Row", A->d_cscColInd, h_inter[1]);
+	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
+	print_array_device("Val", A->d_cscVal, h_inter[1]);
 
 }
 
