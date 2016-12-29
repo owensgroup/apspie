@@ -157,13 +157,11 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     GpuTimer gpu_timer;
 	gpu_timer.Start();
 
-	for( int i=0; i<partNum; i++ )
-	{
+	for( int i=0; i<partNum; i++ ) {
 		last_A = curr_A;
 		curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
 		curr_B = 0;
-		for( int j=0; j<partNum; j++ )
-		{
+		for( int j=0; j<partNum; j++ ) {
 			last_B = curr_B;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
