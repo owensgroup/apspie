@@ -19,7 +19,7 @@ set( mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
 #set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
 #set( CUDA_CUBLAS_LIBRARY "$ENV{CUDA_HOME}/lib64/libcublas.so" )
 set( CUDA_CUSPARSE_LIBRARY "$ENV{CUDA_HOME}/lib64/libcusparse.so" )
-set( CUDA_NVGRAPH_LIBRARY "$ENV{CUDA_HOME}/lib64/libnaga.so" )
+set( CUDA_NVGRAPH_LIBRARY "$ENV{CUDA_HOME}/lib64/libnvgraph.so" )
 
 #FILE( GLOB_RECURSE PROJ_SOURCES ../../src/*.cpp )
 #FILE( GLOB_RECURSE PROJ_LIBRARIES ../../ext/cublas1.1/*.cu )

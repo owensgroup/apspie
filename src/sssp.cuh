@@ -2,7 +2,7 @@
 
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
-#include <naga.h>
+#include <nvgraph.h>
 
 //#include "spmspvSssp.cuh"
 #include "scratch.hpp"
