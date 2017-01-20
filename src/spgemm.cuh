@@ -6,8 +6,7 @@
 #include "mXv.cuh"
 #include "scratch.hpp"
 #include "matrix.hpp"
-//#include "spgemmKernel.cuh"
-#include "spgemmKernel2.cuh"
+#include "spgemmKernel.cuh"
 #include "common.hpp"
 #include "triple.hpp"
 
@@ -67,11 +66,15 @@ void spmv( const T *d_inputVector, const int edge, const int m, const T *d_csrVa
     mgpu::SpmvCsrBinary(d_csrValA, d_csrColIndA, edge, d_csrRowPtrA, m, d_inputVector, true, d_spmvResult, (T)0, mgpu::multiplies<T>(), mgpu::plus<T>(), context);
 }
 
+
 // Matrix multiplication (Host code)
 void spgemmOuter( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
+}
 
-
+__global__ void updateInter( int *d_intersectionA, const int numThread, const int offset ) {
+    for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<=numThread; idx+=blockDim.x*gridDim.x)
+		d_intersectionA[idx] += offset;
 }
 
 // Matrix multiplication (Host code)
@@ -142,6 +145,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CudaCheckError();
 
 	// Allocate space for intersection indices
+    // d_intersectionA- This is a list of indices that are in both A and B
+	// d_interbalance - This is how much work is done in each square
     int *d_intersectionA, *d_intersectionB, *d_interbalance, *d_scanbalance;
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionA, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionB, A->col_length*partNum*sizeof(int)));
@@ -168,7 +173,9 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
     		//total = mgpu::SetOpPairs2<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, A, B, C, context);
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
+			updateInter<<<BLOCKS,NTHREADS>>>( d_intersectionB+h_inter[partNum*i+j], total, B->h_dcscPartPtr[j] );
 		}
+		updateInter<<<BLOCKS, NTHREADS>>>( d_intersectionA+h_inter[partNum*i], h_inter[partNum*(i+1)]-h_inter[partNum*(i)], A->h_dcscPartPtr[i] );
 	}
 	gpu_timer.Stop();
 	elapsed += gpu_timer.ElapsedMillis();
@@ -178,108 +185,68 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
 		print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
 		print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
-		print_array("intersection (first row scan)", h_inter, partNum+1);
+		//print_array("intersection (first row scan)", h_inter, partNum+1);
 		printf("intersection (total): %d\n", h_inter[partNum*partNum]); }
 
 	// Important mallocs
     // Step 0: Preallocations for scratchpad memory
-    /*int *d_flagArray, *d_tempArray, *d_lionArray, *d_sootArray;
-	int *d_catmArray, *d_ouseArray, *d_rootArray, *d_beerArray;
-	float *d_tempValA, *d_tempValB;
-    CUDA_SAFE_CALL(cudaMalloc(&d_flagArray, A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_tempArray, 10*A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_lionArray, A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_sootArray, A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_catmArray, A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_ouseArray, 10*A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_rootArray, A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_beerArray, 70*A->nnz*sizeof(int)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_tempValA, 70*A->nnz*sizeof(float)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_tempValB, 10*A->nnz*sizeof(float)));*/
 
-	// d_index
+	// d_index - 0, 1, 2, 3, 4, ...
+    // d_ones  - 1, 1, 1, 1, 1, ...
 	int *d_index;
     CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
     int *h_index = (int*)malloc(A->nnz*sizeof(int));
     for( int i=0; i<A->nnz;i++ ) h_index[i]=i;
     cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),cudaMemcpyHostToDevice);
 
-	// h_interbalance
-	int *h_interbalance = (int*)malloc(h_inter[partNum*partNum]*sizeof(int));
-	cudaMemcpy(h_interbalance, d_interbalance, h_inter[partNum*partNum]*sizeof(int), cudaMemcpyDeviceToHost);
-	//print_array("interbalance", h_interbalance, h_inter[partNum*partNum]);
+	int *d_ones;
+	CUDA_SAFE_CALL(cudaMalloc(&d_ones, A->nnz*sizeof(int)));
+	cudaMemset( &d_ones, 1, A->nnz*sizeof(int) ); 
+
+	// TODO: compute:
+	//	1) numInterA - this is number of intersections in A
+	//  2) d_colDiffA- this is the length of each column in A
+    //  3) d_lengthA - this is the 
+	//  4) fix d_intersectionA being local (need to add partPtr[i] to it)
+
+	int numInter = h_inter[partNum*partNum];
+
+	int *d_colDiffA;
+	cudaMalloc( &d_colDiffA, A->col_length*sizeof(int) );
+	int NBLOCKS = (A->col_length+NTHREADS-1)/NTHREADS;
+	diff<<<NBLOCKS,NTHREADS>>>( A->d_dcscColPtr_off, d_colDiffA, A->col_length );
+	print_array_device("colDiffA", d_colDiffA, A->col_length);
+
+	int *d_lengthA, *d_offA;
+	cudaMalloc( &d_lengthA, numInter*sizeof(int) );
+	cudaMalloc( &d_offA, numInter*sizeof(int) );
+
+	// Step 1: Form d_offA, d_lengthA, d_offB, d_lengthB
+    IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), numInter, d_colDiffA, d_lengthA, context );
+	IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), numInter, A->d_dcscColPtr_off, d_offA, context );
+	print_array_device("lengthA", d_lengthA, numInter);
+	print_array_device("offA", d_offA, numInter);
+
+	int *d_colDiffB;
+	cudaMalloc( &d_colDiffB, B->col_length*sizeof(int) );
+	NBLOCKS = (B->col_length+NTHREADS-1)/NTHREADS;
+	diff<<<NBLOCKS,NTHREADS>>>( B->d_dcscColPtr_off, d_colDiffB, B->col_length );
+	print_array_device("colDiffB", d_colDiffB, B->col_length);
+
+	int *d_lengthB, *d_offB;
+	cudaMalloc( &d_lengthB, numInter*sizeof(int) );
+	cudaMalloc( &d_offB, numInter*sizeof(int) );
+
+    IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, d_colDiffB, d_lengthB, context );
+	IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, B->d_dcscColPtr_off, d_offB, context );
+	print_array_device("lengthB", d_lengthB, numInter);
+	print_array_device("offB", d_offB, numInter);
 
 	float elapsed2 = 0.0f;
 	GpuTimer gpu_timer2;
 	gpu_timer2.Start();
 
-	/*for( int i=0; i<1; i++ ) {
-	//for( int i=0; i<partNum; i++ ) {
-
-	int size = h_inter[(i+1)*partNum]-h_inter[i*partNum];
-	int shift= h_inter[i*partNum];
-	int lengthA = 0;
-	int lengthB = 0;
-	int length;
-
-	CudaCheckError();
-// Step 1: IntervalGather d_intersection: dcscColPtr_off => dcscColPtr_off (good)
-	IntervalGather( size, d_intersectionA+shift, d_index, size, A->d_dcscColPtr_off, d_tempArray, context );
-	IntervalGather( size, d_intersectionB+shift, d_index, size, B->d_dcscColPtr_off, d_flagArray, context );
-	IntervalGather( size, d_intersectionA+shift, d_index, size, d_dcscColDiffA, d_lionArray, context );
-	IntervalGather( size, d_intersectionB+shift, d_index, size, d_dcscColDiffB, d_sootArray, context );
-
-// Step 1b: Must scan both good diffs - unnecessary since already have off good!
-	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lionArray, size, 0, mgpu::plus<int>(), (int*)0, &(lengthA), d_rootArray, context );
-	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_sootArray, size, 0, mgpu::plus<int>(), (int*)0, &(lengthB), d_beerArray, context );
-	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance, h_inter[(i+1)*partNum], 0, mgpu::plus<int>(), (int*)0, &(length), d_scanbalance, context );
-// But we need lengthA and lengthB!
-// Can get away with just a reduce
-
-// Step 1c: Must IntervalGather to form RowInd
-	IntervalGather( lengthA, d_tempArray, d_rootArray, size, A->d_dcscRowInd, d_catmArray, context );
-	IntervalGather( lengthA, d_tempArray, d_rootArray, size, A->d_dcscVal, d_tempValA, context );
-	IntervalGather( lengthB, d_flagArray, d_beerArray, size, B->d_dcscRowInd, d_ouseArray, context );
-	IntervalGather( lengthB, d_flagArray, d_beerArray, size, B->d_dcscVal, d_tempValB, context );
-	CudaCheckError();
-	printf("lengthA:%d, lengthB:%d, size:%d, shift:%d\n", lengthA, lengthB, size, shift);
-
-// Step 2: Set-up for IntervalExpand A's RowInd
-// Symmetric to here:
-	if( length>A->nnz ) printf("Error: Length %d > %d\n", length, A->nnz);
-	//IntervalExpand(lengthA, d_sootArray, d_dcscColDiffA, size, C->d_cscRowInd, context);
-	IntervalExpand(lengthA, d_rootArray, d_sootArray, size, C->d_cscRowInd, context);
-	mgpu::Scan<mgpu::MgpuScanTypeExc>( C->d_cscRowInd, lengthA, 0, mgpu::plus<int>(), (int*)0, &(length), d_tempArray, context );
-	IntervalExpand(length, d_tempArray, d_catmArray, lengthA, C->d_cscRowInd, context);
-	IntervalExpand(length, d_tempArray, d_tempValA, lengthA, C->d_cscVal, context);
-	CudaCheckError();
-
-// soot = ColDiffGoodB
-// Step 3: Set-up for IntervalExpand B's RowInd
-	IntervalExpand(lengthA, d_rootArray, d_sootArray, size, d_lionArray, context);
-	IntervalExpand(lengthA, d_rootArray, d_beerArray, size, d_flagArray, context);
-	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lionArray, lengthA, 0, mgpu::plus<int>(), (int*)0, &(length), d_beerArray, context);
-	IntervalGather( length, d_flagArray, d_beerArray, lengthA, d_ouseArray, C->d_cscColInd, context );
-	IntervalGather( length, d_flagArray, d_beerArray, lengthA, d_tempValB, d_tempValA, context );
-
-// Step 4: need to sort pairs (C->d_cscColInd, d_tempValA)
-
-// Step 5: ewiseMult into C->d_cscVal
-
-	//h_interbalance[(i+1)*partNum];
-
-	if( i==0 ) {
-		print_array_device( "A RowInd temp", d_catmArray, lengthA);
-		print_array_device( "B ColInd temp", d_ouseArray, lengthB);
-		print_array_device( "C RowInd", C->d_cscRowInd, length);
-		print_array_device( "C ColInd", C->d_cscColInd, length);
-		print_array_device( "A RowVal", C->d_cscVal, length);
-		print_array_device( "B ColVal", d_tempValA, length);
-		print_array_device( "scanbalance", d_scanbalance, h_inter[(i+1)*partNum]);
-		}
-	}*/
-
-	LaunchKernel<float>( C, A, B, d_intersectionA, d_intersectionB, d_interbalance, h_inter, max_AB, partSize, partNum, context );
+	LaunchKernel<float>( C, A, B, d_offA, d_lengthA, d_offB, d_lengthB, d_interbalance, d_scanbalance, h_inter, partSize, partNum, context );
 	gpu_timer2.Stop();
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
@@ -287,109 +254,6 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	printf("outer product took: %f\n", elapsed2);
 	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
-
-/*// Matrix multiplication (Host code)
-void spgemmInner( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
-
-	// Some test arrays
-	int *d_output_triples;
-	cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
-	float *d_output_total; 
-	cudaMalloc(&d_output_total, A->nnz*sizeof(float));
-
-	int *zeroInt = (int*)malloc(A->nnz*sizeof(int));
-	float *zeroFloat = (float*)malloc(A->nnz*sizeof(float));
-	for( int i=0; i<A->nnz; i++ ) { zeroInt[i]=0; zeroFloat[i]=0.0; }
-	cudaMemcpy(d_output_triples, zeroInt, A->nnz*sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_output_total, zeroFloat, A->nnz*sizeof(float), cudaMemcpyHostToDevice);
-
-	// Make some useful const arrays
-	int *h_nnzPartA = (int*)malloc(partNum*sizeof(int));
-	int *h_nnzPartB = (int*)malloc(partNum*sizeof(int));
-	int *h_numBlockA= (int*)malloc(partNum*sizeof(int));
-	int *h_numBlockB= (int*)malloc(partNum*sizeof(int));
-	h_nnzPartA[partNum-1] = A->h_cscColPtr[A->m]-A->h_cscColPtr[(partNum-1)*partSize];
-	h_nnzPartB[partNum-1] = B->h_cscColPtr[B->m]-B->h_cscColPtr[(partNum-1)*partSize];
-	h_numBlockA[partNum-1]= (h_nnzPartA[partNum-1]+SHARED-1)/SHARED;
-	h_numBlockB[partNum-1]= (h_nnzPartB[partNum-1]+SHARED-1)/SHARED;
-	int maxBlockA = h_numBlockA[partNum-1], maxBlockB = h_numBlockB[partNum-1];
-	for( int i=0; i<partNum-2; i++ )
-	{
-		h_nnzPartA[i] = A->h_cscColPtr[(i+1)*partSize]-A->h_cscColPtr[i*partSize];
-		h_nnzPartB[i] = B->h_cscColPtr[(i+1)*partSize]-B->h_cscColPtr[i*partSize];
-		h_numBlockA[i]= (h_nnzPartA[i]+SHARED-1)/SHARED;
-		h_numBlockB[i]= (h_nnzPartB[i]+SHARED-1)/SHARED;
-		if( h_numBlockA[i]>maxBlockA ) maxBlockA = h_numBlockA[i];
-		if( h_numBlockB[i]>maxBlockB ) maxBlockB = h_numBlockB[i];
-	}
-	int maxBlockAB = maxBlockA*maxBlockB;
-
-	// Copy to device
-	if( partNum > MAX_PART ){ printf("Error: Too many partitions!\n"); return;}
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartA, h_nnzPartA, partNum*sizeof(int) ));
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol( nnzPartB, h_nnzPartB, partNum*sizeof(int) ));
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockA, h_numBlockA, partNum*sizeof(int) ));
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol( numBlockB, h_numBlockB, partNum*sizeof(int) ));
-	int *d_nnzPartA, *d_nnzPartB, *d_numBlockA, *d_numBlockB;
-	cudaMalloc( &d_nnzPartA, partNum*sizeof(int) );
-	cudaMalloc( &d_nnzPartB, partNum*sizeof(int) );
-	cudaMalloc( &d_numBlockA, partNum*sizeof(int) );
-	cudaMalloc( &d_numBlockB, partNum*sizeof(int) );
-	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartA, h_nnzPartA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_nnzPartB, h_nnzPartB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockA, h_numBlockA, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-	CUDA_SAFE_CALL(cudaMemcpy( d_numBlockB, h_numBlockB, partNum*sizeof(int), cudaMemcpyHostToDevice ));
-
-	printf("maxA:%d, maxB:%d, first block threads:%d, blocks:%d\n", maxBlockA, maxBlockB, h_numBlockA[0]*h_numBlockB[0], h_numBlockA[0]*h_numBlockB[0]*SHARED);
-	print_array("number of nnz in A", h_numBlockA, 5);
-	print_array("number of nnz in B", h_numBlockB, 5);
-	print_array_device("A ColPtr", A->d_cscColPtr, A->m+1);
-	print_array_device("A RowInd", A->d_cscRowInd, A->nnz);
-	print_array_device("B ColPtr", B->d_cscColPtr, B->m+1);
-	print_array_device("B RowInd", B->d_cscRowInd, B->nnz);
-	long tc_count = LaunchKernel<float>( C, A, B, d_output_triples, d_output_total, partSize, partNum, maxBlockA, maxBlockB, maxBlockAB, context );
-	print_array_device(A->d_cscColPtr, A->m+1);
-	print_array_device(A->d_cscRowInd, A->nnz);
-	print_array_device(B->d_cscColPtr, B->m+1);
-	print_array_device(B->d_cscRowInd, B->nnz);
-}*/
-
-/*int bhsparseSpgemm( d_matrix *C, d_matrix *A, d_matrix *B )
-{
-	int err = 0;
-    bhsparse *bh_sparse = new bhsparse();
-
-	bool *platforms = (bool*)malloc(NUM_PLATFORMS*sizeof(bool));
-	for( int i=0; i<NUM_PLATFORMS; i++ ) platforms[i] = false;
-	platforms[BHSPARSE_CUDA] = true;
-    err = bh_sparse->initPlatform(platforms);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    err = bh_sparse->initData(A->m, A->n, B->n,
-                          A->nnz, (value_type *)A->h_cscVal, A->h_cscColPtr, A->h_cscRowInd,
-                          B->nnz, (value_type *)B->h_cscVal, B->h_cscColPtr, B->h_cscRowInd,
-                          C->h_cscColPtr);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    for (int i = 0; i < 3; i++)
-    {
-        err = bh_sparse->warmup();
-        if(err != BHSPARSE_SUCCESS) return err;
-    }
-
-    err = bh_sparse->spgemm();
-    if(err != BHSPARSE_SUCCESS) return err;
-
-    // read back C
-    C->nnz = bh_sparse->get_nnzC();
-    C->h_cscRowInd = (int *)  malloc(C->nnz  * sizeof(int));
-    C->h_cscVal    = (float *)  malloc(C->nnz  * sizeof(float));
-
-    err = bh_sparse->get_C(C->h_cscRowInd, (value_type *)C->h_cscVal);
-    if(err != BHSPARSE_SUCCESS) return err;
-
-	return BHSPARSE_SUCCESS;
-}*/
 
 // Uses cuSPARSE SpGEMM
 template<typename T>

@@ -1,12 +1,14 @@
 #include <cub/cub.cuh>
 #include <cuda_profiler_api.h>
+#include "../ext/moderngpu/include/device/ctaloadbalance.cuh"
+#include <mgpudevice.cuh>
 
 #include "triple.hpp"
 
 #define __GR_CUDA_ARCH__ 300
-#define THREADS 1024
-#define BLOCKS 480  // 32*NUM_SM
-//#define BLOCKS 1
+#define THREADS 128
+#define BLOCKS 512  // 32*NUM_SM
+#define STRIDE 2048
 #define LOG_THREADS 10
 #define LOG_BLOCKS 8
 #define CTA_OCCUPANCY 1
@@ -123,150 +125,201 @@ __device__ unsigned ilog2(unsigned int v)
         return ((t = v >> 8) ? 8 + logtable[t] : logtable[v]);
 }
 
+__device__ void insert( const int row_idx, const int col_idx, const float valC, float *d_hashTable ) {
+	int idx = (row_idx<<16) & (col_idx&65535);
+	atomicAdd( d_hashTable+idx, valC );
+}
+
+template<typename Tuning, typename IndicesIt, typename ValuesIt, typename OutputIt>
+__global__ void KernelInterval(int destCount,
+    IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, IndicesIt d_dcscRowIndB, float *d_dcscValB, int sourceCount,
+    const int* mp_global, OutputIt output_global, float *d_hashTable) {
+
+    typedef MGPU_LAUNCH_PARAMS Params;
+    const int NT = Params::NT;
+    const int VT = Params::VT;
+    typedef typename std::iterator_traits<ValuesIt>::value_type T;
+
+    union Shared {
+        int indices[NT * (VT + 1)];
+        T values[NT * VT];
+    };
+    __shared__ Shared shared;
+    int tid = threadIdx.x;
+    int block = blockIdx.x;
+
+    // Compute the input and output intervals this CTA processes.
+    int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, sourceCount,
+        block, tid, mp_global, shared.indices, true);
+
+    // The interval indices are in the left part of shared memory (moveCount).
+    // The scan of interval counts are in the right part (intervalCount).
+    destCount = range.y - range.x;
+    sourceCount = range.w - range.z;
+
+    // Copy the source indices into register.
+    int sources[VT];
+    mgpu::DeviceSharedToReg<NT, VT>(shared.indices, tid, sources);
+
+    // The interval indices are in the left part of shared memory (moveCount).
+    // The scan of interval counts are in the right part (intervalCount).
+    int* move_shared = shared.indices;
+    int* intervals_shared = shared.indices + destCount;
+    int* intervals_shared2 = intervals_shared - range.z;
+ 
+    // Read out the interval indices and scan offsets.
+    int interval[VT], rank[VT];
+    #pragma unroll
+    for(int i = 0; i < VT; ++i) {
+        int index = NT * i + tid;
+        int gid = range.x + index;
+        interval[i] = range.z;
+        if(index < destCount) {
+            interval[i] = move_shared[index];
+            rank[i] = gid - intervals_shared2[interval[i]];
+        }
+    }
+    __syncthreads();
+
+    // Load the source fill values into shared memory. Each value is fetched
+    // only once to reduce latency and L2 traffic.
+    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + range.z, tid,
+        shared.values);
+
+    // Gather the values from shared memory into register. This uses a shared
+    // memory broadcast - one instance of a value serves all the threads that
+    // comprise its fill operation.
+    T values[VT];
+    mgpu::DeviceGather<NT, VT>(destCount, shared.values - range.z, sources, tid,
+        values, false);
+
+	int gather[VT], length[VT], off[VT], row_idx[VT], col_idx[VT];
+	float valA[VT], valB[VT], valC[VT];
+    #pragma unroll
+    for(int i = 0; i < VT; ++i) {
+        gather[i] = values[i] + rank[i];
+		length[i] = __ldg(d_lengthB+sources[i]);    // lengthB
+		off[i]   = __ldg(d_offB+sources[i]);        // offB
+		row_idx[i]= __ldg(d_dcscRowIndA+gather[i]);
+		valA[i]   = __ldg(d_dcscValA+gather[i]);
+
+		for( int j=0; j<length[i]; j++ ) {
+			col_idx[i] = __ldg(d_dcscRowIndB+off[i]);
+			valB[i]    = __ldg(d_dcscValB+off[i]);
+			valC[i]    = valA[i]*valB[i];
+			insert( row_idx[i], col_idx[i], valC[i], d_hashTable );
+		}
+	}
+    __syncthreads();
+
+    // Store the values to global memory.
+    mgpu::DeviceRegToGlobal<NT, VT>(destCount, gather, tid, output_global + range.x);
+}
+
+template<typename Tuning, typename IndicesIt, typename InputIt, typename OutputIt>
+MGPU_LAUNCH_BOUNDS void KernelMove(int moveCount, IndicesIt indices_global, 
+    int intervalCount, InputIt input_global, const int* mp_global, 
+    OutputIt output_global) {
+     
+    typedef MGPU_LAUNCH_PARAMS Params;
+    const int NT = Params::NT;
+    const int VT = Params::VT;
+ 
+    __shared__ int indices_shared[NT * (VT + 1)];
+    int tid = threadIdx.x;
+    int block = blockIdx.x;
+ 
+    // Load balance the move IDs (counting_iterator) over the scan of the
+    // interval sizes.
+    int4 range = mgpu::CTALoadBalance<NT, VT>(moveCount, indices_global, 
+        intervalCount, block, tid, mp_global, indices_shared, true);
+ 
+    // The interval indices are in the left part of shared memory (moveCount).
+    // The scan of interval counts are in the right part (intervalCount).
+    moveCount = range.y - range.x;
+    intervalCount = range.w - range.z;
+    int* move_shared = indices_shared;
+    int* intervals_shared = indices_shared + moveCount;
+    int* intervals_shared2 = intervals_shared - range.z;
+ 
+    // Read out the interval indices and scan offsets.
+    int interval[VT], rank[VT];
+    #pragma unroll
+    for(int i = 0; i < VT; ++i) {
+        int index = NT * i + tid;
+        int gid = range.x + index;
+        interval[i] = range.z;
+        if(index < moveCount) {
+            interval[i] = move_shared[index];
+            rank[i] = gid - intervals_shared2[interval[i]];
+        }
+    }
+    __syncthreads();
+
+	int gather[VT];
+    #pragma unroll
+    for(int i = 0; i < VT; ++i)
+        gather[i] = intervals_shared2[interval[i]] + rank[i];
+    __syncthreads();
+
+    // Store the values to global memory.
+    mgpu::DeviceRegToGlobal<NT, VT>(moveCount, rank, tid, output_global + range.x);
+    //mgpu::DeviceRegToGlobal<NT, VT>(moveCount, gather, tid, output_global + range.x);
+
+}
+
 template< typename SizeT >
-__device__ void deviceIntersectTwoSmallNL(
-		d_matrix *C, 
-		int *d_cscColPtrA,
-		int *d_cscRowIndA,
-		float *d_cscValA,
-		int *d_cscColPtrB,
-		int *d_cscRowIndB,
-		float *d_cscValB, 
-        int *d_output_counts,
-        float *d_output_total,
-		const int m,
-		const int nnz,
-		const int partSize,
-		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
-		const int maxBlockAB,
-		const int stride)
-    {
-		__shared__ int s_cscColPtrA[SHARED];	
-		__shared__ int s_cscRowIndA[SHARED];	
-		__shared__ float s_cscValA[SHARED];	
-		__shared__ int s_cscColPtrB[SHARED];	
-		__shared__ int s_cscRowIndB[SHARED];	
-		__shared__ float s_cscValB[SHARED];
-		__shared__ int s_cscColPtrA_bound[2]; //[0]: start, [1]: end
-		__shared__ int s_cscColPtrB_bound[2]; //[0]: start, [1]: end
-		__shared__ cub::BlockReduce<float, BLOCK_SIZE>::TempStorage temp;
+__device__ int deviceIntersectTwoSmallNL(
+		int *d_cscColIndC,
+		int *d_cscRowIndC,
+		float *d_cscValC,
+		int d_numInter,        // d_inter[i+1]-d_inter[i]
+		int d_numPartPtrA,     // single int representing offset for ColPtr
+		int *d_offA,
+		int *d_dcscRowIndA,
+		float *d_dcscValA,
+		int d_numPartPtrB,     // single int representing offset for ColPtr
+		int *d_offB,
+		int *d_dcscRowIndB,
+		float *d_dcscValB, 
+		int *mp_global)
+{
+	__shared__ cub::BlockReduce<int, THREADS>::TempStorage temp;
+	__shared__ cub::BlockReduce<float, THREADS>::TempStorage tempFloat;
+	__shared__ int s_cooRowInd[SHARED]; // from A
+    __shared__ int s_cooColInd[SHARED]; // from B
+    __shared__ float s_cooValA[SHARED]; // from A
+    __shared__ float s_cooValB[SHARED]; // from B
 
-        // each thread process NV edge pairs
-        // Each block get a block-wise intersect count
-        SizeT start = threadIdx.x + blockIdx.x * blockDim.x;
-		SizeT tid = threadIdx.x;
-        SizeT gid = start-tid;
+    // each thread process NV edge pairs
+    // Each block get a block-wise intersect count
+    SizeT gid = threadIdx.x + blockIdx.x * blockDim.x;
+	SizeT tid = threadIdx.x;
+	SizeT wid = gid>>5;
+    SizeT track = gid & 31;
 
-		//int maxBlockAB = maxBlockA*maxBlockB;
-		//printf("idx:%d, nBlockA:%d, nBlockB:%d\n", start, numBlockA, numBlockB);
-        //for (SizeT idx = start; idx < (long long) 2*SHARED; idx += (long long)stride) {
-        //for (SizeT idx = start; idx < (long long) maxBlockAB*SHARED; idx += stride) {
-        for (SizeT idx = start; idx < (long long) partNum*partNum*maxBlockAB*THREADS; idx += stride) {
-			int part_AB= blockIdx.x/maxBlockAB;
-			int part_A = part_AB/partNum;
-			int part_B = part_AB%partNum;
+	// Use col_lengthA for now (for symmetric matrices)
+    for (SizeT idx = wid; idx < d_numInter; idx += d_numInter) {
+    //for (SizeT idx = gid; idx < h_inter1; idx += stride) {
+    //for (SizeT idx = gid; idx < partNum*partNum*col_lengthA; idx += stride) {
 
-			int block_AB= blockIdx.x%maxBlockAB;
-			int block_A = block_AB/maxBlockB;
-			int block_B = block_AB%maxBlockB;
-
-			if( block_A >= numBlockA[part_A] || block_B >= numBlockB[part_B] ) continue; 
-			if( blockIdx.x == numBlockA[block_A]-1 || blockIdx.x == numBlockB[block_B]-1 ) continue;
-			//if( block_A == numBlockA[part_A]-1 && block_B == numBlockB[part_B]-1 )
-			//{
-			//	if( tid >= nnzPartA[part_A]% ||
-			//}
-			
-			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, s_numA:%d, s_numB:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, s_numBlock[0], s_numBlock[1], block_A, block_B, block_B);
-
-			//if( tid<128 ) printf("idx:%d, i:%d, j:%d, block_A:%d, block_B:%d, block_B:%d\n", idx, part_A, part_B, block_A, block_B, block_B);
-			int tid_thread = tid-THREADS;
-			#pragma unroll
-			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
-			{
-				tid_thread += THREADS;
-				s_cscRowIndA[tid_thread] = d_cscRowIndA[block_A*SHARED+tid_thread];
-				s_cscValA[tid_thread] = __ldg(d_cscValA+block_A*SHARED+tid_thread);
-				s_cscRowIndB[tid_thread] = d_cscRowIndB[block_B*SHARED+tid_thread];
-				s_cscValB[tid_thread] = __ldg(d_cscValB+block_B*SHARED+tid_thread);
+			int result;
+			int result2;
+			float resultFloat;
+    		/*if(tid<THREADS) {
+				result = cub::BlockReduce<int, THREADS>(temp).Sum(row_idx);
+    			result2 = cub::BlockReduce<int, THREADS>(temp).Sum(col_idx);
+				resultFloat = cub::BlockReduce<float, THREADS>(tempFloat).Sum(val1);
+				resultFloat += cub::BlockReduce<float, THREADS>(tempFloat).Sum(val2);
 			}
-
-			//if( tid<128 ) printf("idx:%d, row:%d, row:%d, val:%f, row:%d, val:%f\n", idx, s_cscRowIndA[tid], s_cscValA[tid], s_cscRowIndB[tid], s_cscValB[tid], s_cscValB[tid] );
-			/*
-			// Generate cscColPtrA that is local to cscRowIndA[0 ... 1023]
-			if( tid==0 )
-				s_cscColPtrA_bound[0] = BinarySearchStart( d_cscColPtrA, m, gid );
-			if( tid==1 )
-				s_cscColPtrA_bound[1] = BinarySearchEnd( d_cscColPtrA, m, gid+blockDim.x-1 );
-			//int s_cscColPtrB_start = BinarySearchStart( d_cscColPtrB, m, gid );
-			//int s_cscColPtrB_end = BinarySearchEnd( d_cscColPtrB, m, gid+blockDim.x-1 );*/
-
-			//__syncthreads();
-
-			/*int block_row = tid%THREADS;
-            int count = 0;
-			float sum = 0.0;
-            // get nls start and end index for two ids
-            int src_it = __ldg(d_cscColPtrA+idx_row);
-            int src_end = __ldg(d_cscColPtrA+idx_row+1);
-            int dst_it = __ldg(d_cscColPtrB+idx_col);
-            int dst_end = __ldg(d_cscColPtrB+idx_col+1);
-			//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, dst_end:%d, dst_end:%d\n", idx, src_it, src_end, dst_it, dst_end, dst_end, dst_end);
-			//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, dst_end:%d, dst_end:%d\n", idx, src_it, src_end, dst_it, dst_end, dst_end, dst_end);
-
-            if (src_it == src_end || dst_it == dst_end) continue;
-            int src_nl_size = src_end - src_it;
-            int dst_nl_size = dst_end - dst_it;
-            int min_nl = (src_nl_size > dst_nl_size) ? dst_nl_size : src_nl_size;
-            int max_nl = (src_nl_size < dst_nl_size) ? dst_nl_size : src_nl_size;
-            if ( min_nl * ilog2((unsigned int)(max_nl)) * 10 < min_nl + max_nl ) {
-                // search
-            	//int *d_column_indices = (src_nl_size < dst_nl_size) ? d_cscRowIndB  : d_cscRowIndA;
-            	int *d_column_indices = (src_nl_size < dst_nl_size) ? s_cscRowIndB  : s_cscRowIndA;
-                int min_it = (src_nl_size < dst_nl_size) ? src_it : dst_it;
-                int min_end = min_it + min_nl;
-                int max_it = (src_nl_size < dst_nl_size) ? dst_it : src_it;
-                int *keys = &d_column_indices[max_it];
-                while ( min_it < min_end) {
-                    int small_edge = d_column_indices[min_it++];
-                    count += BinarySearch(keys, max_nl, small_edge);
-					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, small_edge: %d\n", idx, src_it, src_end, dst_it, dst_end, small_edge);
-                }
-            } else {
-                //int src_edge = __ldg(d_cscRowIndA+src_it);
-                //int dst_edge = __ldg(d_cscRowIndB+dst_it);
-                int src_edge = s_cscRowIndA[src_it];
-                int dst_edge = s_cscRowIndB[dst_it];
-                while (src_it < src_end && dst_it < dst_end) {
-                    int diff = src_edge - dst_edge;
-					sum += (diff == 0) ? s_cscValA[src_it]*s_cscValB[dst_it] : 0;
-                    src_edge = (diff <= 0) ? s_cscRowIndA[++src_it] : src_edge;
-                    dst_edge = (diff >= 0) ? s_cscRowIndB[++dst_it] : dst_edge;
-					//printf("idx:%d, src_it:%d, src_end:%d, dst_it:%d, dst_end:%d, src_edge:%d, dst_edge:%d\n", idx, src_it, src_end, dst_it, dst_end, src_edge, dst_edge);
-					//sum += (diff == 0) ? __ldg(d_cscValA+src_it)*__ldg(d_cscValB+dst_it) : 0;
-                    //src_edge = (diff <= 0) ? __ldg(d_cscRowIndA+(++src_it)) : src_edge;
-                    //dst_edge = (diff >= 0) ? __ldg(d_cscRowIndB+(++dst_it)) : dst_edge;
-                    count += (diff == 0);
-                }
-            }*/
-
-			float result;
-    		if(idx<THREADS) result = cub::BlockReduce<float, BLOCK_SIZE>(temp).Sum(s_cscValA[idx]);
-			if(tid==0) d_output_total[blockIdx.x] = result;
-
-			/*tid_thread = tid-THREADS;
-			#pragma unroll
-			for( int idx_inner = 0; idx_inner<UNROLL; idx_inner++ )
-			{
-				tid_thread += THREADS;
-				d_output_counts[tid_thread] = s_cscRowIndA[SHARED-tid_thread-1];
-				d_output_counts[tid_thread] = s_cscRowIndB[SHARED-tid_thread-1];
-				d_output_total[tid_thread] = s_cscValA[SHARED-tid_thread-1];
-				d_output_total[tid_thread] = s_cscValB[SHARED-tid_thread-1];
+			if(tid==0) { 
+				//printf("Total: %d\n", result); 
+				d_cscColIndC[blockIdx.x] = result;
+				d_cscRowIndC[blockIdx.x] = result2;
+				d_cscValC[blockIdx.x] = resultFloat;
+				return result; 
 			}*/
-    	}
+    }
 }
 
 /*
@@ -276,53 +329,54 @@ __device__ void deviceIntersectTwoSmallNL(
   //__launch_bounds__ (THREADS, CTA_OCCUPANCY)
   __global__
   void IntersectTwoSmallNL(
-		d_matrix *C,
-		int *d_cscColPtrA,
-		int *d_cscRowIndA,
-		float *d_cscValA,
-		int *d_cscColPtrB,
-		int *d_cscRowIndB,
-		float *d_cscValB, 
-        int *d_output_counts,
-        float *d_output_total,
-		const int m,
-		const int nnz,
-		const int partSize,
+		int *d_cscColIndC,
+		int *d_cscRowIndC,
+		float *d_cscValC,
+		int *d_inter,
+		int *d_dcscPartPtrA,
+		int *d_offA,
+		int *d_lengthA,
+		int *d_dcscRowIndA,
+		float *d_dcscValA,
+		int *d_dcscPartPtrB,
+		int *d_offB,
+		int *d_lengthB,
+		int *d_dcscRowIndB,
+		float *d_dcscValB, 
 		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
-		const int maxBlockAB,
-		const int stride)
+		int *mp_global)
 {
 	//for( int i=0; i<partNum; i++ )
 	//	for( int j=0; j<partNum; j++ )
-	//for( int i=0; i<partNum; i++ )
-    //	for( int j=0; j<1; j++ )
-	deviceIntersectTwoSmallNL<long long>( C, 
-		d_cscColPtrA,
-		d_cscRowIndA,
-		d_cscValA,
-		d_cscColPtrB,
-		d_cscRowIndB,
-		d_cscValB, 
-		d_output_counts, d_output_total, m, nnz, partSize, partNum, 
-		maxBlockA,
-		maxBlockB,
-		maxBlockAB,
-		stride );
+	int length = deviceIntersectTwoSmallNL<long long>( 
+			d_cscColIndC,
+			d_cscRowIndC,
+			d_cscValC,
+			d_inter[0],
+			d_dcscPartPtrA[0],
+			d_offA,
+			d_dcscRowIndA,
+			d_dcscValA,
+			d_dcscPartPtrB[0],
+			d_offB,
+			d_dcscRowIndB,
+			d_dcscValB, 
+            mp_global);
 }
 
 // Kernel Entry point for performing batch intersection computation
 template <typename typeVal>//, typename ProblemData, typename Functor>
     float LaunchKernel( 
 		d_matrix *C, d_matrix *A, d_matrix *B, 
-        int *d_output_counts,
-        float *d_output_total,
+        int *d_offA,
+        int *d_lengthA,
+        int *d_offB,
+        int *d_lengthB,
+        int *d_interbalance,
+        int *d_scanbalance,
+		int *h_inter,
 		const int partSize,
 		const int partNum,
-		const int maxBlockA,
-		const int maxBlockB,
-		const int maxBlockAB,
         mgpu::CudaContext                             &context)
 {
 	//const int BLOCKS = (A->m*A->m+THREADS-1)/THREADS;
@@ -331,33 +385,54 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
     // Set 48kB shared memory 
     //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferL1));
-    CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
+    //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
    
-	CudaCheckError();
+	// Need segmented sort
+    int *d_inter;
+    cudaMalloc(&d_inter, (partNum*partNum+1)*sizeof(int));
+    cudaMemcpy(d_inter, h_inter, (partNum*partNum+1)*sizeof(int), cudaMemcpyHostToDevice);
+
+	float *d_hashTable;
+	cudaMalloc(&d_hashTable, UINT_MAX*sizeof(float));
+	//cudaMalloc(&d_tempLengthB, A->col_length*sizeof(int));
+
+	//CudaCheckError();
 	cudaProfilerStart();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
 	gpu_timer.Start();
 
-    //IntersectTwoSmallNL<<<1, THREADS>>>(
-    IntersectTwoSmallNL<<<BLOCKS, THREADS>>>(
-			C,
-			A->d_cscColPtr,
-			A->d_cscRowInd,
-			A->d_cscVal,
-			B->d_cscColPtr,
-			B->d_cscRowInd,
-			B->d_cscVal, 
-            d_output_counts,
-            d_output_total,
-			A->m,
-			A->nnz,
-			partSize,
-			partNum,
-			maxBlockA,
-			maxBlockB,
-			maxBlockAB,
-            stride);
+	for( int i=0; i<partNum; i++ ) {
+		for( int j=0; j<partNum; j++ ) {
+			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
+			int moveCount = 0;
+			//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
+			mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthA+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
+
+    		const int NT = 128;
+    		const int VT = 7;
+    		typedef mgpu::LaunchBoxVT<NT, VT> Tuning;
+    		int2 launch = Tuning::GetLaunchParams(context);
+
+    		int NV = launch.x * launch.y;
+    		int numBlocks = MGPU_DIV_UP(moveCount + intervalCount, NV);
+
+    		MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions<mgpu::MgpuBoundsUpper>(
+        		mgpu::counting_iterator<int>(0), moveCount, d_scanbalance+h_inter[partNum*i+j],
+        		intervalCount, NV, 0, mgpu::less<int>(), context);
+
+    		//int4 range = CTALoadBalance<NT, VT>(moveCount, indices_global, 
+        	//	intervalCount, block, tid, mp_global, indices_shared, true);
+			printf("moveCount:%d\n", moveCount);
+
+			KernelInterval<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashTable );
+			//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], intervalCount, mgpu::counting_iterator<int>(0), partitionsDevice->get(), d_interbalance );
+
+			print_array_device( "good offA", d_interbalance, moveCount );
+
+			
+		}
+	}
 
 	gpu_timer.Stop();
 	cudaProfilerStop();
@@ -365,11 +440,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("my spgemm: %f ms\n", elapsed);
 	//CudaCheckError();
 
-    float total = mgpu::Reduce(d_output_total, A->m, context);
-    long tc_count = mgpu::Reduce(d_output_counts, A->m, context);
-	print_array_device( "float output", d_output_total, A->m );
-	print_array_device( "count output", d_output_counts, A->m );
-    printf("tc_total:%f, tc_count:%ld\n", total, tc_count);
-    return (float)tc_count / (float)total;
+	print_array("h_inter", h_inter, partNum);
+	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
+	print_array_device("Row", A->d_cscColInd, h_inter[1]);
+	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
+	print_array_device("Val", A->d_cscVal, h_inter[1]);
+
 }
 

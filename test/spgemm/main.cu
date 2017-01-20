@@ -252,9 +252,10 @@ void runBfs(int argc, char**argv) {
     float delta;
     bool undirected = false;
 	bool weighted = false;
+	bool forceTwo = false;
 	float aggro = 1.0;  // a value in (0-1] that describes how close to 
-    if( parseArgs( argc, argv, source, device, delta, undirected, aggro )==true ) {
-        printf( "Usage: test apple.mtx -source 5\n");
+    if( parseArgs( argc, argv, source, device, delta, undirected, aggro, forceTwo )==true ) {
+        printf( "Usage: test apple.mtx -source 5 -forceTwo\n");
         return;
     }
     //cudaSetDevice(device);
@@ -342,8 +343,6 @@ void runBfs(int argc, char**argv) {
     // 9. Run spgemm
     // Must be UxL because we are using CSC matrices rather than specified CSR
     // input required by cuSPARSE
-    int NT = 512;
-    int NB = (m+NT-1)/NT;
     gpu_timer.Start();
 
     // 10. Compare with CPU BFS for errors
@@ -361,8 +360,10 @@ void runBfs(int argc, char**argv) {
 	float MEMORY = 128000.0;
 	float TARGET_PART_SIZE;
 	float TARGET_PART_NUM;
-	if( edge > MEMORY*aggro )
-	{
+	if( forceTwo == true ) {
+		TARGET_PART_NUM = 2;
+		TARGET_PART_SIZE = m>>1;
+	} else if( edge > MEMORY*aggro ) {
 		TARGET_PART_SIZE = aggro*MEMORY/k_A;
 		TARGET_PART_NUM = (float)edge/MEMORY/aggro;
 	} else {
@@ -423,11 +424,14 @@ void runBfs(int argc, char**argv) {
 	//histogramSBlock( &A, &D, &C, (int)SMEMORY );
     GpuTimer gpu_timer2;
     float elapsed2 = 0.0f;
+	cudaProfilerStart();
 	gpu_timer2.Start();
 
 	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
 	gpu_timer2.Stop();
+	cudaDeviceSynchronize();
+	cudaProfilerStop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
 	printf("all memory alloc+spgemm: %f ms\n", elapsed2);
 
