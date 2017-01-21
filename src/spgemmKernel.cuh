@@ -133,8 +133,13 @@ __device__ unsigned mixHash(unsigned a) {
     return a;
 }
 
+void generateConstants( uint2 *constants ) {
+	  unsigned new_a = genrand_int32() % PRIME_DIV;
+      constants->x = (1 > new_a ? 1 : new_a);
+      constants->y = genrand_int32() % PRIME_DIV;
+}
 
-__device__ bool insert( const int row_idx, const int col_idx, const float valC, unsigned *d_hashKey, float *d_hashVal ) {
+__device__ bool insert( const int row_idx, const int col_idx, const float valC, unsigned *d_hashKey, float *d_hashVal, uint2 constants ) {
 	unsigned key = (row_idx<<16) | (col_idx&65535);
 	// Attempt 2a: Basic hash
 	//unsigned hash = key & TABLE_SIZE;
@@ -142,7 +147,7 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 	unsigned mix  = mixHash(key);
 	//unsigned hash = mix & TABLE_SIZE;
     // Attempt 2c: Alcantara hash
-	unsigned hash = key & TABLE_SIZE;
+	unsigned hash = ((constants.x ^ mix + constants.y ) % PRIME_DIV) & TABLE_SIZE;
 	unsigned doubleHashJump = mix % JUMP_HASH + 1;
 
 	for( int attempt = 1; attempt<=MAX_PROBES; attempt++) {
@@ -170,7 +175,7 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 
 template<typename Tuning, typename IndicesIt, typename ValuesIt, typename OutputIt>
 __global__ void KernelInterval(int destCount,
-    IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, IndicesIt d_dcscRowIndB, float *d_dcscValB, int sourceCount, const int* mp_global, OutputIt output_global, unsigned *d_hashKey, float *d_hashVal, int *value ) {
+    IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, IndicesIt d_dcscRowIndB, float *d_dcscValB, int sourceCount, const int* mp_global, OutputIt output_global, unsigned *d_hashKey, float *d_hashVal, int *value, uint2 constants ) {
 
     typedef MGPU_LAUNCH_PARAMS Params;
     const int NT = Params::NT;
@@ -184,7 +189,6 @@ __global__ void KernelInterval(int destCount,
     __shared__ Shared shared;
     int tid = threadIdx.x;
     int block = blockIdx.x;
-	uint2 constants[VT];
 
     // Compute the input and output intervals this CTA processes.
     int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, sourceCount,
@@ -251,7 +255,7 @@ __global__ void KernelInterval(int destCount,
 				valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f\n", i, j, row_idx[i], col_idx[i], valA[i]); 
-				if( insert( row_idx[i], col_idx[i], valC[i], d_hashKey, d_hashVal )==false ) atomicAdd( value, 1 );//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
+				if( insert( row_idx[i], col_idx[i], valC[i], d_hashKey, d_hashVal, constants )==false ) atomicAdd( value, 1 );//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
 			}
 	}}
     __syncthreads();
@@ -300,7 +304,15 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	cudaMalloc( &d_value, sizeof(int) );
 	cudaMemset( d_value, 0, sizeof(int) );
 
-	//CudaCheckError();
+	// Tuning
+    const int NT = 128;
+    const int VT = 7;
+	
+	// Constants
+	uint2 constants;
+	generateConstants( &constants );
+	printf("constants: %d %d\n", constants.x, constants.y );
+
 	cudaProfilerStart();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
@@ -318,8 +330,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
 			mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthA+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
 
-    		const int NT = 128;
-    		const int VT = 7;
     		typedef mgpu::LaunchBoxVT<NT, VT> Tuning;
     		int2 launch = Tuning::GetLaunchParams(context);
 
@@ -334,7 +344,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
         	//	intervalCount, block, tid, mp_global, indices_shared, true);
 			//printf("moveCount:%d\n", moveCount);
 
-			KernelInterval<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value );
+			KernelInterval<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
 			//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], intervalCount, mgpu::counting_iterator<int>(0), partitionsDevice->get(), d_interbalance );
 
 			//print_array_device( "good offA", d_interbalance, moveCount );

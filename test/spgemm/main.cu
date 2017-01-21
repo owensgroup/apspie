@@ -255,7 +255,7 @@ void runBfs(int argc, char**argv) {
 	bool forceTwo = false;
 	float aggro = 1.0;  // a value in (0-1] that describes how close to 
     if( parseArgs( argc, argv, source, device, delta, undirected, aggro, forceTwo )==true ) {
-        printf( "Usage: test apple.mtx -source 5 -forceTwo\n");
+        printf( "Usage: test apple.mtx -source 5 -force 2 -aggro 0.5\n");
         return;
     }
     //cudaSetDevice(device);

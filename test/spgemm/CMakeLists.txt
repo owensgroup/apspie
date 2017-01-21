@@ -17,14 +17,15 @@ set( mgpu_SRC_DIR "../../ext/moderngpu/src")
 set( mgpu_SRC_FILES ${mgpu_SRC_DIR}/mgpucontext.cu ${mgpu_SRC_DIR}/mgpuutil.cpp)
 set( bhsparse_SRC_DIR "/home/ctcyang/Benchmark_SpGEMM_using_CSR/SpGEMM_cuda" )
 set( bhsparse_SRC_FILES ${bhsparse_SRC_DIR}/bhsparse_cuda.cu ${bhsparse_SRC_DIR}/bhsparse.cpp )
+set( mt_SRC_FILES "../../src/mt19937ar.cpp" )
 
 #set( CUDA_CURAND_LIBRARY "$ENV{CUDA_HOME}/lib64/libcurand.so" )
 #set( CUDA_CUBLAS_LIBRARY "$ENV{CUDA_HOME}/lib64/libcublas.so" )
 set( CUDA_CUSPARSE_LIBRARY "$ENV{CUDA_HOME}/lib64/libcusparse.so" )
 
-#FILE( GLOB_RECURSE PROJ_SOURCES ../../src/*.cpp )
+#FILE( GLOB_RECURSE PROJ_SOURCES ../../src/mt19937ar.cpp ../../src/*.cpp )
 #FILE( GLOB_RECURSE PROJ_LIBRARIES ../../ext/cublas1.1/*.cu )
-FILE( GLOB_RECURSE PROJ_HEADERS ../../src/*.cuh )
+FILE( GLOB_RECURSE PROJ_HEADERS ../../src/*.cuh ../../src/*.h )
 
 # nvcc flags
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_35,code=sm_35;-lineinfo;-Xptxas=-v,-dlcm=ca)
@@ -43,5 +44,5 @@ set(CMAKE_EXE_LINKER_FLAGS "-lpthread")
 # standard compilation
 include_directories( ${PROJ_INCLUDES} )
 cuda_add_library( lib ${PROJ_LIBRARIES} ${PROJ_HEADERS} )
-cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES})
+cuda_add_executable( ${PROJ_NAME} ${PROJ_SOURCES} ${mgpu_SRC_FILES} ${mt_SRC_FILES} )
 target_link_libraries( ${PROJ_NAME} lib ${CUDA_CUSPARSE_LIBRARY} ${CUDA_CUBLAS_LIBRARY} )
