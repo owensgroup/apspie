@@ -336,9 +336,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     		int NV = launch.x * launch.y;
     		int numBlocks = MGPU_DIV_UP(moveCount + intervalCount, NV);
 
-    		MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions<mgpu::MgpuBoundsUpper>(
-        		mgpu::counting_iterator<int>(0), moveCount, d_scanbalance+h_inter[partNum*i+j],
-        		intervalCount, NV, 0, mgpu::less<int>(), context);
+    		MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions<mgpu::MgpuBoundsUpper>( mgpu::counting_iterator<int>(0), moveCount, d_scanbalance+h_inter[partNum*i+j], intervalCount, NV, 0, mgpu::less<int>(), context);
 
     		//int4 range = CTALoadBalance<NT, VT>(moveCount, indices_global, 
         	//	intervalCount, block, tid, mp_global, indices_shared, true);
@@ -350,6 +348,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			//print_array_device( "good offA", d_interbalance, moveCount );
 			//print_array_device( "Hash Keys", d_hashKey, 40 );
 			//print_array_device( "Hash Vals", d_hashVal, 40 );
+			//printf("%d %d\n", i, j);
+			//print_array_device( "mergePath", partitionsDevice->get(), intervalCount );
 			cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 			value += tempValue;
 			//printf("Failed inserts: %d\n", value);
@@ -365,7 +365,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
-	print_array("h_inter", h_inter, partNum);
+	print_array("h_inter", h_inter, partNum*partNum);
 	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);

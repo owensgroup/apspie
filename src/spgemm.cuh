@@ -10,7 +10,7 @@
 #include "common.hpp"
 #include "triple.hpp"
 
-//#include "bhsparse.h"
+#include "cudpp.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
@@ -75,6 +75,37 @@ void spgemmOuter( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, con
 __global__ void updateInter( int *d_intersectionA, const int numThread, const int offset ) {
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<=numThread; idx+=blockDim.x*gridDim.x)
 		d_intersectionA[idx] += offset;
+}
+
+void compareCudpp( const int *d_lengthA, int *d_scanbalance, const int *h_inter, int *d_moveCount, const int numInter, const int partNum ) {
+
+	int *d_flag;
+	cudaMalloc( &d_flag, numInter*sizeof(int) );
+	cudaMemset( d_flag, 0, numInter*sizeof(int) );
+
+	int one = 1;	
+
+	for( int i=0; i<partNum*partNum; i++ ) {
+		cudaMemcpy( d_flag+h_inter[i+1], &one, sizeof(int), cudaMemcpyHostToDevice );
+	}
+
+	// CUDPP code
+	CUDPPHandle theCudpp;
+	cudppCreate(&theCudpp);
+
+ 	CUDPPConfiguration config;
+	config.op = CUDPP_ADD;
+	config.datatype = CUDPP_INT;
+	config.algorithm = CUDPP_SCAN;
+	config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_EXCLUSIVE;
+	CUDPPHandle scanplan = 0;
+
+	CUDPPResult res = cudppPlan( theCudpp, &scanplan, config, numInter, 1, 0 );
+
+	if (CUDPP_SUCCESS != res) {
+		printf("Error creating CUDPPPlan\n");
+		exit(-1);
+	}
 }
 
 // Matrix multiplication (Host code)
@@ -179,14 +210,15 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	}
 	gpu_timer.Stop();
 	elapsed += gpu_timer.ElapsedMillis();
-
 	printf("intersection took: %f\n", elapsed);
+
+	int numInter = h_inter[partNum*partNum];
 	if( DEBUG ) { 
-		print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
-		print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
-		print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
+		print_array_device("intersectionA", d_intersectionA, numInter);
+		print_array_device("intersectionB", d_intersectionB, numInter);
+		print_array_device("interbalance", d_interbalance, numInter);
 		//print_array("intersection (first row scan)", h_inter, partNum+1);
-		printf("intersection (total): %d\n", h_inter[partNum*partNum]); }
+		printf("intersection (total): %d\n", numInter); }
 
 	// Important mallocs
     // Step 0: Preallocations for scratchpad memory
@@ -204,12 +236,10 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	cudaMemset( &d_ones, 1, A->nnz*sizeof(int) ); 
 
 	// TODO: compute:
-	//	1) numInterA - this is number of intersections in A
+	//	1) numInter - this is number of intersections in A
 	//  2) d_colDiffA- this is the length of each column in A
     //  3) d_lengthA - this is the 
 	//  4) fix d_intersectionA being local (need to add partPtr[i] to it)
-
-	int numInter = h_inter[partNum*partNum];
 
 	int *d_colDiffA;
 	cudaMalloc( &d_colDiffA, A->col_length*sizeof(int) );
@@ -251,7 +281,14 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
 
-	printf("outer product took: %f\n", elapsed2);
+	// input array:  	 d_lengthA
+	// input scan:   	 d_inter
+    // output array: 	 d_scanbalance
+	// output moveCount: d_moveCount
+	// numInter:        h_inter[partNum*partNum]
+	int *d_moveCount;
+	cudaMalloc( &d_moveCount, partNum*partNum*sizeof(int) );
+	compareCudpp( d_lengthA, d_scanbalance, h_inter, d_moveCount, numInter, partNum);
 	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 

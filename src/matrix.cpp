@@ -332,21 +332,25 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		int *d_offsets;
 		cudaMalloc(&d_offsets, (partNum+1)*sizeof(int));
 		cudaMemcpy(d_offsets,h_offsets,(partNum+1)*sizeof(int),cudaMemcpyHostToDevice);
+		if( DEBUG ) CudaCheckError();
 
 		// Upper bit limit radix sort: Use log(A->n)
 		int end_bit = log2( *(uint32_t*)&(A->n) )+1;
 
 		// Determine temporary device storage requirements
-		if( DEBUG ) print_array_device("last 40 of output", A->d_dcscRowInd, A->nnz);
 		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
+		if( DEBUG ) print_array_device("last 40 of output", A->d_dcscRowInd, A->nnz);
+		if( DEBUG ) CudaCheckError();
 		
 		// Allocate temporary storage
 		CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
+		if( DEBUG ) CudaCheckError();
 		
 		// Run sorting operation
 		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
+		if( DEBUG ) CudaCheckError();
 		if( DEBUG ) print_array_device("last 40 of output", A->d_cscRowInd, A->nnz );
-		//CudaCheckError();
+		if( DEBUG ) CudaCheckError();
 
 		// Check results
 		CUDA_SAFE_CALL(cudaFree(d_temp_storage));
