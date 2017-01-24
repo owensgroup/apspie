@@ -348,8 +348,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], intervalCount, mgpu::counting_iterator<int>(0), partitionsDevice->get(), d_interbalance );
 
 			//print_array_device( "good offA", d_interbalance, moveCount );
-			//print_array_device( "Hash Keys", d_hashKey, 40 );
-			//print_array_device( "Hash Vals", d_hashVal, 40 );
+			//printf("%d %d\n", i, j);
+			//print_array_device( "mergepath", partitionsDevice->get(), intervalCount );
 			cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 			value += tempValue;
 			//printf("Failed inserts: %d\n", value);
@@ -365,7 +365,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
-	print_array("h_inter", h_inter, partNum);
+	print_array("h_inter", h_inter, partNum*partNum+1);
 	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
