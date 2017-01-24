@@ -357,7 +357,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		//for( int i=0; i<10; i++ ) 
 		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, 
 			A->d_cscRowInd, A->d_dcscRowInd, A->nnz, partNum, d_offsets, 
-			d_offsets + 1, 0, end_bit, stream, true );
+			d_offsets + 1, 0, end_bit);//, stream, true );
 		//if( DEBUG ) CudaCheckError();
 		if( DEBUG ) print_array_device("last 40 of output", A->d_dcscRowInd, A->nnz );
 		//if( DEBUG ) CudaCheckError();

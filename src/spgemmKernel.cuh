@@ -365,7 +365,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
-	print_array("h_inter", h_inter, partNum*partNum);
+	print_array("h_inter", h_inter, partNum*partNum+1);
 	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
