@@ -11,6 +11,7 @@
 #include "triple.hpp"
 
 //#include "bhsparse.h"
+#include "cudpp.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
@@ -76,6 +77,74 @@ __global__ void updateInter( int *d_intersectionA, const int numThread, const in
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<=numThread; idx+=blockDim.x*gridDim.x)
 		d_intersectionA[idx] += offset;
 }
+
+__global__ void add( int *d_moveCount, const int length ) {
+	int gid = threadIdx.x+blockIdx.x*blockDim.x;
+	if( gid<length ) {
+		d_moveCount[gid]+=d_moveCount[gid+length];
+	}
+}
+
+void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *d_moveCount, const int numInter, const int partNum, mgpu::CudaContext &context ) {
+
+	unsigned *d_flag;
+	cudaMalloc( &d_flag, numInter*sizeof(unsigned) );
+	cudaMemset( d_flag, 0, numInter*sizeof(unsigned) );
+
+	unsigned one = 1;	
+
+	for( int i=0; i<partNum*partNum; i++ ) {
+		cudaMemcpy( d_flag+h_inter[i+1], &one, sizeof(unsigned), 
+			cudaMemcpyHostToDevice );
+	}
+
+	// CUDPP code
+	CUDPPHandle theCudpp;
+	cudppCreate(&theCudpp);
+
+ 	CUDPPConfiguration config;
+	config.op = CUDPP_ADD;
+	config.datatype = CUDPP_INT;
+	config.algorithm = CUDPP_SEGMENTED_SCAN;
+	config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_EXCLUSIVE;
+	CUDPPHandle scanplan = 0;
+
+	CUDPPResult res = cudppPlan( theCudpp, &scanplan, config, numInter, 1, 0 );
+
+	if (CUDPP_SUCCESS != res) {
+		printf("Error creating CUDPPPlan\n");
+		exit(-1);
+	}
+
+	// Run the scan
+	res = cudppSegmentedScan(scanplan, (void*)d_scanbalance, (void*)d_lengthA, 
+		d_flag, numInter);
+	if (CUDPP_SUCCESS != res)
+	{
+		printf("Error in cudppScan()\n");
+		exit(-1);
+	}
+
+	for( int i=1; i<=partNum*partNum; i++ ) {
+		h_inter[i]--;
+	}
+
+	int *d_inter;
+	cudaMalloc( &d_inter, partNum*partNum*sizeof(int) );
+	cudaMemcpy( d_inter, h_inter+1, partNum*partNum*sizeof(int), 
+		cudaMemcpyHostToDevice );
+	IntervalGather( partNum*partNum, d_inter, mgpu::counting_iterator<int>(0), 
+		partNum*partNum, d_scanbalance, d_moveCount, context );
+	IntervalGather( partNum*partNum, d_inter, mgpu::counting_iterator<int>(0),
+		partNum*partNum, d_lengthA, d_moveCount+partNum*partNum, context );
+	const int NBLOCKS = (partNum*partNum+NTHREADS-1)/NTHREADS;
+	add<<<NBLOCKS,NTHREADS>>>( d_moveCount, partNum*partNum );
+
+	print_array_device( "d_inter", d_inter, partNum*partNum );
+	print_array_device( "d_moveCount", d_moveCount, partNum*partNum );
+	print_array_device( "scan", d_scanbalance, numInter+1 );
+}
+
 
 // Matrix multiplication (Host code)
 void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
@@ -250,8 +319,34 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	gpu_timer2.Stop();
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
-
 	printf("outer product took: %f\n", elapsed2);
+
+	int *h_scanResult, *h_scanResultCudpp;
+	h_scanResult = (int*) malloc( numInter*sizeof(int) );
+	h_scanResultCudpp = (int*) malloc( numInter*sizeof(int) );
+	cudaMemcpy( h_scanResult, d_scanbalance, (numInter+1)*sizeof(int), 
+		cudaMemcpyDeviceToHost );
+	print_array( "scan result", h_scanResult, numInter+1 );
+
+	// input array: d_lengthA
+	// input scan: d_inter
+	// output array: d_scanbalance
+	// output moveCount: d_moveCount
+	// numInter: h_inter[partNum*partNum]
+	int *d_moveCount;
+	cudaMalloc( &d_moveCount, 2*partNum*partNum*sizeof(int) );
+	float elapsed3 = 0.0f;
+	GpuTimer gpu_timer3;
+	gpu_timer3.Start();
+	compareCudpp( d_lengthA, d_scanbalance, h_inter, d_moveCount, numInter, 
+		partNum, context);
+	gpu_timer3.Stop();
+	elapsed3 += gpu_timer3.ElapsedMillis();
+	printf("cudpp seg scan took: %f\n", elapsed3);
+
+	cudaMemcpy( h_scanResultCudpp, d_scanbalance, (numInter+1)*sizeof(int), 
+		cudaMemcpyDeviceToHost );
+	verify( numInter+1, h_scanResult, h_scanResultCudpp );
 	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 
