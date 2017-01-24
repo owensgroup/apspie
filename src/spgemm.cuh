@@ -173,7 +173,6 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	int numBlocks = MGPU_DIV_UP( max_A+B->col_length, NV );
 	//int numBlocks = MGPU_DIV_UP( max_A+max_B, NV );
 	MGPU_MEM(int) countsDevice = context.Malloc<int>(numBlocks+1);
-	CudaCheckError();
 
 	// Allocate space for intersection indices
     // d_intersectionA- This is a list of indices that are in both A and B

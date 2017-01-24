@@ -348,8 +348,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			//print_array_device( "good offA", d_interbalance, moveCount );
 			//print_array_device( "Hash Keys", d_hashKey, 40 );
 			//print_array_device( "Hash Vals", d_hashVal, 40 );
-			//printf("%d %d\n", i, j);
-			//print_array_device( "mergePath", partitionsDevice->get(), intervalCount );
+			printf("%d %d\n", i, j);
+			print_array_device( "mergePath", partitionsDevice->get(), intervalCount );
 			cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 			value += tempValue;
 			//printf("Failed inserts: %d\n", value);

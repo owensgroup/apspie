@@ -4,7 +4,7 @@
 #include <moderngpu.cuh>
 
 typedef struct matrix{
-	static const int DCSC = 32;
+	static const int DCSC = 35;
 
 	//DCSC cudaMallocs
 	int *d_dcscPartPtr;    // part+1
