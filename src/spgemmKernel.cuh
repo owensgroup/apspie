@@ -181,7 +181,7 @@ __global__ void KernelInterval( const int* d_moveCount,
 	IndicesIt d_dcscRowIndB, float *d_dcscValB, const int *d_inter, 
 	const int* d_partitions, OutputIt output_global, unsigned *d_hashKey, 
 	float *d_hashVal, int *value, uint2 constants, int* d_blocksBegin,
-	const int* d_partitionsBegin, const int partNum ) {
+	int* d_partitionsBegin, const int partNum ) {
 
     typedef MGPU_LAUNCH_PARAMS Params;
     const int NT = Params::NT;
@@ -204,29 +204,27 @@ __global__ void KernelInterval( const int* d_moveCount,
     int block = blockIdx.x;
 
     if( tid==0 ) {
-		idx = BinarySearchStart( d_blocksBegin, partNum*partNum+1, block, 
-			&blocksBegin );
+		idx = BinarySearchStart( d_partitionsBegin, partNum*partNum+1, block, 
+			&partitionsBegin );
 		moveCount = __ldg( d_moveCount + idx );
 		inter = __ldg( d_inter + idx );
 		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
-		partitionsBegin = __ldg( d_partitionsBegin + idx );
-		printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, partitionsBegin);
+		//partitionsBegin = __ldg( d_partitionsBegin + idx );
+		if( block%100==0 ) printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, partitionsBegin);
 	}
 
 	__syncthreads();
 
-	//int i = idx/partNum;
-	//int j = idx%partNum;
-
+	//int row_i = idx/partNum;
+	//int col_j = idx%partNum;
+	int target = idx*TABLE_SIZE;
 	
-}
-/*
     // Compute the input and output intervals this CTA processes.
     int4 range = mgpu::CTALoadBalance<NT, VT>( moveCount, indices_global+inter, 
-		intervalCount, block-blockStart, tid, d_partitions+partitionsBegin, 
+		intervalCount, block-partitionsBegin, tid, d_partitions+partitionsBegin,
 		shared.indices, true);
 
-	if( block==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w );
+	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w );
 
     // The interval indices are in the left part of shared memory (moveCount).
     // The scan of interval counts are in the right part (intervalCount).
@@ -259,8 +257,7 @@ __global__ void KernelInterval( const int* d_moveCount,
 
     // Load the source fill values into shared memory. Each value is fetched
     // only once to reduce latency and L2 traffic.
-    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + inter + range.z, tid,
-        shared.values);
+    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + inter + range.z, 		tid, shared.values);
 
     // Gather the values from shared memory into register. This uses a shared
     // memory broadcast - one instance of a value serves all the threads that
@@ -289,6 +286,97 @@ __global__ void KernelInterval( const int* d_moveCount,
 				valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f\n", i, j, row_idx[i], col_idx[i], valA[i]); 
+				if( insert( row_idx[i], col_idx[i], valC[i], d_hashKey+target, d_hashVal+target, constants )==false ) atomicAdd( value, 1 );//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
+			}
+	}}
+    //__syncthreads();
+
+    // Store the values to global memory.
+    //mgpu::DeviceRegToGlobal<NT, VT>(destCount, gather, tid, output_global + range.x);
+}
+
+template<typename Tuning, typename IndicesIt, typename ValuesIt, typename OutputIt>
+__global__ void KernelMove(int destCount,
+    IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, IndicesIt d_dcscRowIndB, float *d_dcscValB, int sourceCount, const int* mp_global, OutputIt output_global, unsigned *d_hashKey, float *d_hashVal, int *value, uint2 constants ) {
+
+    typedef MGPU_LAUNCH_PARAMS Params;
+    const int NT = Params::NT;
+    const int VT = Params::VT;
+    typedef typename std::iterator_traits<ValuesIt>::value_type T;
+
+    union Shared {
+        int indices[NT * (VT + 1)];
+        T values[NT * VT];
+    };
+    __shared__ Shared shared;
+    int tid = threadIdx.x;
+    int block = blockIdx.x;
+
+    // Compute the input and output intervals this CTA processes.
+    int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, sourceCount,
+        block, tid, mp_global, shared.indices, true);
+
+    // The interval indices are in the left part of shared memory (moveCount).
+    // The scan of interval counts are in the right part (intervalCount).
+    destCount = range.y - range.x;
+    sourceCount = range.w - range.z;
+
+    // Copy the source indices into register.
+    int sources[VT];
+    mgpu::DeviceSharedToReg<NT, VT>(shared.indices, tid, sources);
+
+    // The interval indices are in the left part of shared memory (moveCount).
+    // The scan of interval counts are in the right part (intervalCount).
+    int* move_shared = shared.indices;
+    int* intervals_shared = shared.indices + destCount;
+    int* intervals_shared2 = intervals_shared - range.z;
+ 
+    // Read out the interval indices and scan offsets.
+    int interval[VT], rank[VT];
+    #pragma unroll
+    for(int i = 0; i < VT; ++i) {
+        int index = NT * i + tid;
+        int gid = range.x + index;
+        interval[i] = range.z;
+        if(index < destCount) {
+            interval[i] = move_shared[index];
+            rank[i] = gid - intervals_shared2[interval[i]];
+        }
+    }
+    __syncthreads();
+
+    // Load the source fill values into shared memory. Each value is fetched
+    // only once to reduce latency and L2 traffic.
+    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + range.z, tid,
+        shared.values);
+
+    // Gather the values from shared memory into register. This uses a shared
+    // memory broadcast - one instance of a value serves all the threads that
+    // comprise its fill operation.
+    T values[VT];
+    mgpu::DeviceGather<NT, VT>(destCount, shared.values - range.z, sources, tid,
+        values, false);
+
+	int gather[VT], length[VT], off[VT], row_idx[VT], col_idx[VT];
+	float valA[VT], valB[VT], valC[VT];
+
+    #pragma unroll
+    for(int i = 0; i < VT; ++i) {
+        int index = NT * i + tid;
+        int gid = range.x + index;
+		if( index < destCount ) {
+        	gather[i] = values[i] + rank[i];
+			length[i] = __ldg(d_lengthB+sources[i]);    // lengthB
+			off[i]   = __ldg(d_offB+sources[i]);        // offB
+			row_idx[i]= __ldg(d_dcscRowIndA+gather[i]);
+			valA[i]   = __ldg(d_dcscValA+gather[i]);
+			//if( tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i]); 
+
+			for( int j=0; j<length[i]; j++ ) {
+				col_idx[i] = __ldg(d_dcscRowIndB+off[i]+j);
+				valB[i]    = __ldg(d_dcscValB+off[i]+j);
+				valC[i]    = valA[i]*valB[i];
+				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f\n", i, j, row_idx[i], col_idx[i], valA[i]); 
 				if( insert( row_idx[i], col_idx[i], valC[i], d_hashKey, d_hashVal, constants )==false ) atomicAdd( value, 1 );//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
 			}
 	}}
@@ -296,7 +384,8 @@ __global__ void KernelInterval( const int* d_moveCount,
 
     // Store the values to global memory.
     mgpu::DeviceRegToGlobal<NT, VT>(destCount, gather, tid, output_global + range.x);
-}*/
+}
+
 
 // Kernel Entry point for performing batch intersection computation
 template <typename typeVal>//, typename ProblemData, typename Functor>
@@ -331,8 +420,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 	unsigned *d_hashKey;
 	float *d_hashVal;
-	cudaMalloc( &d_hashKey, TABLE_SIZE*sizeof(unsigned) );
-	cudaMalloc( &d_hashVal, TABLE_SIZE*sizeof(float)    );
+	cudaMalloc( &d_hashKey, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
+	cudaMalloc( &d_hashVal, partNum*partNum*TABLE_SIZE*sizeof(float)    );
 	//print_array_device( "Hash Keys", d_hashKey, 40 );
 	//print_array_device( "Hash Vals", d_hashVal, 40 );
 
@@ -370,7 +459,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 	for( int i=0; i<partNum; i++ ) {
 		for( int j=0; j<partNum; j++ ) {
-	//for( int i=0; i<1; i++ ) {
+	//for( int i=1; i<2; i++ ) {
 	//	for( int j=0; j<2; j++ ) {
 			cudaMemset( d_hashKey, SLOT_EMPTY_INIT, TABLE_SIZE*sizeof(unsigned) );
 			cudaMemset( d_hashVal, 0.0f, TABLE_SIZE*sizeof(float)               );
@@ -400,15 +489,12 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 				h_partitionsBegin[partNum*i+j+1] = 
 					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
 
+				//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
+
 				//print_array_device( "good offA", d_interbalance, moveCount );
 				//printf("%d %d: %d\n", i, j, partitionsDevice->Size());
 				//print_array_device( "mergepath", partitionsDevice->get(), 
 				//	intervalCount );
-				//print_array_device( "mergepath end", partitionsDevice->get()+
-				//	partitionsDevice->Size()-40, 40 );
-				//cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
-				//value += tempValue;
-				//printf("Failed inserts: %d\n", value);
 
 				//Retrieve( d_hashKey, d_hashVal );
 
@@ -426,6 +512,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyHostToDevice );
 	cudaMemcpy( d_partitionsBegin, h_partitionsBegin, (partNum*partNum+1)*
 		sizeof(int), cudaMemcpyHostToDevice );
+	verify( partNum*partNum+1, h_blocksBegin, h_partitionsBegin );
 
 	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
 	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
@@ -443,10 +530,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	elapsed += gpu_timer.ElapsedMillis();
 	printf("my spgemm: %f ms\n", elapsed);
 	printf("Failed inserts: %d\n", value);
-	//CudaCheckError();
+	CudaCheckError();
 
 	print_array("h_inter", h_inter, partNum*partNum+1);
-	print_array_device("Off", A->d_dcscColPtr_off+h_inter[1], 40);
+	print_array_device("d_interbalance", d_interbalance, 40);
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
 	print_array_device("Val", A->d_cscVal, h_inter[1]);
