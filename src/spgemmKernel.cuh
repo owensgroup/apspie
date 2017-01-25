@@ -204,13 +204,14 @@ __global__ void KernelInterval( const int* d_moveCount,
     int block = blockIdx.x;
 
     if( tid==0 ) {
-		idx = BinarySearchStart( d_partitionsBegin, partNum*partNum+1, block, 
-			&partitionsBegin );
+		idx = BinarySearchStart( d_blocksBegin, partNum*partNum+1, block, 
+			&blocksBegin );
 		moveCount = __ldg( d_moveCount + idx );
 		inter = __ldg( d_inter + idx );
 		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
-		//partitionsBegin = __ldg( d_partitionsBegin + idx );
-		if( block%100==0 ) printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, partitionsBegin);
+		partitionsBegin = __ldg( d_partitionsBegin + idx );
+		//if( block%100==0 ) 
+			printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
 	}
 
 	__syncthreads();
@@ -221,15 +222,14 @@ __global__ void KernelInterval( const int* d_moveCount,
 	
     // Compute the input and output intervals this CTA processes.
     int4 range = mgpu::CTALoadBalance<NT, VT>( moveCount, indices_global+inter, 
-		intervalCount, block-partitionsBegin, tid, d_partitions+partitionsBegin,
+		intervalCount, block-blocksBegin, tid, d_partitions+partitionsBegin,
 		shared.indices, true);
-
-	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w );
 
     // The interval indices are in the left part of shared memory (moveCount).
     // The scan of interval counts are in the right part (intervalCount).
     int destCount = range.y - range.x;
     int sourceCount = range.w - range.z;
+	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -313,13 +313,14 @@ __global__ void KernelMove(int destCount,
     int block = blockIdx.x;
 
     // Compute the input and output intervals this CTA processes.
-    int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, sourceCount,
-        block, tid, mp_global, shared.indices, true);
+    int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, 
+		sourceCount, block, tid, mp_global, shared.indices, true);
 
     // The interval indices are in the left part of shared memory (moveCount).
     // The scan of interval counts are in the right part (intervalCount).
     destCount = range.y - range.x;
     sourceCount = range.w - range.z;
+	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -461,8 +462,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		for( int j=0; j<partNum; j++ ) {
 	//for( int i=1; i<2; i++ ) {
 	//	for( int j=0; j<2; j++ ) {
-			cudaMemset( d_hashKey, SLOT_EMPTY_INIT, TABLE_SIZE*sizeof(unsigned) );
-			cudaMemset( d_hashVal, 0.0f, TABLE_SIZE*sizeof(float)               );
+			cudaMemset( d_hashKey, SLOT_EMPTY_INIT, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
+			cudaMemset( d_hashVal, 0.0f, partNum*partNum*TABLE_SIZE*sizeof(float)               );
 
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
 			int moveCount = h_moveCount[partNum*i+j];
@@ -489,7 +490,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 				h_partitionsBegin[partNum*i+j+1] = 
 					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
 
-				//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
+				KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
 
 				//print_array_device( "good offA", d_interbalance, moveCount );
 				//printf("%d %d: %d\n", i, j, partitionsDevice->Size());

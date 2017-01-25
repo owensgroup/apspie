@@ -321,7 +321,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	h_scanResultCudpp = (int*) malloc( numInter*sizeof(int) );
 	cudaMemcpy( h_scanResultCudpp, d_scanbalance, (numInter+1)*sizeof(int), 
 		cudaMemcpyDeviceToHost );
-	print_array( "scan cudpp", h_scanResult, numInter+1 );
+	print_array( "scan cudpp", h_scanResultCudpp, numInter+1 );
 
 	float elapsed2 = 0.0f;
 	GpuTimer gpu_timer2;
