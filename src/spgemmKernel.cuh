@@ -96,17 +96,18 @@ __device__ int BinarySearch(int* keys, int count, int key) {
         return 0;
 }
 
-__device__ int BinarySearchStart(int* keys, int count, int key) {
+__device__ int BinarySearchStart(int* keys, int count, int key, int *val) {
     int begin = 0;
     int end = count;
     while (begin < end) {
         int mid = (begin + end) >> 1;
         int item = keys[mid];
-        if (item == key) return mid;
+        if (item == key) { *val=keys[mid]; return mid; }
         bool larger = (item > key);
         if (larger) end = mid;
         else begin = mid+1;
     }
+	*val = keys[end-1];
     return end-1;
 }
 
@@ -174,8 +175,13 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 }
 
 template<typename Tuning, typename IndicesIt, typename ValuesIt, typename OutputIt>
-__global__ void KernelInterval(int destCount,
-    IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, IndicesIt d_dcscRowIndB, float *d_dcscValB, int sourceCount, const int* mp_global, OutputIt output_global, unsigned *d_hashKey, float *d_hashVal, int *value, uint2 constants ) {
+__global__ void KernelInterval( const int* d_moveCount, 
+	IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, 
+	ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, float *d_dcscValA, 
+	IndicesIt d_dcscRowIndB, float *d_dcscValB, const int *d_inter, 
+	const int* d_partitions, OutputIt output_global, unsigned *d_hashKey, 
+	float *d_hashVal, int *value, uint2 constants, int* d_blocksBegin,
+	const int* d_partitionsBegin, const int partNum ) {
 
     typedef MGPU_LAUNCH_PARAMS Params;
     const int NT = Params::NT;
@@ -187,17 +193,45 @@ __global__ void KernelInterval(int destCount,
         T values[NT * VT];
     };
     __shared__ Shared shared;
+	__shared__ int idx;
+	__shared__ int moveCount;       // d_moveCount[idx]
+	__shared__ int intervalCount;   // d_inter[idx+1] - d_inter[idx]
+	__shared__ int inter;           // d_inter[idx]
+	__shared__ int blocksBegin;     // d_blocksBegin[idx]
+	__shared__ int partitionsBegin; // d_partitionsBegin[idx]
+
     int tid = threadIdx.x;
     int block = blockIdx.x;
 
+    if( tid==0 ) {
+		idx = BinarySearchStart( d_blocksBegin, partNum*partNum+1, block, 
+			&blocksBegin );
+		moveCount = __ldg( d_moveCount + idx );
+		inter = __ldg( d_inter + idx );
+		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
+		partitionsBegin = __ldg( d_partitionsBegin + idx );
+		printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, partitionsBegin);
+	}
+
+	__syncthreads();
+
+	//int i = idx/partNum;
+	//int j = idx%partNum;
+
+	
+}
+/*
     // Compute the input and output intervals this CTA processes.
-    int4 range = mgpu::CTALoadBalance<NT, VT>(destCount, indices_global, sourceCount,
-        block, tid, mp_global, shared.indices, true);
+    int4 range = mgpu::CTALoadBalance<NT, VT>( moveCount, indices_global+inter, 
+		intervalCount, block-blockStart, tid, d_partitions+partitionsBegin, 
+		shared.indices, true);
+
+	if( block==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w );
 
     // The interval indices are in the left part of shared memory (moveCount).
     // The scan of interval counts are in the right part (intervalCount).
-    destCount = range.y - range.x;
-    sourceCount = range.w - range.z;
+    int destCount = range.y - range.x;
+    int sourceCount = range.w - range.z;
 
     // Copy the source indices into register.
     int sources[VT];
@@ -225,7 +259,7 @@ __global__ void KernelInterval(int destCount,
 
     // Load the source fill values into shared memory. Each value is fetched
     // only once to reduce latency and L2 traffic.
-    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + range.z, tid,
+    mgpu::DeviceMemToMemLoop<NT>(sourceCount, values_globalA + inter + range.z, tid,
         shared.values);
 
     // Gather the values from shared memory into register. This uses a shared
@@ -244,8 +278,8 @@ __global__ void KernelInterval(int destCount,
         int gid = range.x + index;
 		if( index < destCount ) {
         	gather[i] = values[i] + rank[i];
-			length[i] = __ldg(d_lengthB+sources[i]);    // lengthB
-			off[i]   = __ldg(d_offB+sources[i]);        // offB
+			length[i] = __ldg(d_lengthB+inter+sources[i]);    // lengthB
+			off[i]   = __ldg(d_offB+inter+sources[i]);        // offB
 			row_idx[i]= __ldg(d_dcscRowIndA+gather[i]);
 			valA[i]   = __ldg(d_dcscValA+gather[i]);
 			//if( tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i]); 
@@ -262,7 +296,7 @@ __global__ void KernelInterval(int destCount,
 
     // Store the values to global memory.
     mgpu::DeviceRegToGlobal<NT, VT>(destCount, gather, tid, output_global + range.x);
-}
+}*/
 
 // Kernel Entry point for performing batch intersection computation
 template <typename typeVal>//, typename ProblemData, typename Functor>
@@ -275,8 +309,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
         int *d_interbalance,
         int *d_scanbalance,
 		int *h_inter,
+		const int *d_moveCount,
+		const int *h_moveCount,
 		const int partSize,
 		const int partNum,
+		const int moveTotal,
         mgpu::CudaContext                             &context)
 {
 	//const int BLOCKS = (A->m*A->m+THREADS-1)/THREADS;
@@ -306,12 +343,25 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 	// Tuning
     const int NT = 128;
-    const int VT = 7;
+    const int VT = 1;
 	
 	// Constants
 	uint2 constants;
 	generateConstants( &constants );
 	printf("constants: %d %d\n", constants.x, constants.y );
+	int *h_partitionsBegin, *d_partitionsBegin;
+	h_partitionsBegin = (int*) malloc( (partNum*partNum+1)*sizeof(int) );
+	h_partitionsBegin[0] = 0;
+	cudaMalloc( &d_partitionsBegin, (partNum*partNum+1)*sizeof(int) );
+	int *h_blocksBegin, *d_blocksBegin;
+	h_blocksBegin = (int*) malloc( (partNum*partNum+1)*sizeof(int) );
+	h_blocksBegin[0] = 0;
+	cudaMalloc( &d_blocksBegin, (partNum*partNum+1)*sizeof(int) );
+	int *d_partitions;
+	cudaMalloc( &d_partitions, moveTotal*sizeof(int) );
+
+	typedef mgpu::LaunchBoxVT<NT, VT> Tuning;
+	int2 launch = Tuning::GetLaunchParams(context);
 
 	cudaProfilerStart();
 	GpuTimer gpu_timer;
@@ -321,42 +371,72 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	for( int i=0; i<partNum; i++ ) {
 		for( int j=0; j<partNum; j++ ) {
 	//for( int i=0; i<1; i++ ) {
-	//	for( int j=0; j<1; j++ ) {
+	//	for( int j=0; j<2; j++ ) {
 			cudaMemset( d_hashKey, SLOT_EMPTY_INIT, TABLE_SIZE*sizeof(unsigned) );
 			cudaMemset( d_hashVal, 0.0f, TABLE_SIZE*sizeof(float)               );
 
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
-			int moveCount = 0;
-			//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_interbalance+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
-			mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthA+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
+			int moveCount = h_moveCount[partNum*i+j];
+			//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthA+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
 
-    		typedef mgpu::LaunchBoxVT<NT, VT> Tuning;
-    		int2 launch = Tuning::GetLaunchParams(context);
+			//if( moveCount!=h_moveCount[partNum*i+j] ) 
+			//	printf("Error: %d!=%d\n", moveCount, h_moveCount[partNum*i+j] );
 
     		int NV = launch.x * launch.y;
     		int numBlocks = MGPU_DIV_UP(moveCount + intervalCount, NV);
 
-    		MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions<mgpu::MgpuBoundsUpper>(
-        		mgpu::counting_iterator<int>(0), moveCount, d_scanbalance+h_inter[partNum*i+j],
-        		intervalCount, NV, 0, mgpu::less<int>(), context);
+			if( moveCount!=0 ) {
+
+    			MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions
+					<mgpu::MgpuBoundsUpper>( mgpu::counting_iterator<int>(0), 
+					moveCount, d_scanbalance+h_inter[partNum*i+j], 
+					intervalCount, NV, 0, mgpu::less<int>(), context);
 
     		//int4 range = CTALoadBalance<NT, VT>(moveCount, indices_global, 
         	//	intervalCount, block, tid, mp_global, indices_shared, true);
 			//printf("moveCount:%d\n", moveCount);
 
-			KernelInterval<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
-			//KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], intervalCount, mgpu::counting_iterator<int>(0), partitionsDevice->get(), d_interbalance );
+				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j]+numBlocks;
+				h_partitionsBegin[partNum*i+j+1] = 
+					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
 
-			//print_array_device( "good offA", d_interbalance, moveCount );
-			//printf("%d %d\n", i, j);
-			//print_array_device( "mergepath", partitionsDevice->get(), intervalCount );
-			cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
-			value += tempValue;
-			//printf("Failed inserts: %d\n", value);
+				//print_array_device( "good offA", d_interbalance, moveCount );
+				//printf("%d %d: %d\n", i, j, partitionsDevice->Size());
+				//print_array_device( "mergepath", partitionsDevice->get(), 
+				//	intervalCount );
+				//print_array_device( "mergepath end", partitionsDevice->get()+
+				//	partitionsDevice->Size()-40, 40 );
+				//cudaMemcpy( &tempValue, d_value, sizeof(int), cudaMemcpyDeviceToHost );
+				//value += tempValue;
+				//printf("Failed inserts: %d\n", value);
 
-			//Retrieve( d_hashKey, d_hashVal );
+				//Retrieve( d_hashKey, d_hashVal );
+
+				cudaMemcpy( d_partitions+h_partitionsBegin[partNum*i+j], 
+					partitionsDevice->get(), partitionsDevice->Size()*
+					sizeof(int), cudaMemcpyDeviceToDevice );
+			} else {
+				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j];
+				h_partitionsBegin[partNum*i+j+1] = 
+					h_partitionsBegin[partNum*i+j];
+			}
 		}
 	}
+	cudaMemcpy( d_blocksBegin, h_blocksBegin, (partNum*partNum+1)*sizeof(int), 
+		cudaMemcpyHostToDevice );
+	cudaMemcpy( d_partitionsBegin, h_partitionsBegin, (partNum*partNum+1)*
+		sizeof(int), cudaMemcpyHostToDevice );
+
+	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
+	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
+		partNum+1 );
+	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);	
+
+	KernelInterval<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
+		context.Stream()>>>( d_moveCount, d_scanbalance, d_offA, d_offB, 
+		d_lengthB, A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal,
+		d_inter, d_partitions, d_interbalance, d_hashKey, d_hashVal, 
+		d_value, constants, d_blocksBegin, d_partitionsBegin, partNum );
 
 	gpu_timer.Stop();
 	cudaProfilerStop();
@@ -370,6 +450,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
 	print_array_device("Val", A->d_cscVal, h_inter[1]);
-
+	print_array("blocksBegin", h_blocksBegin, partNum*partNum );
+	print_array("partitionsBegin", h_partitionsBegin, partNum*partNum );
+	print_array_device("d_partitions", d_partitions, moveTotal );
 }
 

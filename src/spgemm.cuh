@@ -17,28 +17,6 @@
 #define MAX_SHARED 49152
 #define MAX_GLOBAL 270000000
 
-template< typename typeVal >
-__global__ void populateRowIndVal( const int *d_cscColPtr, const int *d_cscRowInd, const typeVal *d_cscVal, int *d_dcscPartPtr, int *d_dcscColPtr_ind, int *d_dcscColPtr_off, int *d_dcscRowInd, typeVal *d_dcscVal, const int partNum, const int col_length, const int m, const int nnz )
-{
-	int start = threadIdx.x+blockIdx.x*blockDim.x;
-	int stride = gridDim.x*blockDim.x;
-	for( int idx=start; idx<m; idx+=stride )
-	{
-		int part = BinarySearchStart( d_dcscPartPtr, partNum+1, idx );
-
-		int row_start = __ldg( d_cscColPtr+idx );
-		int row_end = __ldg( d_cscColPtr+idx+1 );
-
-		while( row_start < row_end )
-		{
-			int k = __ldg( d_cscRowInd+row_start );
-
-			//int l = BinarySearchStart(
-			// Need to have lock
-		}
-	}
-}
-
 __global__ void gather( const int *input_array, const int* indices, const int length, int *output_array )
 {
     for (int idx = threadIdx.x+blockIdx.x*blockDim.x; idx<length; idx+=blockDim.x*gridDim.x) {
@@ -80,7 +58,7 @@ __global__ void updateInter( int *d_intersectionA, const int numThread, const in
 
 __global__ void add( int *d_moveCount, const int length ) {
 	int gid = threadIdx.x+blockIdx.x*blockDim.x;
-	if( gid<length ) {
+	if( gid<length && d_moveCount[gid]!=0 ) {
 		d_moveCount[gid]+=d_moveCount[gid+length];
 	}
 }
@@ -125,14 +103,20 @@ void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *
 		exit(-1);
 	}
 
-	for( int i=1; i<=partNum*partNum; i++ ) {
-		h_inter[i]--;
+	int *h_inter2 = (int*) malloc( (partNum*partNum+1)*sizeof(int) );
+	memcpy( h_inter2, h_inter, (partNum*partNum+1)*sizeof(int) );
+	print_array( "h_inter", h_inter2, partNum*partNum+1 );
+	for( int i=0; i<partNum*partNum; i++ ) {
+		if( h_inter2[i]==h_inter2[i+1] ) h_inter2[i] = 0;
+		else h_inter2[i] = h_inter2[i+1]-1;
 	}
+	print_array( "h_inter2", h_inter2, partNum*partNum+1 );
 
 	int *d_inter;
 	cudaMalloc( &d_inter, partNum*partNum*sizeof(int) );
-	cudaMemcpy( d_inter, h_inter+1, partNum*partNum*sizeof(int), 
+	cudaMemcpy( d_inter, h_inter2, partNum*partNum*sizeof(int), 
 		cudaMemcpyHostToDevice );
+
 	IntervalGather( partNum*partNum, d_inter, mgpu::counting_iterator<int>(0), 
 		partNum*partNum, d_scanbalance, d_moveCount, context );
 	IntervalGather( partNum*partNum, d_inter, mgpu::counting_iterator<int>(0),
@@ -311,30 +295,15 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	print_array_device("lengthB", d_lengthB, numInter);
 	print_array_device("offB", d_offB, numInter);
 
-	float elapsed2 = 0.0f;
-	GpuTimer gpu_timer2;
-	gpu_timer2.Start();
-
-	LaunchKernel<float>( C, A, B, d_offA, d_lengthA, d_offB, d_lengthB, d_interbalance, d_scanbalance, h_inter, partSize, partNum, context );
-	gpu_timer2.Stop();
-
-	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("outer product took: %f\n", elapsed2);
-
-	int *h_scanResult, *h_scanResultCudpp;
-	h_scanResult = (int*) malloc( numInter*sizeof(int) );
-	h_scanResultCudpp = (int*) malloc( numInter*sizeof(int) );
-	cudaMemcpy( h_scanResult, d_scanbalance, (numInter+1)*sizeof(int), 
-		cudaMemcpyDeviceToHost );
-	print_array( "scan result", h_scanResult, numInter+1 );
-
 	// input array: d_lengthA
 	// input scan: d_inter
 	// output array: d_scanbalance
 	// output moveCount: d_moveCount
 	// numInter: h_inter[partNum*partNum]
-	int *d_moveCount;
+	int *d_moveCount, *h_moveCount, moveCount;
 	cudaMalloc( &d_moveCount, 2*partNum*partNum*sizeof(int) );
+	h_moveCount = (int*) malloc (partNum*partNum*sizeof(int) );
+
 	float elapsed3 = 0.0f;
 	GpuTimer gpu_timer3;
 	gpu_timer3.Start();
@@ -343,10 +312,29 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	gpu_timer3.Stop();
 	elapsed3 += gpu_timer3.ElapsedMillis();
 	printf("cudpp seg scan took: %f\n", elapsed3);
+	cudaMemcpy( h_moveCount, d_moveCount, partNum*partNum*sizeof(int),
+		cudaMemcpyDeviceToHost );
+    mgpu::Reduce( d_moveCount, partNum*partNum, (int)0, mgpu::plus<int>(), (int*)0, &moveCount, context );
 
+	int *h_scanResult, *h_scanResultCudpp;
+	h_scanResult = (int*) malloc( numInter*sizeof(int) );
+	h_scanResultCudpp = (int*) malloc( numInter*sizeof(int) );
 	cudaMemcpy( h_scanResultCudpp, d_scanbalance, (numInter+1)*sizeof(int), 
 		cudaMemcpyDeviceToHost );
-	verify( numInter+1, h_scanResult, h_scanResultCudpp );
+	print_array( "scan cudpp", h_scanResult, numInter+1 );
+
+	float elapsed2 = 0.0f;
+	GpuTimer gpu_timer2;
+	gpu_timer2.Start();
+
+	LaunchKernel<float>( C, A, B, d_offA, d_lengthA, d_offB, d_lengthB, 
+		d_interbalance, d_scanbalance, h_inter, d_moveCount, h_moveCount, 
+		partSize, partNum, moveCount, context );
+	gpu_timer2.Stop();
+
+	elapsed2 += gpu_timer2.ElapsedMillis();
+	printf("outer product took: %f\n", elapsed2);
+
 	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 
