@@ -66,14 +66,15 @@ __global__ void add( int *d_moveCount, const int length ) {
 void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *d_moveCount, const int numInter, const int partNum, mgpu::CudaContext &context ) {
 
 	unsigned *d_flag;
-	cudaMalloc( &d_flag, numInter*sizeof(unsigned) );
-	cudaMemset( d_flag, 0, numInter*sizeof(unsigned) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_flag, numInter*sizeof(unsigned) ));
+	CUDA_SAFE_CALL(cudaMemset( d_flag, (unsigned) 0, numInter*sizeof(unsigned) ));
 
-	unsigned one = 1;	
+	unsigned one = 1;
 
-	for( int i=0; i<partNum*partNum; i++ ) {
-		cudaMemcpy( d_flag+h_inter[i+1], &one, sizeof(unsigned), 
-			cudaMemcpyHostToDevice );
+	for( int i=0; i<partNum*partNum-1; i++ ) {
+		//printf("i:%d, h_inter:%d\n", i, h_inter[i+1]);
+		CUDA_SAFE_CALL(cudaMemcpy( d_flag+h_inter[i+1], &one, sizeof(unsigned),
+			cudaMemcpyHostToDevice ));
 	}
 
 	// CUDPP code
@@ -113,9 +114,9 @@ void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *
 	print_array( "h_inter2", h_inter2, partNum*partNum+1 );
 
 	int *d_inter;
-	cudaMalloc( &d_inter, partNum*partNum*sizeof(int) );
-	cudaMemcpy( d_inter, h_inter2, partNum*partNum*sizeof(int), 
-		cudaMemcpyHostToDevice );
+	CUDA_SAFE_CALL(cudaMalloc( &d_inter, partNum*partNum*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_inter, h_inter2, partNum*partNum*sizeof(int), 
+		cudaMemcpyHostToDevice ));
 
 	IntervalGather( partNum*partNum, d_inter, mgpu::counting_iterator<int>(0), 
 		partNum*partNum, d_scanbalance, d_moveCount, context );
@@ -250,11 +251,15 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
     int *h_index = (int*)malloc(A->nnz*sizeof(int));
     for( int i=0; i<A->nnz;i++ ) h_index[i]=i;
-    cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),cudaMemcpyHostToDevice);
+    CUDA_SAFE_CALL(cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),
+		cudaMemcpyHostToDevice));
 
-	int *d_ones;
+	int *d_ones, *h_ones;
+	h_ones = (int*) malloc( A->nnz*sizeof(int) );
+	for( int i=0; i<A->nnz; i++ ) h_ones[i] = 1;
 	CUDA_SAFE_CALL(cudaMalloc(&d_ones, A->nnz*sizeof(int)));
-	cudaMemset( &d_ones, 1, A->nnz*sizeof(int) ); 
+	CUDA_SAFE_CALL(cudaMemcpy( d_ones, h_ones, A->nnz*sizeof(int), 
+		cudaMemcpyHostToDevice )); 
 
 	// TODO: compute:
 	//	1) numInterA - this is number of intersections in A
@@ -265,14 +270,14 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	int numInter = h_inter[partNum*partNum];
 
 	int *d_colDiffA;
-	cudaMalloc( &d_colDiffA, A->col_length*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_colDiffA, A->col_length*sizeof(int) ));
 	int NBLOCKS = (A->col_length+NTHREADS-1)/NTHREADS;
 	diff<<<NBLOCKS,NTHREADS>>>( A->d_dcscColPtr_off, d_colDiffA, A->col_length );
 	print_array_device("colDiffA", d_colDiffA, A->col_length);
 
 	int *d_lengthA, *d_offA;
-	cudaMalloc( &d_lengthA, numInter*sizeof(int) );
-	cudaMalloc( &d_offA, numInter*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_lengthA, numInter*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMalloc( &d_offA, numInter*sizeof(int) ));
 
 	// Step 1: Form d_offA, d_lengthA, d_offB, d_lengthB
     IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), numInter, d_colDiffA, d_lengthA, context );
@@ -281,14 +286,14 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	print_array_device("offA", d_offA, numInter);
 
 	int *d_colDiffB;
-	cudaMalloc( &d_colDiffB, B->col_length*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_colDiffB, B->col_length*sizeof(int) ));
 	NBLOCKS = (B->col_length+NTHREADS-1)/NTHREADS;
 	diff<<<NBLOCKS,NTHREADS>>>( B->d_dcscColPtr_off, d_colDiffB, B->col_length );
 	print_array_device("colDiffB", d_colDiffB, B->col_length);
 
 	int *d_lengthB, *d_offB;
-	cudaMalloc( &d_lengthB, numInter*sizeof(int) );
-	cudaMalloc( &d_offB, numInter*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_lengthB, numInter*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMalloc( &d_offB, numInter*sizeof(int) ));
 
     IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, d_colDiffB, d_lengthB, context );
 	IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, B->d_dcscColPtr_off, d_offB, context );
@@ -301,7 +306,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	// output moveCount: d_moveCount
 	// numInter: h_inter[partNum*partNum]
 	int *d_moveCount, *h_moveCount, moveCount;
-	cudaMalloc( &d_moveCount, 2*partNum*partNum*sizeof(int) );
+	CUDA_SAFE_CALL(cudaMalloc( &d_moveCount, 2*partNum*partNum*sizeof(int) ));
 	h_moveCount = (int*) malloc (partNum*partNum*sizeof(int) );
 
 	float elapsed3 = 0.0f;
@@ -312,16 +317,10 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	gpu_timer3.Stop();
 	elapsed3 += gpu_timer3.ElapsedMillis();
 	printf("cudpp seg scan took: %f\n", elapsed3);
-	cudaMemcpy( h_moveCount, d_moveCount, partNum*partNum*sizeof(int),
-		cudaMemcpyDeviceToHost );
+	CUDA_SAFE_CALL(cudaMemcpy( h_moveCount, d_moveCount, partNum*partNum*
+		sizeof(int), cudaMemcpyDeviceToHost ));
     mgpu::Reduce( d_moveCount, partNum*partNum, (int)0, mgpu::plus<int>(), (int*)0, &moveCount, context );
-
-	int *h_scanResult, *h_scanResultCudpp;
-	h_scanResult = (int*) malloc( numInter*sizeof(int) );
-	h_scanResultCudpp = (int*) malloc( numInter*sizeof(int) );
-	cudaMemcpy( h_scanResultCudpp, d_scanbalance, (numInter+1)*sizeof(int), 
-		cudaMemcpyDeviceToHost );
-	print_array( "scan cudpp", h_scanResultCudpp, numInter+1 );
+	CudaCheckError();
 
 	float elapsed2 = 0.0f;
 	GpuTimer gpu_timer2;

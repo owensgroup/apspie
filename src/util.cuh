@@ -220,13 +220,14 @@ int CompareResults(const T* computed, const T* reference, const int len, const b
     return flag;
 }
 
+// Specialization for float
 template <>
 int CompareResults(const float* computed, const float* reference, const int len, const bool verbose )
 {
     int flag = 0;
     for (int i = 0; i < len; i++) {
 
-        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1)) {
+        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1) && (abs(computed[i]-reference[i]) > 0.1*abs(computed[i]))) {
             printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
             std::cout << computed[i];
             printf(" != ");
