@@ -424,12 +424,14 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     cudaMemcpy( d_inter, h_inter, (partNum*partNum+1)*sizeof(int), cudaMemcpyHostToDevice );
 
 	unsigned *d_hashKey, *h_hashKey;
-	float *d_hashVal, *h_hashKey;
+	float *d_hashVal, *h_hashVal;
 	cudaMalloc( &d_hashKey, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
 	cudaMalloc( &d_hashVal, partNum*partNum*TABLE_SIZE*sizeof(float)    );
 	cudaMemset( d_hashKey, SLOT_EMPTY_INIT, partNum*partNum*TABLE_SIZE*
 		sizeof(unsigned) );
 	cudaMemset( d_hashVal, 0.0f, partNum*partNum*TABLE_SIZE*sizeof(float));
+	h_hashKey = (unsigned*) malloc( TABLE_SIZE*sizeof(unsigned) );
+	h_hashVal = (float*) malloc( TABLE_SIZE*sizeof(float) );
 	//print_array_device( "Hash Keys", d_hashKey, 40 );
 	//print_array_device( "Hash Vals", d_hashVal, 40 );
 
@@ -460,19 +462,17 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	typedef mgpu::LaunchBoxVT<NT, VT> Tuning;
 	int2 launch = Tuning::GetLaunchParams(context);
 
-	cudaProfilerStart();
-	GpuTimer gpu_timer;
-	float elapsed = 0.0f;
-	gpu_timer.Start();
-
 	// Temp Arrays for Testing
-	unsigned *d_hashKeyTest;
-	float *d_hashValTest;
+	unsigned *d_hashKeyTest, *h_hashKeyTest;
+	float *d_hashValTest, *h_hashValTest;
 	cudaMalloc( &d_hashKeyTest, TABLE_SIZE*sizeof(unsigned) );
 	cudaMalloc( &d_hashValTest, TABLE_SIZE*sizeof(float)    );
 	cudaMemset( d_hashKeyTest, SLOT_EMPTY_INIT, TABLE_SIZE*sizeof(unsigned) );
 	cudaMemset( d_hashValTest, 0.0f, TABLE_SIZE*sizeof(float));
-	for( int i=1; i<2; i++ ) {
+	h_hashKeyTest = (unsigned*) malloc( TABLE_SIZE*sizeof(unsigned) );
+	h_hashValTest = (float*) malloc( TABLE_SIZE*sizeof(float) );
+	for( int i=0; i<1; i++ ) {
+	//for( int i=1; i<2; i++ ) {
 		for( int j=0; j<1; j++ ) {
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
 			int moveCount = h_moveCount[partNum*i+j];
@@ -487,6 +487,15 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 			}
 		}
 	}
+	cudaMemcpy( h_hashKeyTest, d_hashKeyTest, TABLE_SIZE*sizeof(unsigned),
+		cudaMemcpyDeviceToHost );
+	cudaMemcpy( h_hashValTest, d_hashValTest, TABLE_SIZE*sizeof(float),
+		cudaMemcpyDeviceToHost );
+
+	cudaProfilerStart();
+	GpuTimer gpu_timer;
+	float elapsed = 0.0f;
+	gpu_timer.Start();
 
 	for( int i=0; i<partNum; i++ ) {
 		for( int j=0; j<partNum; j++ ) {
@@ -537,12 +546,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyHostToDevice );
 	cudaMemcpy( d_partitionsBegin, h_partitionsBegin, (partNum*partNum+1)*
 		sizeof(int), cudaMemcpyHostToDevice );
-	verify( partNum*partNum+1, h_blocksBegin, h_partitionsBegin );
-
-	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
-	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
-		partNum+1 );
-	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);	
+	//verify( partNum*partNum+1, h_blocksBegin, h_partitionsBegin );
 
 	KernelInterval<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
 		context.Stream()>>>( d_moveCount, d_scanbalance, d_offA, d_offB, 
@@ -555,9 +559,20 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	elapsed += gpu_timer.ElapsedMillis();
 	printf("my spgemm: %f ms\n", elapsed);
 	printf("Failed inserts: %d\n", value);
-	CudaCheckError();
+	//CudaCheckError();
 
-	print_array("h_inter", h_inter, partNum*partNum+1);
+	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
+	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
+		partNum+1 );
+	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);	
+
+	cudaMemcpy( h_hashKey, d_hashKey, TABLE_SIZE*sizeof(unsigned),
+		cudaMemcpyDeviceToHost );
+	cudaMemcpy( h_hashVal, d_hashVal, TABLE_SIZE*sizeof(float),
+		cudaMemcpyDeviceToHost );
+	verify( TABLE_SIZE, h_hashKey, h_hashKeyTest );
+	verify( TABLE_SIZE, h_hashVal, h_hashValTest );
+
 	print_array_device("d_interbalance", d_interbalance, 40);
 	print_array_device("Row", A->d_cscColInd, h_inter[1]);
 	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
