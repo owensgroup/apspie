@@ -24,9 +24,9 @@ void matrix_new( d_matrix *A, int m, int n )
 	A->d_dcscVal = NULL;
 
 	// Device alloc
-    cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int));
-	cudaMalloc(&(A->d_dcscColPtr_ind), A->DCSC*min(A->m,A->n)*sizeof(int));
-	cudaMalloc(&(A->d_dcscColPtr_off), A->DCSC*min(A->m,A->n)*sizeof(int));
+    CUDA_SAFE_CALL(cudaMalloc(&(A->d_cscColPtr), (A->m+1)*sizeof(int)));
+	CUDA_SAFE_CALL(cudaMalloc(&(A->d_dcscColPtr_ind), A->DCSC*min(A->m,A->n)*sizeof(int)));
+	CUDA_SAFE_CALL(cudaMalloc(&(A->d_dcscColPtr_off), A->DCSC*min(A->m,A->n)*sizeof(int)));
 }
 
 // This function converts function from COO to CSC/CSR representation
@@ -47,9 +47,9 @@ void matrix_new( d_matrix *A, int m, int n )
 
 void matrix_delete( d_matrix *A )
 {
-	cudaFree( A->d_cscColPtr );
-	if( A->d_cscRowInd != NULL ) cudaFree( A->d_cscRowInd );
-	if( A->d_cscVal != NULL ) cudaFree( A->d_cscVal );
+	CUDA_SAFE_CALL(cudaFree( A->d_cscColPtr ));
+	if( A->d_cscRowInd != NULL ) CUDA_SAFE_CALL(cudaFree( A->d_cscRowInd ));
+	if( A->d_cscVal != NULL ) CUDA_SAFE_CALL(cudaFree( A->d_cscVal ));
 }
 
 template<typename typeVal>
@@ -66,12 +66,12 @@ void buildMatrix( d_matrix *A,
     A->h_cscVal = (typeVal*)malloc(A->nnz*sizeof(typeVal));	
 
 	// Device malloc
-    cudaMalloc(&(A->d_cscVal), A->nnz*sizeof(typeVal));
-    cudaMalloc(&(A->d_cscRowInd), A->nnz*sizeof(int));
+    CUDA_SAFE_CALL(cudaMalloc(&(A->d_cscVal), A->nnz*sizeof(typeVal)));
+    CUDA_SAFE_CALL(cudaMalloc(&(A->d_cscRowInd), A->nnz*sizeof(int)));
 
 	// DCSC malloc
-    cudaMalloc(&(A->d_dcscVal), A->nnz*sizeof(typeVal));
-    cudaMalloc(&(A->d_dcscRowInd), A->nnz*sizeof(int));
+    CUDA_SAFE_CALL(cudaMalloc(&(A->d_dcscVal), A->nnz*sizeof(typeVal)));
+    CUDA_SAFE_CALL(cudaMalloc(&(A->d_dcscRowInd), A->nnz*sizeof(int)));
 
 	// Convert to CSC/CSR
     int temp;
@@ -105,9 +105,9 @@ void buildMatrix( d_matrix *A,
 	}
 
 	// Device memcpy
-    cudaMemcpy(A->d_cscVal, A->h_cscVal, A->nnz*sizeof(typeVal),cudaMemcpyHostToDevice);
-    cudaMemcpy(A->d_cscRowInd, A->h_cscRowInd, A->nnz*sizeof(int),cudaMemcpyHostToDevice);	
-    cudaMemcpy(A->d_cscColPtr, A->h_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyHostToDevice);
+    CUDA_SAFE_CALL(cudaMemcpy(A->d_cscVal, A->h_cscVal, A->nnz*sizeof(typeVal),cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(A->d_cscRowInd, A->h_cscRowInd, A->nnz*sizeof(int),cudaMemcpyHostToDevice));	
+    CUDA_SAFE_CALL(cudaMemcpy(A->d_cscColPtr, A->h_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyHostToDevice));
 }
 
 // This function takes a matrix A that's already been buildMatrix'd and performs
@@ -128,9 +128,9 @@ void matrix_copy( d_matrix *B, d_matrix *A )
     B->h_cscVal = (float*)malloc(B->nnz*sizeof(float));	
 
 	// Device alloc
-    cudaMalloc(&(B->d_cscColPtr), (B->m+1)*sizeof(int));
-    cudaMalloc(&(B->d_cscVal), B->nnz*sizeof(float));
-    cudaMalloc(&(B->d_cscRowInd), B->nnz*sizeof(int));
+    CUDA_SAFE_CALL(cudaMalloc(&(B->d_cscColPtr), (B->m+1)*sizeof(int)));
+    CUDA_SAFE_CALL(cudaMalloc(&(B->d_cscVal), B->nnz*sizeof(float)));
+    CUDA_SAFE_CALL(cudaMalloc(&(B->d_cscRowInd), B->nnz*sizeof(int)));
 
 	// Host memcpy
     memcpy( B->h_cscColPtr, A->h_cscColPtr, (B->m+1)*sizeof(int));
@@ -138,9 +138,9 @@ void matrix_copy( d_matrix *B, d_matrix *A )
     memcpy( B->h_cscVal, A->h_cscVal, B->nnz*sizeof(float));
 
 	// Device memcpy
-    cudaMemcpy(B->d_cscColPtr, A->h_cscColPtr, (B->m+1)*sizeof(int),cudaMemcpyHostToDevice);
-    cudaMemcpy(B->d_cscVal, A->h_cscVal, B->nnz*sizeof(float),cudaMemcpyHostToDevice);
-    cudaMemcpy(B->d_cscRowInd, A->h_cscRowInd, B->nnz*sizeof(int),cudaMemcpyHostToDevice);
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscColPtr, A->h_cscColPtr, (B->m+1)*sizeof(int),cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscVal, A->h_cscVal, B->nnz*sizeof(float),cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscRowInd, A->h_cscRowInd, B->nnz*sizeof(int),cudaMemcpyHostToDevice));
 }
 
 void print_matrix( d_matrix *A, bool val ) {
@@ -176,9 +176,9 @@ void copy_matrix_device( d_matrix *A ) {
 	}
 
 	// Copy from device
-    cudaMemcpy(A->h_cscVal, A->d_cscVal, A->nnz*sizeof(float),cudaMemcpyDeviceToHost);
-    cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost);	
-    cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscVal, A->d_cscVal, A->nnz*sizeof(float),cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost));	
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost));
 }
 
 void print_matrix_device( d_matrix *A, bool val ) {
@@ -193,9 +193,9 @@ void print_matrix_device( d_matrix *A, bool val ) {
 	}
 
 	// Copy from device
-    cudaMemcpy(A->h_cscVal, A->d_cscVal, A->nnz*sizeof(float),cudaMemcpyDeviceToHost);
-    cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost);	
-    cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost);
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscVal, A->d_cscVal, A->nnz*sizeof(float),cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscRowInd, A->d_cscRowInd, A->nnz*sizeof(int),cudaMemcpyDeviceToHost));	
+    CUDA_SAFE_CALL(cudaMemcpy(A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int),cudaMemcpyDeviceToHost));
 	
 	print_matrix( A, val );
 }
@@ -213,13 +213,13 @@ void extract( d_matrix *B, const d_matrix *A )
 		B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
     	B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
 
-    	cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
-    	cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
+    	CUDA_SAFE_CALL(cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) ));
+    	CUDA_SAFE_CALL(cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) ));
 	}
 
-    cudaMemcpy(B->d_cscColPtr, A->d_cscColPtr, (B->m+1)*sizeof(int),cudaMemcpyDeviceToDevice);
-    cudaMemcpy(B->d_cscVal, A->d_cscVal, B->nnz*sizeof(float),cudaMemcpyDeviceToDevice);
-    cudaMemcpy(B->d_cscRowInd, A->d_cscRowInd, B->nnz*sizeof(int),cudaMemcpyDeviceToDevice);
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscColPtr, A->d_cscColPtr, (B->m+1)*sizeof(int),cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscVal, A->d_cscVal, B->nnz*sizeof(float),cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(B->d_cscRowInd, A->d_cscRowInd, B->nnz*sizeof(int),cudaMemcpyDeviceToDevice));
 
 }
 
@@ -239,8 +239,8 @@ void extract_csr2csc( d_matrix *B, const d_matrix *A )
 	B->h_cscRowInd = (int*)malloc(B->nnz*sizeof(int));
     B->h_cscVal = (typeVal*)malloc(B->nnz*sizeof(typeVal));
 
-    cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) );
-    cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) );
+    CUDA_SAFE_CALL(cudaMalloc( &(B->d_cscRowInd), B->nnz*sizeof(int) ));
+    CUDA_SAFE_CALL(cudaMalloc( &(B->d_cscVal), B->nnz*sizeof(typeVal) ));
 
 	//print_array_device(A->d_cscColPtr,40);
 	//print_array_device(A->d_cscRowInd,40);
@@ -291,7 +291,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		A->part = partNum;
 
 		A->h_dcscPartPtr = (int*)malloc((partNum+1)*sizeof(int));
-		cudaMalloc(&(A->d_dcscPartPtr), (partNum+1)*sizeof(int));
+		CUDA_SAFE_CALL(cudaMalloc(&(A->d_dcscPartPtr), (partNum+1)*sizeof(int)));
 	} else {
 	// Step 0: Preallocations for scratchpad memory
 	int *d_flagArray, *d_tempArray, *d_index;
@@ -302,7 +302,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
 		int *h_index = (int*)malloc(A->nnz*sizeof(int));
 		for( int i=0; i<A->nnz;i++ ) h_index[i]=i;
-		cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),cudaMemcpyHostToDevice);
+		CUDA_SAFE_CALL(cudaMemcpy(d_index,h_index,A->nnz*sizeof(int),cudaMemcpyHostToDevice));
 
 		// d_cscColDiff
 		/*int *d_cscColDiff;
@@ -330,8 +330,8 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		for( int i=0; i<partNum; i++ ) h_offsets[i]=A->h_cscColPtr[i*partSize];
 		h_offsets[partNum] = A->nnz;
 		int *d_offsets;
-		cudaMalloc(&d_offsets, (partNum+1)*sizeof(int));
-		cudaMemcpy(d_offsets,h_offsets,(partNum+1)*sizeof(int),cudaMemcpyHostToDevice);
+		CUDA_SAFE_CALL(cudaMalloc(&d_offsets, (partNum+1)*sizeof(int)));
+		CUDA_SAFE_CALL(cudaMemcpy(d_offsets,h_offsets,(partNum+1)*sizeof(int),cudaMemcpyHostToDevice));
 
 		// Upper bit limit radix sort: Use log(A->n)
 		int end_bit = log2( *(uint32_t*)&(A->n) )+1;
@@ -375,8 +375,8 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 	// Step 3: Use d_dcscColPtr_off and segmented sort output to get d_dcscColPtr_ind
 		IntervalGather( A->col_length, A->d_dcscColPtr_off, d_index, A->col_length, A->d_dcscRowInd, A->d_dcscColPtr_ind, context );
 		shiftRightAdd<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, A->col_length );
-		cudaMemset( A->d_dcscColPtr_off, 0, sizeof(int));
-		cudaMemcpy( A->d_dcscColPtr_off+A->col_length, &(A->nnz), sizeof(int), cudaMemcpyHostToDevice);
+		CUDA_SAFE_CALL(cudaMemset( A->d_dcscColPtr_off, 0, sizeof(int)));
+		CUDA_SAFE_CALL(cudaMemcpy( A->d_dcscColPtr_off+A->col_length, &(A->nnz), sizeof(int), cudaMemcpyHostToDevice));
 		if( DEBUG ) CudaCheckError();
 
 	gpu_timer3.Stop();
@@ -387,7 +387,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 	// Step 4: Segmented Reduce to find d_dcscPartPtr
 		IntervalGather( partNum, d_offsets, d_index, partNum, d_tempArray, A->d_dcscPartPtr, context );
 		if( DEBUG ) CudaCheckError();
-		cudaMemcpy( A->d_dcscPartPtr+partNum, &(A->col_length), sizeof(int), cudaMemcpyHostToDevice );
+		CUDA_SAFE_CALL(cudaMemcpy( A->d_dcscPartPtr+partNum, &(A->col_length), sizeof(int), cudaMemcpyHostToDevice ));
 
 	gpu_timer4.Stop();
 	gpu_timer5.Start();
@@ -448,10 +448,10 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		CudaCheckError();
 	}
 
-		cudaFree(d_temp_storage);
-		cudaFree(d_flagArray);
-		cudaFree(d_tempArray);
-		cudaFree(d_index);
+		CUDA_SAFE_CALL(cudaFree(d_temp_storage));
+		CUDA_SAFE_CALL(cudaFree(d_flagArray));
+		CUDA_SAFE_CALL(cudaFree(d_tempArray));
+		CUDA_SAFE_CALL(cudaFree(d_index));
 
 		elapsed1 += gpu_timer1.ElapsedMillis();
 		elapsed2 += gpu_timer2.ElapsedMillis();
@@ -468,5 +468,5 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 
 void copy_part( d_matrix *A )
 {
-	cudaMemcpy( A->h_dcscPartPtr, A->d_dcscPartPtr, (A->part+1)*sizeof(int), cudaMemcpyDeviceToHost);
+	CUDA_SAFE_CALL(cudaMemcpy( A->h_dcscPartPtr, A->d_dcscPartPtr, (A->part+1)*sizeof(int), cudaMemcpyDeviceToHost));
 }
