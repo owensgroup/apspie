@@ -454,10 +454,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	// Constants
 	uint2 constants;
 	for( int i=0; i<5; i++ ) {
-	generateConstants( &constants );
-	printf("__constant__ unsigned constant %u %u\n", constants.x, constants.y );
-	generateConstants( &constants );
-	printf("constants: %u %u\n", constants.x, constants.y );
+		generateConstants( &constants );
+		printf("__constant__ unsigned constantx%d %u\n", i, constants.x );
+		printf("__constant__ unsigned constantx%d %u\n", i, constants.y );
 	}
 
 	int *h_partitionsBegin, *d_partitionsBegin;

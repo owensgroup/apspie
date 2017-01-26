@@ -29,8 +29,8 @@ set( CUDA_CUDPP_LIBRARY "/home/ctcyang/apspie/ext/cudpp/lib/libcudpp.a" )
 FILE( GLOB_RECURSE PROJ_HEADERS ../../src/*.cuh ../../src/*.h )
 
 # nvcc flags
-#set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-arch=sm_35;-lineinfo;-Xptxas=-v,-dlcm=ca)
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-arch=sm_35;-lineinfo;-Xptxas=-dlcm=ca)
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-arch=sm_35;-lineinfo;-Xptxas=-v,-dlcm=ca)
+#set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-arch=sm_35;-lineinfo;-Xptxas=-dlcm=ca)
 
 # needed for cudamalloc
 set(CMAKE_CXX_FLAGS "-fpermissive")

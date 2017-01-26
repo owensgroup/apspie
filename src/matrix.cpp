@@ -458,11 +458,12 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		elapsed3 += gpu_timer3.ElapsedMillis();
 		elapsed4 += gpu_timer4.ElapsedMillis();
 		elapsed5 += gpu_timer5.ElapsedMillis();
-		printf("Step 1: %f\n", elapsed1);
-		printf("Step 2: %f\n", elapsed2);
-		printf("Step 3: %f\n", elapsed3);
-		printf("Step 4: %f\n", elapsed4);
-		printf("Step 5: %f\n", elapsed5);
+		//printf("Step 1: %f\n", elapsed1);
+		//printf("Step 2: %f\n", elapsed2);
+		//printf("Step 3: %f\n", elapsed3);
+		//printf("Step 4: %f\n", elapsed4);
+		//printf("Step 5: %f\n", elapsed5);
+		printf("Conversion: %f\n", elapsed1+elapsed2+elapsed3+elapsed4+elapsed5 );
 	}
 }
 
