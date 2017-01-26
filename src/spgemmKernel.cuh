@@ -423,8 +423,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     cudaMalloc( &d_inter, (partNum*partNum+1)*sizeof(int) );
     cudaMemcpy( d_inter, h_inter, (partNum*partNum+1)*sizeof(int), cudaMemcpyHostToDevice );
 
-	unsigned *d_hashKey;
-	float *d_hashVal;
+	unsigned *d_hashKey, *h_hashKey;
+	float *d_hashVal, *h_hashKey;
 	cudaMalloc( &d_hashKey, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
 	cudaMalloc( &d_hashVal, partNum*partNum*TABLE_SIZE*sizeof(float)    );
 	cudaMemset( d_hashKey, SLOT_EMPTY_INIT, partNum*partNum*TABLE_SIZE*
@@ -465,6 +465,13 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	float elapsed = 0.0f;
 	gpu_timer.Start();
 
+	// Temp Arrays for Testing
+	unsigned *d_hashKeyTest;
+	float *d_hashValTest;
+	cudaMalloc( &d_hashKeyTest, TABLE_SIZE*sizeof(unsigned) );
+	cudaMalloc( &d_hashValTest, TABLE_SIZE*sizeof(float)    );
+	cudaMemset( d_hashKeyTest, SLOT_EMPTY_INIT, TABLE_SIZE*sizeof(unsigned) );
+	cudaMemset( d_hashValTest, 0.0f, TABLE_SIZE*sizeof(float));
 	for( int i=1; i<2; i++ ) {
 		for( int j=0; j<1; j++ ) {
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
@@ -476,10 +483,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 					<mgpu::MgpuBoundsUpper>( mgpu::counting_iterator<int>(0), 
 					moveCount, d_scanbalance+h_inter[partNum*i+j], 
 					intervalCount, NV, 0, mgpu::less<int>(), context);
-				KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
+				KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKeyTest, d_hashValTest, d_value, constants );
 			}
 		}
-	}	
+	}
 
 	for( int i=0; i<partNum; i++ ) {
 		for( int j=0; j<partNum; j++ ) {
