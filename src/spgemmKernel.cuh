@@ -111,18 +111,19 @@ __device__ int BinarySearchStart(int* keys, int count, int key, int *val) {
     return end-1;
 }
 
-__device__ int BinarySearchEnd(int* keys, int count, int key) {
+__device__ int BinarySearchEnd(int* keys, int count, int key, int *val) {
     int begin = 0;
     int end = count;
     while (begin < end) {
         int mid = (begin + end) >> 1;
         int item = keys[mid];
-        if (item == key) return mid;
+        if (item == key) { begin = mid+1; *val=keys[mid]; }
         bool larger = (item > key);
         if (larger) end = mid;
         else begin = mid+1;
     }
-    return end;
+	*val = keys[end-1];
+    return end-1;
 }
 
 __device__ unsigned mixHash(unsigned a) {
@@ -194,6 +195,7 @@ __global__ void KernelInterval( const int* d_moveCount,
     };
     __shared__ Shared shared;
 	__shared__ int idx;
+	__shared__ int idxEnd;
 	__shared__ int moveCount;       // d_moveCount[idx]
 	__shared__ int intervalCount;   // d_inter[idx+1] - d_inter[idx]
 	__shared__ int inter;           // d_inter[idx]
@@ -204,14 +206,16 @@ __global__ void KernelInterval( const int* d_moveCount,
     int block = blockIdx.x;
 
     if( tid==0 ) {
-		idx = BinarySearchStart( d_blocksBegin, partNum*partNum+1, block, 
+		//idx = BinarySearchStart( d_blocksBegin, partNum*partNum+1, block, 
+		//	&blocksBegin );
+		idx = BinarySearchEnd( d_blocksBegin, partNum*partNum+1, block, 
 			&blocksBegin );
 		moveCount = __ldg( d_moveCount + idx );
 		inter = __ldg( d_inter + idx );
 		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
 		partitionsBegin = __ldg( d_partitionsBegin + idx );
 		//if( block%100==0 ) 
-			printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
+		//	printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
 	}
 
 	__syncthreads();
@@ -229,7 +233,7 @@ __global__ void KernelInterval( const int* d_moveCount,
     // The scan of interval counts are in the right part (intervalCount).
     int destCount = range.y - range.x;
     int sourceCount = range.w - range.z;
-	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w, destCount, sourceCount );
+	//if( tid==0 && block>1050 && block<1100 ) printf("block:%d, tid:%d, idx:%d, %d, %d, %d, %d\n", block, tid, idx, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -320,7 +324,7 @@ __global__ void KernelMove(int destCount,
     // The scan of interval counts are in the right part (intervalCount).
     destCount = range.y - range.x;
     sourceCount = range.w - range.z;
-	if( tid==0 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w, destCount, sourceCount );
+	if( tid==0 && block<50 ) printf("block:%d, tid:%d, %d, %d, %d, %d\n", block, tid, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -423,6 +427,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	float *d_hashVal;
 	cudaMalloc( &d_hashKey, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
 	cudaMalloc( &d_hashVal, partNum*partNum*TABLE_SIZE*sizeof(float)    );
+	cudaMemset( d_hashKey, SLOT_EMPTY_INIT, partNum*partNum*TABLE_SIZE*
+		sizeof(unsigned) );
+	cudaMemset( d_hashVal, 0.0f, partNum*partNum*TABLE_SIZE*sizeof(float));
 	//print_array_device( "Hash Keys", d_hashKey, 40 );
 	//print_array_device( "Hash Vals", d_hashVal, 40 );
 
@@ -458,12 +465,24 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	float elapsed = 0.0f;
 	gpu_timer.Start();
 
+	for( int i=1; i<2; i++ ) {
+		for( int j=0; j<1; j++ ) {
+			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
+			int moveCount = h_moveCount[partNum*i+j];
+    		int NV = launch.x * launch.y;
+    		int numBlocks = MGPU_DIV_UP(moveCount + intervalCount, NV);
+			if( moveCount!=0 ) {
+    			MGPU_MEM(int) partitionsDevice = mgpu::MergePathPartitions
+					<mgpu::MgpuBoundsUpper>( mgpu::counting_iterator<int>(0), 
+					moveCount, d_scanbalance+h_inter[partNum*i+j], 
+					intervalCount, NV, 0, mgpu::less<int>(), context);
+				KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
+			}
+		}
+	}	
+
 	for( int i=0; i<partNum; i++ ) {
 		for( int j=0; j<partNum; j++ ) {
-	//for( int i=1; i<2; i++ ) {
-	//	for( int j=0; j<2; j++ ) {
-			cudaMemset( d_hashKey, SLOT_EMPTY_INIT, partNum*partNum*TABLE_SIZE*sizeof(unsigned) );
-			cudaMemset( d_hashVal, 0.0f, partNum*partNum*TABLE_SIZE*sizeof(float)               );
 
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
 			int moveCount = h_moveCount[partNum*i+j];
@@ -489,8 +508,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j]+numBlocks;
 				h_partitionsBegin[partNum*i+j+1] = 
 					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
-
-				KernelMove<Tuning><<<numBlocks, launch.x, 0, context.Stream()>>>( moveCount, d_scanbalance+h_inter[partNum*i+j], d_offA+h_inter[partNum*i+j], d_offB+h_inter[partNum*i+j], d_lengthB+h_inter[partNum*i+j], A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal, intervalCount, partitionsDevice->get(), d_interbalance, d_hashKey, d_hashVal, d_value, constants );
 
 				//print_array_device( "good offA", d_interbalance, moveCount );
 				//printf("%d %d: %d\n", i, j, partitionsDevice->Size());
