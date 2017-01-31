@@ -3,15 +3,12 @@
 #include <cuda_profiler_api.h>
 #include <cusparse.h>
 #include <moderngpu.cuh>
+#include <cudpp.h>
 #include "mXv.cuh"
 #include "scratch.hpp"
 #include "matrix.hpp"
 #include "spgemmKernel.cuh"
 #include "common.hpp"
-#include "triple.hpp"
-
-//#include "bhsparse.h"
-#include "cudpp.h"
 
 #define NTHREADS 512
 #define MAX_SHARED 49152
@@ -106,12 +103,12 @@ void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *
 
 	int *h_inter2 = (int*) malloc( (partNum*partNum+1)*sizeof(int) );
 	memcpy( h_inter2, h_inter, (partNum*partNum+1)*sizeof(int) );
-	print_array( "h_inter", h_inter2, partNum*partNum+1 );
+	if(DEBUG_SPGEMM) print_array( "h_inter", h_inter2, partNum*partNum+1 );
 	for( int i=0; i<partNum*partNum; i++ ) {
 		if( h_inter2[i]==h_inter2[i+1] ) h_inter2[i] = 0;
 		else h_inter2[i] = h_inter2[i+1]-1;
 	}
-	print_array( "h_inter2", h_inter2, partNum*partNum+1 );
+	if(DEBUG_SPGEMM) print_array( "h_inter2", h_inter2, partNum*partNum+1 );
 
 	int *d_inter;
 	CUDA_SAFE_CALL(cudaMalloc( &d_inter, partNum*partNum*sizeof(int) ));
@@ -125,33 +122,31 @@ void compareCudpp( const int *d_lengthA, int *d_scanbalance, int *h_inter, int *
 	const int NBLOCKS = (partNum*partNum+NTHREADS-1)/NTHREADS;
 	add<<<NBLOCKS,NTHREADS>>>( d_moveCount, partNum*partNum );
 
-	print_array_device( "d_inter", d_inter, partNum*partNum );
-	print_array_device( "d_moveCount", d_moveCount, partNum*partNum );
-	print_array_device( "scan", d_scanbalance, numInter+1 );
+	if(DEBUG_SPGEMM) print_array_device( "d_inter", d_inter, partNum*partNum );
+	if(DEBUG_SPGEMM) print_array_device( "d_moveCount", d_moveCount, partNum*partNum );
+	if(DEBUG_SPGEMM) print_array_device( "scan", d_scanbalance, numInter+1 );
 }
 
 
 // Matrix multiplication (Host code)
 void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const int partNum, mgpu::CudaContext& context ) {
 
-	// Main goal 1: 
+	// Stage 1: 
 	//	-A in CSR -> A in DCSC
 	//  -B in CSC -> B in DCSR
+	printf("==Stage 1==\n");
 	csr_to_dcsc<float>( A, partSize, partNum, context, true );
 	csr_to_dcsc<float>( A, partSize, partNum, context );
 
 	csr_to_dcsc<float>( B, partSize, partNum, context, true );
 	csr_to_dcsc<float>( B, partSize, partNum, context );
 
-	// Main goal 2:
-	//	-spgemmKernel
-	//  -obtain C in CSR?
-
-	// Some test arrays
-	//int *d_output_triples;
-	//cudaMalloc(&d_output_triples, A->nnz*sizeof(int));
-	//float *d_output_total; 
-	//cudaMalloc(&d_output_total, A->nnz*sizeof(float));
+	// Stage 2:
+	// -form array to see how long each intersection is
+	// -compute intersection
+	float elapsed = 0.0f;
+    GpuTimer gpu_timer;
+	gpu_timer.Start();
 
 	// Copy length to host
 	copy_part( A );
@@ -163,10 +158,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     CUDA_SAFE_CALL(cudaMalloc(&d_dcscColDiffB, B->col_length*sizeof(int)));
     diff<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, d_dcscColDiffA, A->col_length );
     diff<<<BLOCKS,THREADS>>>( B->d_dcscColPtr_off, d_dcscColDiffB, B->col_length );
-	//print_array_device("DiffA", d_dcscColDiffA, A->col_length);
-	//print_array_device("DiffB", d_dcscColDiffB, B->col_length);
 
-	// Form array to see how long each intersection is
 	int *h_inter = (int*)malloc((partNum*partNum+1)*sizeof(int));
 
 	h_inter[0] = 0;
@@ -181,8 +173,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		if( last_A > max_A ) max_A = last_A;
 		if( last_B > max_B ) max_B = last_B;
 	}
-	printf("maxA:%d, maxB:%d\n", max_A, max_B);
-	printf("avgA:%d, avgB:%d\n", A->col_length/partNum, B->col_length/partNum);
+	if(DEBUG_SPGEMM) printf("maxA:%d, maxB:%d\n", max_A, max_B);
+	if(DEBUG_SPGEMM) printf("avgA:%d, avgB:%d\n", A->col_length/partNum, B->col_length/partNum);
 	int max_AB = min(max_A,max_B);
 
 	// Allocate maximum number of blocks
@@ -194,27 +186,22 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
     int2 launch = Tuning::GetLaunchParams(context);
     const int NV = launch.x * launch.y;
 	int numBlocks = MGPU_DIV_UP( max_A+B->col_length, NV );
-	//int numBlocks = MGPU_DIV_UP( max_A+max_B, NV );
 	MGPU_MEM(int) countsDevice = context.Malloc<int>(numBlocks+1);
 	CudaCheckError();
 
 	// Allocate space for intersection indices
-    // d_intersectionA- This is a list of indices that are in both A and B
-	// d_interbalance - This is how much work is done in each square
+    //   d_intersectionA- This is a list of indices that are in both A and B
+	//   d_interbalance - This is how much work is done in each square
     int *d_intersectionA, *d_intersectionB, *d_interbalance, *d_scanbalance;
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionA, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_intersectionB, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_interbalance, A->col_length*partNum*sizeof(int)));
     CUDA_SAFE_CALL(cudaMalloc(&d_scanbalance, A->col_length*partNum*sizeof(int)));
 
-	// C->ColInd
+	// Allocate C->d_cscColInd
 	cudaMalloc(&(C->d_cscColInd), MAX_GLOBAL*sizeof(int));
 	cudaMalloc(&(C->d_cscRowInd), MAX_GLOBAL*sizeof(int));
 	cudaMalloc(&(C->d_cscVal), MAX_GLOBAL*sizeof(float));
-
-	float elapsed = 0.0f;
-    GpuTimer gpu_timer;
-	gpu_timer.Start();
 
 	for( int i=0; i<partNum; i++ ) {
 		last_A = curr_A;
@@ -223,30 +210,44 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		for( int j=0; j<partNum; j++ ) {
 			last_B = curr_B;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
-			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, curr_B, total);
-    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, context);
-    		//total = mgpu::SetOpPairs2<mgpu::MgpuSetOpIntersection, false>(A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, d_intersectionA+h_inter[partNum*i+j], d_intersectionB+h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], &countsDevice, A, B, C, context);
+			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, curr_A, 
+			//	curr_B, total);
+    		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(
+				A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, 
+				B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, 
+				d_intersectionA+h_inter[partNum*i+j], d_intersectionB+
+				h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], 
+				&countsDevice, context);
+
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
-			updateInter<<<BLOCKS,NTHREADS>>>( d_intersectionB+h_inter[partNum*i+j], total, B->h_dcscPartPtr[j] );
+			updateInter<<<BLOCKS,NTHREADS>>>( d_intersectionB+h_inter[partNum*i+j], 
+				total, B->h_dcscPartPtr[j] );
 		}
-		updateInter<<<BLOCKS, NTHREADS>>>( d_intersectionA+h_inter[partNum*i], h_inter[partNum*(i+1)]-h_inter[partNum*(i)], A->h_dcscPartPtr[i] );
+		updateInter<<<BLOCKS, NTHREADS>>>( d_intersectionA+h_inter[partNum*i], 
+			h_inter[partNum*(i+1)]-h_inter[partNum*(i)], A->h_dcscPartPtr[i] );
 	}
 	gpu_timer.Stop();
 	elapsed += gpu_timer.ElapsedMillis();
 
-	printf("intersection took: %f\n", elapsed);
-	if( DEBUG ) { 
+	printf("==Stage 2==\n");
+	printf("Intersection: %f\n", elapsed);
+	if( DEBUG_SPGEMM ) { 
 		print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
 		print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
 		print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
-		//print_array("intersection (first row scan)", h_inter, partNum+1);
 		printf("intersection (total): %d\n", h_inter[partNum*partNum]); }
 
+	// Stage 3:
+	//
 	// Important mallocs
     // Step 0: Preallocations for scratchpad memory
-
+	//
 	// d_index - 0, 1, 2, 3, 4, ...
     // d_ones  - 1, 1, 1, 1, 1, ...
+	float elapsed3 = 0.0f;
+	GpuTimer gpu_timer3;
+	gpu_timer3.Start();
+
 	int *d_index;
     CUDA_SAFE_CALL(cudaMalloc(&d_index, A->nnz*sizeof(int)));
     int *h_index = (int*)malloc(A->nnz*sizeof(int));
@@ -273,33 +274,39 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CUDA_SAFE_CALL(cudaMalloc( &d_colDiffA, A->col_length*sizeof(int) ));
 	int NBLOCKS = (A->col_length+NTHREADS-1)/NTHREADS;
 	diff<<<NBLOCKS,NTHREADS>>>( A->d_dcscColPtr_off, d_colDiffA, A->col_length );
-	print_array_device("colDiffA", d_colDiffA, A->col_length);
+	if(DEBUG_SPGEMM) print_array_device("colDiffA", d_colDiffA, A->col_length);
 
 	int *d_lengthA, *d_offA;
 	CUDA_SAFE_CALL(cudaMalloc( &d_lengthA, numInter*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMalloc( &d_offA, numInter*sizeof(int) ));
 
 	// Step 1: Form d_offA, d_lengthA, d_offB, d_lengthB
-    IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), numInter, d_colDiffA, d_lengthA, context );
-	IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), numInter, A->d_dcscColPtr_off, d_offA, context );
-	print_array_device("lengthA", d_lengthA, numInter);
-	print_array_device("offA", d_offA, numInter);
+    IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), 
+		numInter, d_colDiffA, d_lengthA, context );
+	IntervalGather( numInter, d_intersectionA, mgpu::counting_iterator<int>(0), 
+		numInter, A->d_dcscColPtr_off, d_offA, context );
+	if(DEBUG_SPGEMM) print_array_device("lengthA", d_lengthA, numInter);
+	if(DEBUG_SPGEMM) print_array_device("offA", d_offA, numInter);
 
 	int *d_colDiffB;
 	CUDA_SAFE_CALL(cudaMalloc( &d_colDiffB, B->col_length*sizeof(int) ));
 	NBLOCKS = (B->col_length+NTHREADS-1)/NTHREADS;
 	diff<<<NBLOCKS,NTHREADS>>>( B->d_dcscColPtr_off, d_colDiffB, B->col_length );
-	print_array_device("colDiffB", d_colDiffB, B->col_length);
+	if(DEBUG_SPGEMM) print_array_device("colDiffB", d_colDiffB, B->col_length);
 
 	int *d_lengthB, *d_offB;
 	CUDA_SAFE_CALL(cudaMalloc( &d_lengthB, numInter*sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMalloc( &d_offB, numInter*sizeof(int) ));
 
-    IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, d_colDiffB, d_lengthB, context );
-	IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), numInter, B->d_dcscColPtr_off, d_offB, context );
-	print_array_device("lengthB", d_lengthB, numInter);
-	print_array_device("offB", d_offB, numInter);
+    IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), 
+		numInter, d_colDiffB, d_lengthB, context );
+	IntervalGather( numInter, d_intersectionB, mgpu::counting_iterator<int>(0), 
+		numInter, B->d_dcscColPtr_off, d_offB, context );
+	if(DEBUG_SPGEMM) print_array_device("lengthB", d_lengthB, numInter);
+	if(DEBUG_SPGEMM) print_array_device("offB", d_offB, numInter);
 
+	// Step 2:
+	//
 	// input array: d_lengthA
 	// input scan: d_inter
 	// output array: d_scanbalance
@@ -309,17 +316,16 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	CUDA_SAFE_CALL(cudaMalloc( &d_moveCount, 2*partNum*partNum*sizeof(int) ));
 	h_moveCount = (int*) malloc (partNum*partNum*sizeof(int) );
 
-	float elapsed3 = 0.0f;
-	GpuTimer gpu_timer3;
-	gpu_timer3.Start();
 	compareCudpp( d_lengthA, d_scanbalance, h_inter, d_moveCount, numInter, 
 		partNum, context);
 	gpu_timer3.Stop();
 	elapsed3 += gpu_timer3.ElapsedMillis();
-	printf("cudpp seg scan took: %f\n", elapsed3);
+	printf("==Stage 3==\n");
+	printf("Segmented Scan: %f\n", elapsed3);
 	CUDA_SAFE_CALL(cudaMemcpy( h_moveCount, d_moveCount, partNum*partNum*
 		sizeof(int), cudaMemcpyDeviceToHost ));
-    mgpu::Reduce( d_moveCount, partNum*partNum, (int)0, mgpu::plus<int>(), (int*)0, &moveCount, context );
+    mgpu::Reduce( d_moveCount, partNum*partNum, (int)0, mgpu::plus<int>(), (int*)0, 
+		&moveCount, context );
 	CudaCheckError();
 
 	float elapsed2 = 0.0f;
@@ -332,9 +338,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	gpu_timer2.Stop();
 
 	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("outer product took: %f\n", elapsed2);
 
-	//spgemmOuter( C, A, B, partSize, partNum, context );
 }
 
 // Uses cuSPARSE SpGEMM

@@ -27,6 +27,8 @@
 //#include "common.h"
 //#include "bhsparse.h"
 
+#define DEBUG 0
+
 void countNNZ( d_matrix *A )
 {
 	cudaMemcpy( A->h_cscColPtr, A->d_cscColPtr, (A->m+1)*sizeof(int), cudaMemcpyDeviceToHost );

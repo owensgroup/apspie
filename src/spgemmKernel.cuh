@@ -1,10 +1,10 @@
 #include <cub/cub.cuh>
 #include <cuda_profiler_api.h>
-#include "../ext/moderngpu/include/device/ctaloadbalance.cuh"
 #include <mgpudevice.cuh>
 #include <mt19937ar.h>
+#include "../ext/moderngpu/include/device/ctaloadbalance.cuh"
 
-#include "triple.hpp"
+#include "common.hpp"
 
 #define __GR_CUDA_ARCH__ 300
 #define THREADS 128
@@ -23,6 +23,8 @@
 #define JUMP_HASH 41
 //#define PRIME_DIV 33214459
 #define PRIME_DIV 4294967291
+
+
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
   cudaError err = call;                                                 \
@@ -416,15 +418,12 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		const int moveTotal,
         mgpu::CudaContext                             &context)
 {
-	//const int BLOCKS = (A->m*A->m+THREADS-1)/THREADS;
-	//int mEven = (A->m+THREADS-1)/THREADS;
-    int stride = BLOCKS * THREADS;
-
     // Set 48kB shared memory 
     //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferL1));
     //CUDA_SAFE_CALL(cudaFuncSetCacheConfig(IntersectTwoSmallNL, cudaFuncCachePreferShared));
-   
-	// Need segmented sort
+  
+	// Stage 4:
+	// -compute mergepath 
     int *d_inter;
     CUDA_SAFE_CALL(cudaMalloc( &d_inter, (partNum*partNum+1)*sizeof(int) ));
     CUDA_SAFE_CALL(cudaMemcpy( d_inter, h_inter, (partNum*partNum+1)*sizeof(int), cudaMemcpyHostToDevice ));
@@ -439,8 +438,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	h_hashVal = (float*) malloc( TABLE_SIZE*sizeof(float) );
 	CUDA_SAFE_CALL(cudaMalloc( &d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned) ));
 	CUDA_SAFE_CALL(cudaMalloc( &d_hashValTemp, TABLE_SIZE*sizeof(float)    ));
-	//print_array_device( "Hash Keys", d_hashKey, 40 );
-	//print_array_device( "Hash Vals", d_hashVal, 40 );
 
 	int *d_value, value;
 	value = 0;
@@ -504,15 +501,12 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKeyTest, d_hashKeyTemp, d_hashValTest, d_hashValTemp, TABLE_SIZE );
 	CudaCheckError();
-	//print_array_device("hashKey multikernel", d_hashKeyTemp, 40 );
-	//print_array_device("hashVal multikernel", d_hashValTemp, 40 );
 	cudaMemcpy( h_hashKeyTest, d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned), 
 		cudaMemcpyDeviceToHost );
 	cudaMemcpy( h_hashValTest, d_hashValTemp, TABLE_SIZE*sizeof(float), 
 		cudaMemcpyDeviceToHost );
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 	printf("Failed inserts: %d\n", value);
-	printf("uni-kernel:\n");
 
 	cudaProfilerStart();
 	GpuTimer gpu_timer;
@@ -524,10 +518,6 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 			int intervalCount = h_inter[partNum*i+j+1]-h_inter[partNum*i+j];
 			int moveCount = h_moveCount[partNum*i+j];
-			//mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthA+h_inter[partNum*i+j], intervalCount, 0, mgpu::plus<int>(), (int*)0, &moveCount, d_scanbalance+h_inter[partNum*i+j], context );
-
-			//if( moveCount!=h_moveCount[partNum*i+j] ) 
-			//	printf("Error: %d!=%d\n", moveCount, h_moveCount[partNum*i+j] );
 
     		int NV = launch.x * launch.y;
     		int numBlocks = MGPU_DIV_UP(moveCount + intervalCount, NV);
@@ -539,20 +529,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 					moveCount, d_scanbalance+h_inter[partNum*i+j], 
 					intervalCount, NV, 0, mgpu::less<int>(), context);
 
-    		//int4 range = CTALoadBalance<NT, VT>(moveCount, indices_global, 
-        	//	intervalCount, block, tid, mp_global, indices_shared, true);
-			//printf("moveCount:%d\n", moveCount);
-
 				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j]+numBlocks;
 				h_partitionsBegin[partNum*i+j+1] = 
 					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
-
-				//print_array_device( "good offA", d_interbalance, moveCount );
-				//printf("%d %d: %d\n", i, j, partitionsDevice->Size());
-				//print_array_device( "mergepath", partitionsDevice->get(), 
-				//	intervalCount );
-
-				//Retrieve( d_hashKey, d_hashVal );
 
 				cudaMemcpy( d_partitions+h_partitionsBegin[partNum*i+j], 
 					partitionsDevice->get(), partitionsDevice->Size()*
@@ -568,7 +547,17 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyHostToDevice );
 	cudaMemcpy( d_partitionsBegin, h_partitionsBegin, (partNum*partNum+1)*
 		sizeof(int), cudaMemcpyHostToDevice );
-	//verify( partNum*partNum+1, h_blocksBegin, h_partitionsBegin );
+
+	gpu_timer.Stop();
+	cudaProfilerStop();
+	elapsed += gpu_timer.ElapsedMillis();
+	printf("==Stage 4==\n");
+	printf("MergePath: %f\n", elapsed);
+
+	GpuTimer gpu_timer2;
+	cudaProfilerStart();
+	float elapsed2 = 0.0f;
+	gpu_timer2.Start();
 
 	KernelInterval<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
 		context.Stream()>>>( d_moveCount, d_scanbalance, d_offA, d_offB, 
@@ -576,10 +565,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		d_inter, d_partitions, d_interbalance, d_hashKey, d_hashVal, 
 		d_value, constants, d_blocksBegin, d_partitionsBegin, partNum );
 
-	gpu_timer.Stop();
+	gpu_timer2.Stop();
+	elapsed2 += gpu_timer2.ElapsedMillis();
 	cudaProfilerStop();
-	elapsed += gpu_timer.ElapsedMillis();
-	printf("my spgemm: %f ms\n", elapsed);
+	printf("==Stage 5==\n");
+	printf("Insertion: %f\n", elapsed);
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
@@ -592,9 +582,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 
 	// Radix sort
-	GpuTimer gpu_timer2;
-	float elapsed2 = 0.0f;
-	gpu_timer2.Start();
+	GpuTimer gpu_timer3;
+	float elapsed3 = 0.0f;
+	gpu_timer3.Start();
 
 	CUDA_SAFE_CALL(cudaFree(d_temp_storage));
 	d_temp_storage = NULL;
@@ -603,9 +593,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp, TABLE_SIZE );
 
-	gpu_timer2.Stop();
-	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("radix sort: %f ms\n", elapsed2);
+	gpu_timer3.Stop();
+	elapsed3 += gpu_timer3.ElapsedMillis();
+	printf("==Stage 6==\n");
+	printf("Radix Sort: %f ms\n", elapsed3);
 	CudaCheckError();
 
 	print_array_device("hashKey", d_hashKeyTemp, 40 );

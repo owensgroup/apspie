@@ -337,7 +337,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		int end_bit = log2( *(uint32_t*)&(A->n) )+1;
 
 		// Determine temporary device storage requirements
-		if( DEBUG ) print_array_device("last 40 of output", A->d_dcscRowInd, A->nnz);
+		if( DEBUG_MATRIX ) print_array_device("last 40 of output", A->d_dcscRowInd, A->nnz);
 		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
 		
 		// Allocate temporary storage
@@ -345,7 +345,7 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		
 		// Run sorting operation
 		cub::DeviceSegmentedRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
-		if( DEBUG ) print_array_device("last 40 of output", A->d_cscRowInd, A->nnz );
+		if( DEBUG_MATRIX ) print_array_device("last 40 of output", A->d_cscRowInd, A->nnz );
 		//CudaCheckError();
 
 		// Check results
@@ -361,10 +361,10 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 
 		// Need to do some fix-ups:
 		// 1) Set all h_offset[i]-1 to 1
-		if( DEBUG ) print_array_device("flag_array before", d_flagArray, A->nnz);
+		if( DEBUG_MATRIX ) print_array_device("flag_array before", d_flagArray, A->nnz);
 		specialScatter<<<1,THREADS>>>( d_offsets, partNum, d_flagArray );
-		if( DEBUG ) print_array_device("flag_array after", d_flagArray, A->nnz);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) print_array_device("flag_array after", d_flagArray, A->nnz);
+		if( DEBUG_MATRIX ) CudaCheckError();
 		mgpu::Scan<mgpu::MgpuScanTypeExc>( d_flagArray, A->nnz, 0, mgpu::plus<int>(), (int*)0, &(A->col_length), d_tempArray, context );
 		if( A->col_length > A->DCSC*min(A->m,A->n) ) { printf("Error: array %d too long for %d\n", A->col_length, A->DCSC*min(A->m,A->n)); return; }
 	 	streamCompact<<<BLOCKS,THREADS>>>( d_flagArray, d_tempArray, A->d_dcscColPtr_off, A->nnz );
@@ -377,16 +377,16 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 		shiftRightAdd<<<BLOCKS,THREADS>>>( A->d_dcscColPtr_off, A->col_length );
 		CUDA_SAFE_CALL(cudaMemset( A->d_dcscColPtr_off, 0, sizeof(int)));
 		CUDA_SAFE_CALL(cudaMemcpy( A->d_dcscColPtr_off+A->col_length, &(A->nnz), sizeof(int), cudaMemcpyHostToDevice));
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 
 	gpu_timer3.Stop();
-		if( DEBUG ) print_array_device("offset array", d_offsets, partNum+1);
-		if( DEBUG ) print_array_device("dcscPartPtr", A->d_dcscPartPtr, partNum+1);
+		if( DEBUG_MATRIX ) print_array_device("offset array", d_offsets, partNum+1);
+		if( DEBUG_MATRIX ) print_array_device("dcscPartPtr", A->d_dcscPartPtr, partNum+1);
 	gpu_timer4.Start();
 
 	// Step 4: Segmented Reduce to find d_dcscPartPtr
 		IntervalGather( partNum, d_offsets, d_index, partNum, d_tempArray, A->d_dcscPartPtr, context );
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 		CUDA_SAFE_CALL(cudaMemcpy( A->d_dcscPartPtr+partNum, &(A->col_length), sizeof(int), cudaMemcpyHostToDevice ));
 
 	gpu_timer4.Stop();
@@ -394,44 +394,44 @@ void csr_to_dcsc( d_matrix *A, const int partSize, const int partNum, mgpu::Cuda
 
 	// Step 5: Populate RowInd and Val
 
-		if( DEBUG ) print_array_device("Index", d_index, A->m);
-		if( DEBUG ) print_array_device("ColPtr", A->d_cscColPtr, A->m);
-		if( DEBUG ) print_array_device("RowInd", A->d_cscRowInd, A->nnz);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) print_array_device("Index", d_index, A->m);
+		if( DEBUG_MATRIX ) print_array_device("ColPtr", A->d_cscColPtr, A->m);
+		if( DEBUG_MATRIX ) print_array_device("RowInd", A->d_cscRowInd, A->nnz);
+		if( DEBUG_MATRIX ) CudaCheckError();
 
 		// Generate cscColInd using cscColPtr => (d_tempArray)
 		// Note: Modern GPU 1.0 has bug in documentation under Host functions for
 		// 		 IntervalExpand
 		IntervalExpand( A->nnz, A->d_cscColPtr, d_index, A->m, d_tempArray, context );
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 
 		// Determine temporary device storage requirements
 		cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, d_index, d_flagArray, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 		
 		// Allocate temporary storage
 		CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
-		if( DEBUG ) printf("%d storage bytes\n", temp_storage_bytes);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) printf("%d storage bytes\n", temp_storage_bytes);
+		if( DEBUG_MATRIX ) CudaCheckError();
 		
 		// Run sorting operation
 		cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, temp_storage_bytes, A->d_cscRowInd, A->d_dcscRowInd, d_index, d_flagArray, A->nnz, partNum, d_offsets, d_offsets + 1, 0, end_bit);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 
-		if( DEBUG ) print_array_device("New Map", d_flagArray, A->nnz);
-		if( DEBUG ) print_array_device("Col Ind", d_tempArray, A->nnz);
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) print_array_device("New Map", d_flagArray, A->nnz);
+		if( DEBUG_MATRIX ) print_array_device("Col Ind", d_tempArray, A->nnz);
+		if( DEBUG_MATRIX ) CudaCheckError();
 
 		// Gather A->cscColInd and A->cscVal into indices specified by d_flagArray
 		IntervalGather( A->nnz, d_flagArray, d_index, A->nnz, d_tempArray, A->d_dcscRowInd, context );
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 		IntervalGather( A->nnz, d_flagArray, d_index, A->nnz, A->d_cscVal, A->d_dcscVal, context );
-		if( DEBUG ) CudaCheckError();
+		if( DEBUG_MATRIX ) CudaCheckError();
 
 	gpu_timer5.Stop();
 
 		// Check results
-	if( DEBUG )
+	if( DEBUG_MATRIX )
 	{
 		printf("Number of partitions: %d\n", partNum);
 		printf("Doing radix sort on lower %d bits\n", end_bit);
