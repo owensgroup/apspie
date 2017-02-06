@@ -17,7 +17,7 @@
 #define UNROLL 1  // SHARED/THREADS
 #define BLOCK_SIZE 1024
 #define TABLE_SIZE 131071
-#define MAX_PROBES 10
+#define MAX_PROBES 25
 #define SLOT_EMPTY 0xffffffff
 #define SLOT_EMPTY_INIT 255
 #define JUMP_HASH 41
@@ -141,7 +141,8 @@ void generateConstants( uint2 *constants ) {
 }
 
 __device__ bool insert( const int row_idx, const int col_idx, const float valC, unsigned *d_hashKey, float *d_hashVal, uint2 constants ) {
-	unsigned key = (row_idx<<16) | (col_idx&65535);
+	unsigned key = (col_idx<<16) | (row_idx&65535);
+	//unsigned key = (row_idx<<16) | (col_idx&65535);
 	// Attempt 2a: Basic hash
 	//unsigned hash = key & TABLE_SIZE;
     // Attempt 2b: Mix hash
@@ -153,6 +154,7 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 
 	for( int attempt = 1; attempt<=MAX_PROBES; attempt++) {
 		//printf("row:%d, col:%d, val:%f, key:%d, hash:%d, table:%u\n", row_idx, col_idx, valC, key, hash, d_hashKey[hash]);
+		if( key==SLOT_EMPTY ) printf("Error: key==SLOT_EMPTY\n");
 		unsigned old = atomicCAS( d_hashKey+hash, SLOT_EMPTY, key );
 		if( old==SLOT_EMPTY || old==key ) {
 			//printf("row:%d, col:%d, val:%f, key:%d, hash:%d, table:%u\n", row_idx, col_idx, valC, key, hash, d_hashKey[hash]);
@@ -429,13 +431,23 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL(cudaMemset( d_hashVal, 0.0f, partNum*partNum*TABLE_SIZE*sizeof(float)));
 	h_hashKey = (unsigned*) malloc( TABLE_SIZE*sizeof(unsigned) );
 	h_hashVal = (float*) malloc( TABLE_SIZE*sizeof(float) );
-	CUDA_SAFE_CALL(cudaMalloc( &d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned) ));
-	CUDA_SAFE_CALL(cudaMalloc( &d_hashValTemp, TABLE_SIZE*sizeof(float)    ));
+	CUDA_SAFE_CALL(cudaMalloc( &d_hashKeyTemp, partNum*partNum*TABLE_SIZE*sizeof(unsigned) ));
+	CUDA_SAFE_CALL(cudaMalloc( &d_hashValTemp, partNum*partNum*TABLE_SIZE*sizeof(float)    ));
 
 	int *d_value, value;
 	value = 0;
 	CUDA_SAFE_CALL(cudaMalloc( &d_value, sizeof(int) ));
 	CUDA_SAFE_CALL(cudaMemset( d_value, 0, sizeof(int) ));
+
+	// d_offsets
+	int *h_offsets, *d_offsets;
+	h_offsets = (int*) malloc( (partNum*partNum+1)*sizeof(int) );
+	h_offsets[0] = 0;
+	for( int i=1; i<partNum*partNum+1; i++ ) 
+		h_offsets[i] = h_offsets[i-1]+TABLE_SIZE;
+	CUDA_SAFE_CALL(cudaMalloc( &d_offsets, (partNum*partNum+1)*sizeof(int) ));
+	CUDA_SAFE_CALL(cudaMemcpy( d_offsets, h_offsets, (partNum*partNum+1)*
+		sizeof(int), cudaMemcpyHostToDevice ));
 
 	// Tuning
     const int NT = 128;
@@ -445,8 +457,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	uint2 constants;
 	for( int i=0; i<5; i++ ) {
 		generateConstants( &constants );
-		printf("__constant__ unsigned constantx%d %u\n", i, constants.x );
-		printf("__constant__ unsigned constantx%d %u\n", i, constants.y );
+		//printf("__constant__ unsigned constantx%d %u\n", i, constants.x );
+		//printf("__constant__ unsigned constantx%d %u\n", i, constants.y );
 	}
 
 	int *h_partitionsBegin, *d_partitionsBegin;
@@ -582,9 +594,15 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL(cudaFree(d_temp_storage));
 	d_temp_storage = NULL;
 	temp_storage_bytes = 0;
-	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp, TABLE_SIZE );
+	//cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp, TABLE_SIZE );
+	cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+    	d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp,
+    	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
 	CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
-	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp, TABLE_SIZE );
+	cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+    	d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp,
+    	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
+	//cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp, TABLE_SIZE );
 
 	gpu_timer3.Stop();
 	elapsed3 += gpu_timer3.ElapsedMillis();
