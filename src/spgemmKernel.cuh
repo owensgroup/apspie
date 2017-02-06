@@ -23,7 +23,7 @@
 #define JUMP_HASH 41
 //#define PRIME_DIV 33214459
 #define PRIME_DIV 4294967291
-
+#define MIX_HASH 0x27d4eb2d
 
 
 #define CUDA_SAFE_CALL_NO_SYNC( call) do {                              \
@@ -153,19 +153,12 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 
 	for( int attempt = 1; attempt<=MAX_PROBES; attempt++) {
 		//printf("row:%d, col:%d, val:%f, key:%d, hash:%d, table:%u\n", row_idx, col_idx, valC, key, hash, d_hashKey[hash]);
-		//if( d_hashKey[hash] == key ) {
-			//atomicAdd( d_hashVal+hash, valC );
+		unsigned old = atomicCAS( d_hashKey+hash, SLOT_EMPTY, key );
+		if( old==SLOT_EMPTY || old==key ) {
 			//printf("row:%d, col:%d, val:%f, key:%d, hash:%d, table:%u\n", row_idx, col_idx, valC, key, hash, d_hashKey[hash]);
-			//return true;
-		//}
-		//if( d_hashKey[hash] == SLOT_EMPTY ) {
-			unsigned old = atomicCAS( d_hashKey+hash, SLOT_EMPTY, key );
-			if( old==SLOT_EMPTY || old==key ) {
-				//printf("row:%d, col:%d, val:%f, key:%d, hash:%d, table:%u\n", row_idx, col_idx, valC, key, hash, d_hashKey[hash]);
-				atomicAdd( d_hashVal+hash, valC );
-				return true;
-			}
-		//}
+			atomicAdd( d_hashVal+hash, valC );
+			return true;
+		}
 		// Attempt 5a: Linear probing
 		//hash = (hash+1) & TABLE_SIZE;
 		// Attempt 5b: Quadratic probing
@@ -569,7 +562,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	elapsed2 += gpu_timer2.ElapsedMillis();
 	cudaProfilerStop();
 	printf("==Stage 5==\n");
-	printf("Insertion: %f\n", elapsed);
+	printf("Insertion: %f\n", elapsed2);
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();

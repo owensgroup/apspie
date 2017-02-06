@@ -173,8 +173,8 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 		if( last_A > max_A ) max_A = last_A;
 		if( last_B > max_B ) max_B = last_B;
 	}
-	if(DEBUG_SPGEMM) printf("maxA:%d, maxB:%d\n", max_A, max_B);
-	if(DEBUG_SPGEMM) printf("avgA:%d, avgB:%d\n", A->col_length/partNum, B->col_length/partNum);
+	if(DEBUG_KERNEL) printf("maxA:%d, maxB:%d\n", max_A, max_B);
+	if(DEBUG_KERNEL) printf("avgA:%d, avgB:%d\n", A->col_length/partNum, B->col_length/partNum);
 	int max_AB = min(max_A,max_B);
 
 	// Allocate maximum number of blocks
