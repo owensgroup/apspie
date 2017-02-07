@@ -125,6 +125,41 @@ __device__ int BinarySearchEnd(int* keys, int count, int key, int *val) {
     return end-1;
 }
 
+__global__ void extractLength( const unsigned *d_hashKey, int *d_lengthC,
+	const int length ) {
+
+	int idx = threadIdx.x+blockIdx.x*blockDim.x;
+
+	for ( idx; idx<length-1; idx+=blockDim.x*gridDim.x) {
+		int start = idx%TABLE_SIZE;
+		int partNum = idx/TABLE_SIZE;
+        if( d_hashKey[idx]!=SLOT_EMPTY && d_hashKey[idx+1]==SLOT_EMPTY )
+			d_lengthC[partNum] = start;
+		else if( start==0 && d_hashKey[idx]==SLOT_EMPTY )
+			d_lengthC[partNum] = start;
+	} 
+}
+
+__global__ void extractRow( int *d_dcscColInd, int *d_dcscRowInd, 
+	float *d_dcscVal, const unsigned *d_hashKey, const float *d_hashVal, 
+	const int *d_lengthC, const int *d_scanC, const int partNum, 
+	const int partSize ) {
+
+	int idx = threadIdx.x+blockIdx.x*blockDim.x;
+
+	int partInd = idx/TABLE_SIZE;
+	int partOff = idx%TABLE_SIZE;
+	int partRow = partInd/partNum;
+	int partCol = partInd%partNum;
+
+	if( partOff<d_lengthC[partInd] ) {
+		int ind = d_scanC[partInd]+partOff;
+		d_dcscColInd[ind] = (d_hashKey[idx]>>16)+partCol*partSize;
+		d_dcscRowInd[ind] = (d_hashKey[idx]&65535)+partRow*partSize;
+		d_dcscVal[ind]    = d_hashVal[idx];
+	}
+}
+
 __device__ unsigned mixHash(unsigned a) {
     a = (a ^ 61) ^ (a >> 16);
     a = a + (a << 3);
@@ -610,6 +645,22 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Radix Sort: %f ms\n", elapsed3);
 	CudaCheckError();
 
+	int *d_lengthC, *d_scanC;
+	CUDA_SAFE_CALL( cudaMalloc( &d_lengthC, partNum*partNum*sizeof(int) ));
+	CUDA_SAFE_CALL( cudaMalloc( &d_scanC, partNum*partNum*sizeof(int) ));
+	extractLength<<<BLOCKS,NTHREADS>>>( d_hashKeyTemp, d_lengthC, partNum
+		*partNum*TABLE_SIZE );
+	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthC, partNum*partNum, 0, 
+		mgpu::plus<int>(), (int*)0, &(C->nnz), d_scanC, context );
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscColPtr_ind), C->nnz*sizeof(int)) );
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscRowInd), C->nnz*sizeof(int)) );
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscVal), C->nnz*sizeof(int)) );
+
+	int blocks = (partNum*partNum*TABLE_SIZE+NTHREADS-1)/NTHREADS;
+	extractRow<<<blocks,NTHREADS>>>( C->d_dcscColPtr_ind, C->d_dcscRowInd, C->d_dcscVal, d_hashKeyTemp, d_hashValTemp, d_lengthC, d_scanC, partNum, partSize );
+
+	printf("partSize: %d\n", partSize);
+	print_array_device("lengthC", d_lengthC, partNum*partNum);
 	print_array_device("hashKey", d_hashKeyTemp, 40 );
 	print_array_device("hashVal", d_hashValTemp, 40 );
 
@@ -624,9 +675,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	verify( TABLE_SIZE, h_hashKey, h_hashKeyTest );
 	verify( TABLE_SIZE, h_hashVal, h_hashValTest );
 
-	print_array_device("d_interbalance", d_interbalance, 40);
-	print_array_device("Row", A->d_cscColInd, h_inter[1]);
-	print_array_device("Col", A->d_cscRowInd, h_inter[1]);
-	print_array_device("Val", A->d_cscVal, h_inter[1]);
+	print_array_device("Row", C->d_dcscRowInd, C->nnz);
+	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
+	print_array_device("Val", C->d_dcscVal, C->nnz);
 }
 
