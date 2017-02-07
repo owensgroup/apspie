@@ -464,7 +464,7 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     cusparseStatus_t status = cusparseXcoo2csr(handle, d_cooRowIndA, edge, m, d_csrRowPtrA, CUSPARSE_INDEX_BASE_ZERO);
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("COO->CSR finished in %f msec. \n", elapsed);
+    //printf("COO->CSR finished in %f msec. \n", elapsed);
 
     // Important: destroy handle
     cusparseDestroy(handle);

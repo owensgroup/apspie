@@ -134,7 +134,7 @@ __global__ void extractLength( const unsigned *d_hashKey, int *d_lengthC,
 		int start = idx%TABLE_SIZE;
 		int partNum = idx/TABLE_SIZE;
         if( d_hashKey[idx]!=SLOT_EMPTY && d_hashKey[idx+1]==SLOT_EMPTY )
-			d_lengthC[partNum] = start;
+			d_lengthC[partNum] = start+1;
 		else if( start==0 && d_hashKey[idx]==SLOT_EMPTY )
 			d_lengthC[partNum] = start;
 	} 
@@ -152,8 +152,9 @@ __global__ void extractRow( int *d_dcscColInd, int *d_dcscRowInd,
 	int partRow = partInd/partNum;
 	int partCol = partInd%partNum;
 
-	if( partOff<d_lengthC[partInd] ) {
+	if( partInd<partNum*partNum && partOff<d_lengthC[partInd] ) {
 		int ind = d_scanC[partInd]+partOff;
+		//printf("tid:%d,col:%d,row:%d,col:%d,row:%d\n", threadIdx.x, partCol, partRow, d_hashKey[idx]>>16, d_hashKey[idx]&65535);
 		d_dcscColInd[ind] = (d_hashKey[idx]>>16)+partCol*partSize;
 		d_dcscRowInd[ind] = (d_hashKey[idx]&65535)+partRow*partSize;
 		d_dcscVal[ind]    = d_hashVal[idx];
@@ -645,7 +646,14 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Radix Sort: %f ms\n", elapsed3);
 	CudaCheckError();
 
+	// Conversion 
+	GpuTimer gpu_timer4;
+	float elapsed4 = 0.0f;
+	gpu_timer4.Start();
+
+	int *h_scanC;
 	int *d_lengthC, *d_scanC;
+	h_scanC = (int*) malloc( partNum*partNum*sizeof(int) );
 	CUDA_SAFE_CALL( cudaMalloc( &d_lengthC, partNum*partNum*sizeof(int) ));
 	CUDA_SAFE_CALL( cudaMalloc( &d_scanC, partNum*partNum*sizeof(int) ));
 	extractLength<<<BLOCKS,NTHREADS>>>( d_hashKeyTemp, d_lengthC, partNum
@@ -657,17 +665,28 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscVal), C->nnz*sizeof(int)) );
 
 	int blocks = (partNum*partNum*TABLE_SIZE+NTHREADS-1)/NTHREADS;
-	extractRow<<<blocks,NTHREADS>>>( C->d_dcscColPtr_ind, C->d_dcscRowInd, C->d_dcscVal, d_hashKeyTemp, d_hashValTemp, d_lengthC, d_scanC, partNum, partSize );
+	extractRow<<<blocks,NTHREADS>>>( C->d_dcscColPtr_ind, C->d_dcscRowInd, 
+		C->d_dcscVal, d_hashKeyTemp, d_hashValTemp, d_lengthC, d_scanC, 
+		partNum, partSize );
+	CUDA_SAFE_CALL( cudaMemcpy( h_scanC, d_scanC, partNum*partNum*sizeof(int), 
+		cudaMemcpyDeviceToHost) );
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscColPtr), (C->m+partNum+1)*sizeof(int) ));
 
-	printf("partSize: %d\n", partSize);
-	print_array_device("lengthC", d_lengthC, partNum*partNum);
-	print_array_device("hashKey", d_hashKeyTemp, 40 );
-	print_array_device("hashVal", d_hashValTemp, 40 );
+	//for( int i=0; i<1; i++ ) {
+	for( int i=0; i<partNum-1; i++ ) {
+		coo2csr( C->d_dcscColPtr_ind+h_scanC[partNum*i], h_scanC[partNum*(i+1)]-
+			h_scanC[partNum*i], partSize, C->d_cscColPtr+i*(partSize+1) );
+	}
+	coo2csr( C->d_dcscColPtr_ind+h_scanC[partNum*(partNum-1)], C->nnz-
+		h_scanC[partNum*(partNum-1)], C->m-partSize*(partNum-1), 
+		C->d_cscColPtr+(partNum-1)*(partSize+1) );
 
-	/*cudaMemcpy( h_hashKeyTest, d_hashKey, TABLE_SIZE*sizeof(unsigned),
-		cudaMemcpyDeviceToHost );
-	cudaMemcpy( h_hashValTest, d_hashVal, TABLE_SIZE*sizeof(float),
-		cudaMemcpyDeviceToHost );*/
+	gpu_timer4.Stop();
+	elapsed4 += gpu_timer4.ElapsedMillis();
+	printf("==Stage 7==\n");
+	printf("Conversion: %f ms\n", elapsed4);
+	CudaCheckError();
+
 	cudaMemcpy( h_hashKey, d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned),
 		cudaMemcpyDeviceToHost );
 	cudaMemcpy( h_hashVal, d_hashValTemp, TABLE_SIZE*sizeof(float),
@@ -677,6 +696,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 
 	print_array_device("Row", C->d_dcscRowInd, C->nnz);
 	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
+	print_array_device("Col", C->d_cscColPtr, C->m+partNum+1);
 	print_array_device("Val", C->d_dcscVal, C->nnz);
 }
 
