@@ -225,6 +225,7 @@ __global__ void KernelInsert( const int* d_moveCount,
         int indices[NT * (VT + 1)];
         T values[NT * VT];
     };
+
     __shared__ Shared shared;
 	__shared__ int idx;
 	__shared__ int idxEnd;
@@ -247,7 +248,7 @@ __global__ void KernelInsert( const int* d_moveCount,
 		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
 		partitionsBegin = __ldg( d_partitionsBegin + idx );
 		//if( block%100==0 ) 
-			printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
+		//	printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
 	}
 
 	__syncthreads();
@@ -259,9 +260,9 @@ __global__ void KernelInsert( const int* d_moveCount,
 	//if( tid==0 ) printf("target:%d\n", target);
 	
     // Compute the input and output intervals this CTA processes.
-    int4 range = mgpu::CTALoadBalance<NT, VT>( moveCount, indices_global+inter, 
-		intervalCount, block-blocksBegin, tid, d_partitions+partitionsBegin,
-		shared.indices, true);
+    int4 range = mgpu::CTALoadBalance<NT, VT>( moveCount, indices_global+
+		inter, intervalCount, block-blocksBegin, tid, d_partitions+
+		partitionsBegin, shared.indices, true);
 
     // The interval indices are in the left part of shared memory (moveCount).
     // The scan of interval counts are in the right part (intervalCount).
@@ -317,11 +318,7 @@ __global__ void KernelInsert( const int* d_moveCount,
 			off[i]    = d_offB[inter+sources[i]];        // offB
 			row_idx[i]= d_dcscRowIndA[gather[i]];
 			valA[i]   = d_dcscValA[gather[i]];
-			/*length[i] = __ldg(d_lengthB+inter+sources[i]);    // lengthB
-			off[i]   = __ldg(d_offB+inter+sources[i]);        // offB
-			row_idx[i]= __ldg(d_dcscRowIndA+gather[i]);
-			valA[i]   = __ldg(d_dcscValA+gather[i]);*/
-			//if( tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f, inter:%d\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i], inter); 
+			if( block==0 && tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f, rank:%d, sources:%d, values:%d, inter:%d\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i], rank[i], sources[i], values[i], inter); 
 
 			for( int j=0; j<length[i]; j++ ) {
 				col_idx[i] = d_dcscRowIndB[off[i]+j];
@@ -330,6 +327,7 @@ __global__ void KernelInsert( const int* d_moveCount,
 				//valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f, idx:%d\n", i, j, row_idx[i], col_idx[i], valC[i], idx); 
+				if( row_idx[i]==6 ) printf("bid:%d, row:%d, col: %d, val:%f, block:%d, tid:%d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", j, row_idx[i], col_idx[i], valC[i], block, tid, gather[i], sources[i], values[i], off[i], length[i], inter); 
 				atomicAdd( value, 1 );
 				insert( row_idx[i]-row_i*partSize, col_idx[i]-
 					col_j*partSize, valC[i], d_hashKey+target, 
@@ -578,6 +576,8 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 					moveCount, d_scanbalance+h_inter[partNum*i+j], 
 					intervalCount, NV, 0, mgpu::less<int>(), context);
 
+				print_array_device("partitions", partitionsDevice->get(), numBlocks+1 );
+
 				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j]+numBlocks;
 				h_partitionsBegin[partNum*i+j+1] = 
 					h_partitionsBegin[partNum*i+j]+partitionsDevice->Size();
@@ -596,6 +596,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyHostToDevice );
 	cudaMemcpy( d_partitionsBegin, h_partitionsBegin, (partNum*partNum+1)*
 		sizeof(int), cudaMemcpyHostToDevice );
+	if( DEBUG_KERNEL ) print_array_device( "partitions", d_partitions, h_partitionsBegin[partNum*partNum] );
 
 	gpu_timer.Stop();
 	cudaProfilerStop();
@@ -620,15 +621,16 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	cudaProfilerStop();
 	printf("==Stage 5==\n");
 	printf("Insertion: %f\n", elapsed2);
-	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
+	CUDA_SAFE_CALL( cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost ));
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
 	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
 	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
 		partNum+1 );
+	print_array_device( "d_scanbalance", d_scanbalance, 40 );
+	print_array_device( "d_scanbalance", d_scanbalance+575, 40 );
 	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);
-	
 
 
 	// Radix sort
