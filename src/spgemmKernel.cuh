@@ -247,13 +247,14 @@ __global__ void KernelInsert( const int* d_moveCount,
 		intervalCount = __ldg( d_inter + idx + 1 ) - inter;
 		partitionsBegin = __ldg( d_partitionsBegin + idx );
 		//if( block%100==0 ) 
-		//	printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
+			printf("block:%d,idx:%d,mov:%d,int:%d,intC:%d,par:%d\n", block, idx, moveCount, inter, intervalCount, blocksBegin);
 	}
 
 	__syncthreads();
 
-	int row_i = idx/partNum;
-	int col_j = idx%partNum;
+	int row_i = idx/partSize;
+	int col_j = idx%partSize;
+	//if( row_i>0 || col_j>0 ) printf("Error: only one partition\n");
 	int target = idx*TABLE_SIZE;
 	//if( tid==0 ) printf("target:%d\n", target);
 	
@@ -329,13 +330,18 @@ __global__ void KernelInsert( const int* d_moveCount,
 				//valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f, idx:%d\n", i, j, row_idx[i], col_idx[i], valC[i], idx); 
-				if( insert( row_idx[i]-row_i*partSize, col_idx[i]-
+				atomicAdd( value, 1 );
+				insert( row_idx[i]-row_i*partSize, col_idx[i]-
 					col_j*partSize, valC[i], d_hashKey+target, 
-					d_hashVal+target, constants )==false ) 
-					atomicAdd( value, 1 );
+					d_hashVal+target, constants );
+				//if( insert( row_idx[i]-row_i*partSize, col_idx[i]-
+				//	col_j*partSize, valC[i], d_hashKey+target, 
+				//	d_hashVal+target, constants )==false ) 
+					//atomicAdd( value, 1 );
 					//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
 			}
-	}}
+		}	
+	}
     //__syncthreads();
 
     // Store the values to global memory.
@@ -546,12 +552,10 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKeyTest, d_hashKeyTemp, d_hashValTest, d_hashValTemp, TABLE_SIZE );
 	CudaCheckError();
-	cudaMemcpy( h_hashKeyTest, d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned), 
-		cudaMemcpyDeviceToHost );
-	cudaMemcpy( h_hashValTest, d_hashValTemp, TABLE_SIZE*sizeof(float), 
-		cudaMemcpyDeviceToHost );
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 	printf("Failed inserts: %d\n", value);
+	print_array_device( "single key", d_hashKeyTemp, TABLE_SIZE ); 
+	print_array_device( "single val", d_hashValTemp, TABLE_SIZE ); 
 
 	cudaProfilerStart();
 	GpuTimer gpu_timer;
