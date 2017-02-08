@@ -155,8 +155,8 @@ __global__ void extractRow( int *d_dcscColInd, int *d_dcscRowInd,
 	if( partInd<partNum*partNum && partOff<d_lengthC[partInd] ) {
 		int ind = d_scanC[partInd]+partOff;
 		//printf("tid:%d,col:%d,row:%d,col:%d,row:%d\n", threadIdx.x, partCol, partRow, d_hashKey[idx]>>16, d_hashKey[idx]&65535);
-		d_dcscColInd[ind] = (d_hashKey[idx]>>16)+partCol*partSize;
-		d_dcscRowInd[ind] = (d_hashKey[idx]&65535)+partRow*partSize;
+		d_dcscColInd[ind] = (d_hashKey[idx]&65535)+partCol*partSize;
+		d_dcscRowInd[ind] = (d_hashKey[idx]>>16)+partRow*partSize;
 		d_dcscVal[ind]    = d_hashVal[idx];
 	}
 }
@@ -177,7 +177,7 @@ void generateConstants( uint2 *constants ) {
 }
 
 __device__ bool insert( const int row_idx, const int col_idx, const float valC, unsigned *d_hashKey, float *d_hashVal, uint2 constants ) {
-	unsigned key = (col_idx<<16) | (row_idx&65535);
+	unsigned key = (row_idx<<16) | (col_idx&65535);
 	//unsigned key = (row_idx<<16) | (col_idx&65535);
 	// Attempt 2a: Basic hash
 	//unsigned hash = key & TABLE_SIZE;
@@ -208,13 +208,13 @@ __device__ bool insert( const int row_idx, const int col_idx, const float valC, 
 }
 
 template<typename Tuning, typename IndicesIt, typename ValuesIt, typename OutputIt>
-__global__ void KernelInterval( const int* d_moveCount, 
+__global__ void KernelInsert( const int* d_moveCount, 
 	IndicesIt indices_global, ValuesIt values_globalA, ValuesIt d_offB, 
 	ValuesIt d_lengthB, IndicesIt d_dcscRowIndA, const float *d_dcscValA, 
 	IndicesIt d_dcscRowIndB, const float *d_dcscValB, const int *d_inter, 
 	const int* d_partitions, OutputIt output_global, unsigned *d_hashKey, 
 	float *d_hashVal, int *value, uint2 constants, int* d_blocksBegin,
-	int* d_partitionsBegin, const int partNum ) {
+	int* d_partitionsBegin, const int partNum, const int partSize ) {
 
     typedef MGPU_LAUNCH_PARAMS Params;
     const int NT = Params::NT;
@@ -252,8 +252,8 @@ __global__ void KernelInterval( const int* d_moveCount,
 
 	__syncthreads();
 
-	//int row_i = idx/partNum;
-	//int col_j = idx%partNum;
+	int row_i = idx/partNum;
+	int col_j = idx%partNum;
 	int target = idx*TABLE_SIZE;
 	//if( tid==0 ) printf("target:%d\n", target);
 	
@@ -329,7 +329,11 @@ __global__ void KernelInterval( const int* d_moveCount,
 				//valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f, idx:%d\n", i, j, row_idx[i], col_idx[i], valC[i], idx); 
-				if( insert( row_idx[i], col_idx[i], valC[i], d_hashKey+target, d_hashVal+target, constants )==false ) atomicAdd( value, 1 );//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
+				if( insert( row_idx[i]-row_i*partSize, col_idx[i]-
+					col_j*partSize, valC[i], d_hashKey+target, 
+					d_hashVal+target, constants )==false ) 
+					atomicAdd( value, 1 );
+					//printf("Error: fail to insert %d, %d, %f\n", row_idx[i], col_idx[i], valC[i]);
 			}
 	}}
     //__syncthreads();
@@ -600,11 +604,12 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	float elapsed2 = 0.0f;
 	gpu_timer2.Start();
 
-	KernelInterval<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
+	KernelInsert<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
 		context.Stream()>>>( d_moveCount, d_scanbalance, d_offA, d_offB, 
 		d_lengthB, A->d_dcscRowInd, A->d_dcscVal, B->d_dcscRowInd, B->d_dcscVal,
 		d_inter, d_partitions, d_interbalance, d_hashKey, d_hashVal, 
-		d_value, constants, d_blocksBegin, d_partitionsBegin, partNum );
+		d_value, constants, d_blocksBegin, d_partitionsBegin, partNum, 
+		partSize );
 
 	gpu_timer2.Stop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
@@ -661,6 +666,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	mgpu::Scan<mgpu::MgpuScanTypeExc>( d_lengthC, partNum*partNum, 0, 
 		mgpu::plus<int>(), (int*)0, &(C->nnz), d_scanC, context );
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscColPtr_ind), C->nnz*sizeof(int)) );
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscColPtr_off), C->nnz*sizeof(int)) );
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscRowInd), C->nnz*sizeof(int)) );
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_dcscVal), C->nnz*sizeof(int)) );
 
@@ -670,16 +676,51 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		partNum, partSize );
 	CUDA_SAFE_CALL( cudaMemcpy( h_scanC, d_scanC, partNum*partNum*sizeof(int), 
 		cudaMemcpyDeviceToHost) );
-	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscColPtr), (C->m+partNum+1)*sizeof(int) ));
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscColPtr), (C->m+1)*sizeof(int) ));
+	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscRowInd), (C->nnz)*sizeof(int) ));
+	print_array_device("Row", C->d_dcscRowInd, C->nnz);
+	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
+	print_array_device("Val", C->d_dcscVal, C->nnz);
 
+	int *h_index;
+	int *d_index, *d_map;
+	h_index = (int*) malloc( C->nnz*sizeof(int) );
+	for( int i=0; i<C->nnz; i++ ) h_index[i] = i;
+	CUDA_SAFE_CALL( cudaMalloc( &d_index, C->nnz*sizeof(int)) );
+	CUDA_SAFE_CALL( cudaMalloc( &d_map, C->nnz*sizeof(int)) );
+	CUDA_SAFE_CALL( cudaMemcpy( d_index, h_index, C->nnz*sizeof(int), 
+		cudaMemcpyHostToDevice ) );
+	CUDA_SAFE_CALL( cudaFree(d_temp_storage) );
+	d_temp_storage = NULL;
+	temp_storage_bytes = 0;
+	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, 
+		C->d_dcscRowInd, C->d_dcscColPtr_off, d_index, d_map, C->nnz );
+	//cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, 
+	//	temp_storage_bytes, C->d_dcscColPtr_ind, C->d_dcscColPtr_off, 
+	//	d_hashVal, d_hashValTemp,
+    //	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
+	CUDA_SAFE_CALL(cudaMalloc(&d_temp_storage, temp_storage_bytes));
+	//cub::DeviceSegmentedRadixSort::SortPairs(d_temp_storage, 
+	//	temp_storage_bytes,	d_hashKey, d_hashKeyTemp, d_hashVal, d_hashValTemp,
+    //	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
+	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, 
+		C->d_dcscRowInd, C->d_dcscColPtr_off, d_index, d_map, C->nnz );
+	print_array_device( "map", d_map, C->nnz );
+	blocks = (C->nnz+THREADS-1)/THREADS;
+	gather<<<blocks,THREADS>>>( C->nnz, d_map, C->d_dcscColPtr_ind, 
+		C->d_cscRowInd );
+	gather<<<blocks,THREADS>>>( C->nnz, d_map, C->d_dcscVal, 
+		C->d_cscVal );
+	
 	//for( int i=0; i<1; i++ ) {
-	for( int i=0; i<partNum-1; i++ ) {
+	/*for( int i=0; i<partNum-1; i++ ) {
 		coo2csr( C->d_dcscColPtr_ind+h_scanC[partNum*i], h_scanC[partNum*(i+1)]-
 			h_scanC[partNum*i], partSize, C->d_cscColPtr+i*(partSize+1) );
 	}
 	coo2csr( C->d_dcscColPtr_ind+h_scanC[partNum*(partNum-1)], C->nnz-
 		h_scanC[partNum*(partNum-1)], C->m-partSize*(partNum-1), 
-		C->d_cscColPtr+(partNum-1)*(partSize+1) );
+		C->d_cscColPtr+(partNum-1)*(partSize+1) );*/
+	coo2csr( C->d_dcscColPtr_off, C->nnz, C->m, C->d_cscColPtr );
 
 	gpu_timer4.Stop();
 	elapsed4 += gpu_timer4.ElapsedMillis();
@@ -687,16 +728,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Conversion: %f ms\n", elapsed4);
 	CudaCheckError();
 
-	cudaMemcpy( h_hashKey, d_hashKeyTemp, TABLE_SIZE*sizeof(unsigned),
-		cudaMemcpyDeviceToHost );
-	cudaMemcpy( h_hashVal, d_hashValTemp, TABLE_SIZE*sizeof(float),
-		cudaMemcpyDeviceToHost );
-	verify( TABLE_SIZE, h_hashKey, h_hashKeyTest );
-	verify( TABLE_SIZE, h_hashVal, h_hashValTest );
-
-	print_array_device("Row", C->d_dcscRowInd, C->nnz);
-	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
-	print_array_device("Col", C->d_cscColPtr, C->m+partNum+1);
-	print_array_device("Val", C->d_dcscVal, C->nnz);
+	print_array_device("Row sorted", C->d_dcscColPtr_off, C->nnz);
+	print_array_device("Col sorted", C->d_cscRowInd, C->nnz);
+	print_array_device("CSR sorted", C->d_cscColPtr, C->m+1);
+	print_array_device("Val sorted", C->d_cscVal, C->nnz);
 }
 

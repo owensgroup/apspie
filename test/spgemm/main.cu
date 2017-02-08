@@ -287,13 +287,15 @@ void runBfs(int argc, char**argv) {
     CpuTimer cpu_timerMake;
     CpuTimer cpu_timerBuild;
 	d_matrix A;
-	d_matrix B; //Same as A
-	d_matrix C;
-	d_matrix D; //Used for counting vertical slab nnzs and for my spgemm mult
+	d_matrix B; // Same as A
+	d_matrix C; // cuSPARSE mxm
+	d_matrix D; // Used for counting vertical slab nnzs and for my spgemm mult
+	d_matrix E; // my mxm
 	matrix_new( &A, m, m );
 	matrix_new( &B, m, m );
 	matrix_new( &C, m, m );
 	matrix_new( &D, m, m );
+	matrix_new( &E, m, m );
 
     cpu_timerRead.Start();
 	if( undirected )
@@ -353,6 +355,7 @@ void runBfs(int argc, char**argv) {
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
     printf("spgemm finished in %f msec.\n", elapsed);
+	copy_matrix_device( &C );
 	//print_matrix_device( &C );
 
 	// Statistics:
@@ -380,13 +383,20 @@ void runBfs(int argc, char**argv) {
 	cudaProfilerStart();
 	gpu_timer2.Start();
 
-	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
+	spgemm( &E, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
 	gpu_timer2.Stop();
 	cudaDeviceSynchronize();
 	cudaProfilerStop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
-	printf("all memory alloc+spgemm: %f ms\n", elapsed2);
+	printf("Total time: %f ms\n", elapsed2);
+	copy_matrix_device( &E );
+
+	if( C.nnz != E.nnz ) printf ("INCORRECT: %d != %d\n", C.nnz, E.nnz);
+	if( C.m != E.m ) printf ("INCORRECT: %d != %d\n", C.m, E.m);
+	verify( min(C.nnz, E.nnz), C.h_cscVal, E.h_cscVal );
+	verify( min(C.nnz, E.nnz), C.h_cscRowInd, E.h_cscRowInd );
+	verify( C.m+1, C.h_cscColPtr, E.h_cscColPtr );
 
 	//countNNZ( &Asub );
 	//countNNZ( &Bsub );
