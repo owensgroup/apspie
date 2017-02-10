@@ -1,8 +1,26 @@
 
 
-ARCH="GEN_SM20"
+ARCH="GEN_SM10"
 
-for i in com-orkut cit-Patents coAuthorsDBLP delaunay_n24 rgg_n_2_24_s0 coAuthorsCiteseer coPapersCiteseer coPapersDBLP road_central road_usa ldoor cage15
+if [ "$ARCH" = "GEN_SM5" ] ; then
+	./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
+	./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx
+	./test /data/gunrock_dataset/large/hood/hood.mtx
+	./test /data/gunrock_dataset/large/pwtk/pwtk.mtx 
+	./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx
+	./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx 
+fi
+
+if [ "$ARCH" = "GEN_SM10" ] ; then
+	./test /data/gunrock_dataset/large/mc2depi/mc2depi.mtx
+	./test /data/gunrock_dataset/large/pdb1HYS/pdb1HYS.mtx -undirected
+	./test /data/gunrock_dataset/large/hood/hood.mtx -undirected
+	./test /data/gunrock_dataset/large/pwtk/pwtk.mtx -undirected
+	./test /data/gunrock_dataset/large/mouse_gene/mouse_gene.mtx
+	./test /data/gunrock_dataset/large/kron_g500-logn16/kron_g500-logn16.mtx -undirected
+fi
+
+for i in mc2depi pdb1HYS hood pwtk mouse_gene
 do
     if [ "$ARCH" = "GEN_SM15" ] ; then
         ./test /data/gunrock_dataset/large/$i/$i.mtx
@@ -11,9 +29,9 @@ done
 
 if [ "$ARCH" = "GEN_SM20" ] ; then
     ./test ../../dataset/small/test_cc.mtx
-    ./test ../../dataset/small/test_bc.mtx
-    ./test ../../dataset/small/test_pr.mtx
-    ./test ../../dataset/small/chesapeake.mtx
+    #./test ../../dataset/small/test_bc.mtx
+    #./test ../../dataset/small/test_pr.mtx
+    #./test ../../dataset/small/chesapeake.mtx
 fi
 
 
@@ -31,7 +49,7 @@ do
     fi
 done
 
-for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M soc-LiveJournal1 kron_g500-logn21
+for i in ak2010 belgium_osm coAuthorsDBLP delaunay_n13 delaunay_n21 webbase-1M 
 do
     if [ "$ARCH" = "GEN_SM35" ] ; then
         ./test /data/gunrock_dataset/large/$i/$i.mtx

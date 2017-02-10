@@ -5,12 +5,36 @@
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <sys/time.h>
-//#include <boost/timer/timer.hpp>
-#include "scratch.hpp"
+#include <scratch.hpp>
+#include <stdint.h>
 
 #include <vector>
 #include <utility>
 #include <algorithm>
+
+// Tuple sort
+struct arrayset {
+    int *values1;
+    int *values2;
+    float *values3;
+};
+
+typedef struct pair {
+    int key, key2, value;
+	float key3;
+} Pair;
+
+// Forward declare
+void custom_sort( arrayset *v, size_t size );
+
+static inline uint32_t log2(const uint32_t x) {
+  uint32_t y;
+  asm ( "\tbsr %1, %0\n"
+      : "=r"(y)
+      : "r" (x)
+  );
+  return y;
+}
 
 template<typename T>
 void print_end_interesting( T *array, int length=10 ) {
@@ -35,8 +59,9 @@ void print_end( T *array, int length=10 ) {
 }
 
 template<typename T>
-void print_array( T *array, int length=40 ) {
+void print_array( const char* str, const T *array, int length=40 ) {
     if( length>40 ) length=40;
+	std::cout << str << ":\n";
     for( int j=0;j<length;j++ ) {
         std::cout << "[" << j << "]:" << array[j] << " ";
     }
@@ -44,19 +69,42 @@ void print_array( T *array, int length=40 ) {
 }
 
 template<typename T>
-void print_matrix( T* h_csrVal, int* h_csrRowPtr, int* h_csrColInd, int length ) {
+void print_array_device( const char* str, const T *d_data, int length=40 ) {
+	if( length>40 ) length=40;
+
+    // Allocate array on host
+    T *h_data = (T*) malloc(length * sizeof(T));
+
+	cudaMemcpy( h_data, d_data, length*sizeof(T), cudaMemcpyDeviceToHost );
+	print_array( str, h_data, length );
+
+    // Cleanup
+    if (h_data) free(h_data);
+}
+
+template<typename T>
+void print_matrixCOO( T* h_cooVal, int* h_cooRowInd, int* h_cooColInd, int length, int edge ) {
     //print_array(h_csrRowPtr);
     //print_array(h_csrColInd); 
     //print_array(h_csrVal);
+
+    struct arrayset work = { h_cooColInd, h_cooRowInd, h_cooVal };
+    custom_sort(&work, edge);
+
     std::cout << "Matrix:\n";
     if( length>20 ) length=20;
+
+	int curr = 0;
+	int count = 0;
     for( int i=0; i<length; i++ ) {
-        int count = h_csrRowPtr[i];
+        curr = h_cooRowInd[count];
+		int last = curr;
         for( int j=0; j<length; j++ ) {
-            if( count>=h_csrRowPtr[i+1] || h_csrColInd[count] != j )
+            if( curr!=last || h_cooColInd[count] != j )
                 std::cout << "0 ";
             else {
-                std::cout << h_csrVal[count] << " ";
+                //std::cout << h_cooVal[count] << " ";
+                std::cout << "x ";
                 count++;
             }
         }
@@ -172,13 +220,14 @@ int CompareResults(const T* computed, const T* reference, const int len, const b
     return flag;
 }
 
+// Specialization for float
 template <>
 int CompareResults(const float* computed, const float* reference, const int len, const bool verbose )
 {
     int flag = 0;
     for (int i = 0; i < len; i++) {
 
-        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1)) {
+        if (computed[i] != reference[i] && flag == 0 && !(computed[i]==-1 && reference[i]>1e38) && !(computed[i]>1e38 && reference[i]==-1) && (abs(computed[i]-reference[i]) > 0.1*abs(computed[i]))) {
             printf("\nINCORRECT: [%lu]: ", (unsigned long) i);
             std::cout << computed[i];
             printf(" != ");
@@ -319,7 +368,7 @@ void readEdge( int &m, int &n, int &edge, FILE *inputFile ) {
 
 // This function loads a graph from .mtx input file
 template<typename typeVal>
-void readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
+bool readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
     bool weighted = true;
     int c;
     int csr_max = 0;
@@ -373,75 +422,19 @@ void readMtx( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) 
     printf("The biggest row was %d with %d elements.\n", csr_row, csr_max);
     printf("The first row has %d elements.\n", csr_first);
     if( weighted==true ) {
-        printf("The graph is weighted. ");
+        printf("The graph is weighted.\n");
     } else {
         printf("The graph is unweighted.\n");
     }
+	return weighted;
 }
 
-  // This function converts function from COO to CSR representation
-  // TODO: -add support for COO->CSC
-  //       -add support for int64
-  //
-  // @tparam[in] <typeVal>   Models value
-  //
-  // @param[in] numVert
-  // @param[in] numEdge
-  // @param[in] h_cooRowInd
-  // @param[in] h_cooColInd
-  // @param[in] h_cooVal
-  // @param[out] h_csrRowPtr
-  // @param[out] h_csrColInd
-  // @param[out] h_csrVal
-
-  template<typename typeVal>
-  void buildMatrix( int *h_csrRowPtr,
-                    int *h_csrColInd,
-                    typeVal *h_csrVal,
-                    int numVert,
-                    int numEdge,
-                    int *h_cooRowInd,     // I
-                    int *h_cooColInd,     // J
-                    typeVal *h_cooVal ) {
-
-    int temp;
-    int row;
-    int dest;
-    int cumsum = 0;
-    //int nnz = numEdge;
-    //C.val.resize(nnz);
-    //C.rowind.resize(nnz);
-
-    for( int i=0; i<=numVert; i++ )
-      h_csrRowPtr[i] = 0;               // Set all rowPtr to 0
-    for( int i=0; i<numEdge; i++ )
-      h_csrRowPtr[h_cooRowInd[i]]++;                   // Go through all elements to see how many fall into each column
-    for( int i=0; i<numVert; i++ ) {                  // Cumulative sum to obtain column pointer array
-      temp = h_csrRowPtr[i];
-      h_csrRowPtr[i] = cumsum;
-      cumsum += temp;
-    }
-    h_csrRowPtr[numVert] = numEdge;
-
-    for( int i=0; i<numEdge; i++ ) {
-      row = h_cooRowInd[i];                         // Store every row index in memory location specified by colptr
-      dest = h_csrRowPtr[row];
-      h_csrColInd[dest] = h_cooColInd[i];              // Store row index
-      h_csrVal[dest] = h_cooVal[i];                 // Store value
-      h_csrRowPtr[row]++;                      // Shift destination to right by one
-    }
-    cumsum = 0;
-    for( int i=0; i<=numVert; i++ ) {                 // Undo damage done by moving destination
-      temp = h_csrRowPtr[i];
-      h_csrRowPtr[i] = cumsum;
-      cumsum = temp;
-  }}
-
-bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bool &undirected ) {
+bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bool &undirected, float &aggro, bool &forceTwo ) {
     bool error = false;
     source = 0;
     device = 0;
     delta = 0.1;
+	aggro = 1.0;
 
     for( int i=2; i<argc; i+=2 ) {
        if( strstr(argv[i], "-source") != NULL )
@@ -452,6 +445,10 @@ bool parseArgs( int argc, char**argv, int &source, int &device, float &delta, bo
            delta = atof(argv[i+1]);
        else if( strstr(argv[i], "-undirected") != NULL )
            undirected = true;
+       else if( strstr(argv[i], "-force") != NULL )
+           forceTwo = true;
+       else if( strstr(argv[i], "-aggro") != NULL )
+           aggro = atof(argv[i+1]);
     }
     return error;
 }
@@ -467,7 +464,7 @@ void coo2csr( const int *d_cooRowIndA, const int edge, const int m, int *d_csrRo
     cusparseStatus_t status = cusparseXcoo2csr(handle, d_cooRowIndA, edge, m, d_csrRowPtrA, CUSPARSE_INDEX_BASE_ZERO);
     gpu_timer.Stop();
     elapsed += gpu_timer.ElapsedMillis();
-    printf("COO->CSR finished in %f msec. \n", elapsed);
+    //printf("COO->CSR finished in %f msec. \n", elapsed);
 
     // Important: destroy handle
     cusparseDestroy(handle);
@@ -485,20 +482,33 @@ void csr2csc( const int m, const int edge, const typeVal *d_csrValA, const int *
     // For CUDA 5.0+
     cusparseStatus_t status = cusparseScsr2csc(handle, m, m, edge, d_csrValA, d_csrRowPtrA, d_csrColIndA, d_cscValA, d_cscRowIndA, d_cscColPtrA, CUSPARSE_ACTION_SYMBOLIC, CUSPARSE_INDEX_BASE_ZERO);
 
+    switch( status ) {
+        case CUSPARSE_STATUS_SUCCESS:
+            printf("csr2csc conversion successful!\n");
+            break;
+        case CUSPARSE_STATUS_NOT_INITIALIZED:
+            printf("Error: Library not initialized.\n");
+            break;
+        case CUSPARSE_STATUS_INVALID_VALUE:
+            printf("Error: Invalid parameters m, n, or nnz.\n");
+            break;
+        case CUSPARSE_STATUS_EXECUTION_FAILED:
+            printf("Error: Failed to launch GPU.\n");
+            break;
+        case CUSPARSE_STATUS_ALLOC_FAILED:
+            printf("Error: Resources could not be allocated.\n");
+            break;
+        case CUSPARSE_STATUS_ARCH_MISMATCH:
+            printf("Error: Device architecture does not support.\n");
+            break;
+        case CUSPARSE_STATUS_INTERNAL_ERROR:
+            printf("Error: An internal operation failed.\n");
+            break;
+    }
+
     // Important: destroy handle
     cusparseDestroy(handle);
 }
-
-// Tuple sort
-struct arrayset {
-    int *values1;
-    int *values2;
-    //int *values3;
-};
-
-typedef struct pair {
-    int key, key2, value;
-} Pair;
 
 int cmp(const void *x, const void *y){
     int a = ((const Pair*)x)->key;
@@ -509,86 +519,124 @@ int cmp(const void *x, const void *y){
     else return a < b ? -1 : a > b;
 }
 
-void custom_sort(struct arrayset *v, size_t size){
-    //Pair key[size];
+void custom_sort( arrayset *v, size_t size){
     Pair *key = (Pair *)malloc(size*sizeof(Pair));
     for(int i=0;i<size;++i){
         key[i].key  = v->values1[i];
         key[i].key2 = v->values2[i];
+        key[i].key3 = v->values3[i];
         key[i].value=i;
     }
     qsort(key, size, sizeof(Pair), cmp);
     //int v1[size], v2[size];
     int *v1 = (int*)malloc(size*sizeof(int));
     int *v2 = (int*)malloc(size*sizeof(int));
+    float *v3 = (float*)malloc(size*sizeof(float));
     memcpy(v1, v->values1, size*sizeof(int));
     memcpy(v2, v->values2, size*sizeof(int));
+    memcpy(v3, v->values3, size*sizeof(float));
     //memcpy(v3, v->values3, size*sizeof(int));
     for(int i=0;i<size;++i){
         v->values1[i] = v1[key[i].value];
         v->values2[i] = v2[key[i].value];
+        v->values3[i] = v3[key[i].value];
     }
     free(key);
     free(v1);
     free(v2);
+    free(v3);
 }
 
-template<typename typeVal>
-int makeSymmetric( int edge, int *h_csrColIndA, int *h_cooRowIndA, typeVal *h_randVec ) {
+// Performs transposition
+// -by swapping ColInd and RowInd, then sorting
+/*template<typename typeVal>
+void makeTranspose( int edge, int *h_cooColIndA, int *h_cooRowIndA, typeVal *h_cooValA ) {
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
+    int *temp = h_cooColIndA;
+    h_cooColIndA = h_cooRowIndA;
+    h_cooRowIndA = temp;
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
 
-    int realEdge = edge/2;
-    
-    for( int i=0; i<realEdge; i++ ) {
-        h_cooRowIndA[realEdge+i] = h_csrColIndA[i];
-        h_csrColIndA[realEdge+i] = h_cooRowIndA[i];
+    // Sort by column ID
+    //struct arrayset work = { h_cooRowIndA, h_cooColIndA };
+    struct arrayset work = { h_cooColIndA, h_cooRowIndA };
+    custom_sort(&work, edge);
+	print_array( h_cooRowIndA );
+	print_array( h_cooColIndA );
+
+}*/
+
+// Performs symmetrization
+template<typename typeVal>
+int makeSymmetric( int edge, int *h_cooColInd, int *h_cooRowInd, typeVal *h_cooVal ) {
+
+    int shift = 0;
+ 
+    for( int i=0; i<edge; i++ ) {
+		if( h_cooColInd[i] != h_cooRowInd[i] )
+		{
+			h_cooRowInd[edge+i-shift] = h_cooColInd[i];
+       		h_cooColInd[edge+i-shift] = h_cooRowInd[i];
+			h_cooVal[edge+i-shift] = h_cooVal[i];
+		}
+		else shift++;
     }
+
+	edge = 2*edge-shift;
+	//print_array(h_cooRowInd);
+	//print_array(h_cooColInd);
 
     // Sort
-    struct arrayset work = { h_cooRowIndA, h_csrColIndA };
+    struct arrayset work = { h_cooRowInd, h_cooColInd, h_cooVal };
     custom_sort(&work, edge);
-    /*std::vector< std::pair<int, int> > pairs;
-    for( int i=0; i<edge; i++ )
-        pairs.push_back(std::make_pair( h_cooRowIndA[i], h_csrColIndA[i] ));
-    std::sort( pairs.begin(), pairs.end() );
-    for( int i=0; i<edge; i++ ) {
-        h_cooRowIndA[i] = pairs[i].first;
-        h_csrColIndA[i] = pairs[i].second;
-    }*/
-
-    int curr = h_csrColIndA[0];
-    int last;
-    int curr_row = h_cooRowIndA[0];
-    int last_row;
-    if( curr_row == curr )
-        h_cooRowIndA[0] = -1;
+	//print_array(h_cooRowInd);
+	//print_array(h_cooColInd);
 
     // Check for self-loops and repetitions, mark with -1
-    for( int i=1; i<edge; i++ ) {
+    // TODO: make self-loops and repetitions contingent on whether we 			  
+	// are doing graph algorithm or matrix multiplication
+    int curr = h_cooColInd[0];
+    int last;
+    int curr_row = h_cooRowInd[0];
+    int last_row;
+
+	// Self-loops
+    //if( curr_row == curr )
+    //    h_cooRowInd[0] = -1;
+    
+	for( int i=1; i<edge; i++ ) {
         last = curr;
         last_row = curr_row;
-        curr = h_csrColIndA[i];
-        curr_row = h_cooRowIndA[i];
+        curr = h_cooColInd[i];
+        curr_row = h_cooRowInd[i];
 
-        // Self-loops
-        if( curr_row == curr )
-            h_csrColIndA[i] = -1;
+        // Self-loops (TODO: make self-loops and repetitions contingent on whether we 
+		// are doing graph algorithm or matrix multiplication)
+        //if( curr_row == curr )
+        //    h_csrColInd[i] = -1;
         // Repetitions
-        else if( curr == last && curr_row == last_row )
-            h_csrColIndA[i] = -1;
+        if( curr == last && curr_row == last_row )
+		{
+			//printf("Curr: %d, Last: %d, Curr_row: %d, Last_row: %d\n", curr, last, curr_row, last_row );
+            h_cooColInd[i] = -1;
+		}
     }
 
+	shift=0;
+
     // Remove self-loops and repetitions.
-    int shift = 0;
     int back = 0;
     for( int i=0; i+shift<edge; i++ ) {
-        if(h_csrColIndA[i] == -1) {
+        if(h_cooColInd[i] == -1) {
             for( shift; back<=edge; shift++ ) {
                 back = i+shift;
-                if( h_csrColIndA[back] != -1 ) {
+                if( h_cooColInd[back] != -1 ) {
                     //printf("Swapping %d with %d\n", i, back ); 
-                    h_csrColIndA[i] = h_csrColIndA[back];
-                    h_cooRowIndA[i] = h_cooRowIndA[back];
-                    h_csrColIndA[back] = -1;
+                    h_cooColInd[i] = h_cooColInd[back];
+                    h_cooRowInd[i] = h_cooRowInd[back];
+                    h_cooColInd[back] = -1;
                     break;
     }}}}
     return edge-shift;
