@@ -619,11 +619,12 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
-
+    if(DEBUG_SPGEMM){
 	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
 	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
 		partNum+1 );
 	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);
+    }
 	
 
 
@@ -678,10 +679,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyDeviceToHost) );
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscColPtr), (C->m+1)*sizeof(int) ));
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscRowInd), (C->nnz)*sizeof(int) ));
-	print_array_device("Row", C->d_dcscRowInd, C->nnz);
-	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
-	print_array_device("Val", C->d_dcscVal, C->nnz);
-
+    if(DEBUG_SPGEMM){
+    	print_array_device("Row", C->d_dcscRowInd, C->nnz);
+    	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
+    	print_array_device("Val", C->d_dcscVal, C->nnz);
+    }
 	int *h_index;
 	int *d_index, *d_map;
 	h_index = (int*) malloc( C->nnz*sizeof(int) );
@@ -705,7 +707,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     //	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, 
 		C->d_dcscRowInd, C->d_dcscColPtr_off, d_index, d_map, C->nnz );
-	print_array_device( "map", d_map, C->nnz );
+	if(DEBUG_SPGEMM) print_array_device( "map", d_map, C->nnz );
 	blocks = (C->nnz+THREADS-1)/THREADS;
 	gather<<<blocks,THREADS>>>( C->nnz, d_map, C->d_dcscColPtr_ind, 
 		C->d_cscRowInd );
@@ -727,10 +729,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("==Stage 7==\n");
 	printf("Conversion: %f ms\n", elapsed4);
 	CudaCheckError();
-
-	print_array_device("Row sorted", C->d_dcscColPtr_off, C->nnz);
-	print_array_device("Col sorted", C->d_cscRowInd, C->nnz);
-	print_array_device("CSR sorted", C->d_cscColPtr, C->m+1);
-	print_array_device("Val sorted", C->d_cscVal, C->nnz);
+    if(DEBUG_SPGEMM){
+    	print_array_device("Row sorted", C->d_dcscColPtr_off, C->nnz);
+    	print_array_device("Col sorted", C->d_cscRowInd, C->nnz);
+    	print_array_device("CSR sorted", C->d_cscColPtr, C->m+1);
+    	print_array_device("Val sorted", C->d_cscVal, C->nnz);
+    }
 }
 
