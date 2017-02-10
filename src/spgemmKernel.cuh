@@ -268,7 +268,7 @@ __global__ void KernelInsert( const int* d_moveCount,
     // The scan of interval counts are in the right part (intervalCount).
     int destCount = range.y - range.x;
     int sourceCount = range.w - range.z;
-	//if( tid==0 && block>1050 && block<1100 ) printf("block:%d, tid:%d, idx:%d, %d, %d, %d, %d\n", block, tid, idx, range.x, range.y, range.z, range.w, destCount, sourceCount );
+	if( tid==0 && block<20 && block<60 ) printf("block:%d, tid:%d, idx:%d, %d, %d, %d, %d, destC:%d, sourceC:%d\n", block, tid, idx, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -304,6 +304,7 @@ __global__ void KernelInsert( const int* d_moveCount,
     T values[VT];
     mgpu::DeviceGather<NT, VT>(destCount, shared.values - range.z, sources, tid,
         values, false);
+    //mgpu::DeviceGather<NT, VT>(destCount, shared.values - range.z, sources, tid, values, false);
 
 	int gather[VT], length[VT], off[VT], row_idx[VT], col_idx[VT];
 	float valA[VT], valB[VT], valC[VT];
@@ -327,7 +328,8 @@ __global__ void KernelInsert( const int* d_moveCount,
 				//valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f, idx:%d\n", i, j, row_idx[i], col_idx[i], valC[i], idx); 
-				if( row_idx[i]==6 ) printf("bid:%d, row:%d, col: %d, val:%f, block:%d, tid:%d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", j, row_idx[i], col_idx[i], valC[i], block, tid, gather[i], sources[i], values[i], off[i], length[i], inter); 
+				if( block<20 && tid==0 ) printf("block:%d, tid:%d, bid:%d, row:%d, col: %d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", block, tid, j, row_idx[i], col_idx[i], gather[i], sources[i], values[i], off[i], length[i], inter); 
+				//if( row_idx[i]==6 ) printf("bid:%d, row:%d, col: %d, block:%d, tid:%d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", j, row_idx[i], col_idx[i], block, tid, gather[i], sources[i], values[i], off[i], length[i], inter); 
 				atomicAdd( value, 1 );
 				insert( row_idx[i]-row_i*partSize, col_idx[i]-
 					col_j*partSize, valC[i], d_hashKey+target, 
@@ -435,7 +437,7 @@ __global__ void KernelMove(int destCount,
     //__syncthreads();
 
     // Store the values to global memory.
-    //mgpu::DeviceRegToGlobal<NT, VT>(destCount, gather, tid, output_global + range.x);
+    mgpu::DeviceRegToGlobal<NT, VT>(destCount, values, tid, output_global + range.x);
 }
 
 
@@ -576,7 +578,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 					moveCount, d_scanbalance+h_inter[partNum*i+j], 
 					intervalCount, NV, 0, mgpu::less<int>(), context);
 
-				print_array_device("partitions", partitionsDevice->get(), numBlocks+1 );
+				//print_array_device("partitions", partitionsDevice->get(), numBlocks+1 );
 
 				h_blocksBegin[partNum*i+j+1] = h_blocksBegin[partNum*i+j]+numBlocks;
 				h_partitionsBegin[partNum*i+j+1] = 
@@ -625,6 +627,9 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
+	print_array_device( "d_interbalance", d_interbalance+950, 40 );
+	print_array_device( "d_interbalance", d_interbalance+990, 40 );
+	print_array_device( "d_interbalance", d_interbalance+1030, 40 );
 	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
 	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
 		partNum+1 );
