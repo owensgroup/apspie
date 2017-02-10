@@ -222,11 +222,12 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 				A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, 
 				B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, 
 				d_intersectionA+h_inter[partNum*i+j], d_intersectionB+
-				h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], 
+				h_inter[partNum*i+j], 
+				//h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], 
 				&countsDevice, context);
 
-			printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, 
-				curr_A, curr_B, total);
+			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, 
+			//	curr_A, curr_B, total);
 
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
 			updateInter<<<BLOCKS,NTHREADS>>>( d_intersectionB+
