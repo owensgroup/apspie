@@ -210,24 +210,26 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	cudaMalloc(&(C->d_cscRowInd), MAX_GLOBAL*sizeof(int));
 	cudaMalloc(&(C->d_cscVal), MAX_GLOBAL*sizeof(float));
 
-	for( int i=0; i<partNum; i++ ) {
+	for( int i=0; i<1; i++ ) {
+	//for( int i=0; i<partNum; i++ ) {
 		last_A = curr_A;
 		curr_A = A->h_dcscPartPtr[i+1]-A->h_dcscPartPtr[i];
 		curr_B = 0;
+		//for( int j=0; j<3; j++ ) {
 		for( int j=0; j<partNum; j++ ) {
 			last_B = curr_B;
 			curr_B = B->h_dcscPartPtr[j+1]-B->h_dcscPartPtr[j];
 
     		total = mgpu::SetOpPairs<mgpu::MgpuSetOpIntersection, false>(
-				A->d_dcscColPtr_ind+last_A,d_dcscColDiffA+last_A, curr_A, 
-				B->d_dcscColPtr_ind+last_B, d_dcscColDiffB+last_B, curr_B, 
+				A->d_dcscColPtr_ind+last_A, mgpu::counting_iterator<int>(0), 
+				curr_A, B->d_dcscColPtr_ind+last_B, 
+				mgpu::counting_iterator<int>(0), curr_B, 
 				d_intersectionA+h_inter[partNum*i+j], d_intersectionB+
 				h_inter[partNum*i+j], 
 				//h_inter[partNum*i+j], d_interbalance+h_inter[partNum*i+j], 
 				&countsDevice, context);
 
-			//printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d\n", i, j, 
-			//	curr_A, curr_B, total);
+			printf("i:%d, j:%d, LengthA:%d, LengthB:%d, Total:%d, Aoff:%d, Boff:%d\n", i, j, curr_A, curr_B, total, A->h_dcscPartPtr[i], B->h_dcscPartPtr[j]);
 
 			h_inter[i*partNum+j+1] = h_inter[i*partNum+j]+total;
 			updateInter<<<BLOCKS,NTHREADS>>>( d_intersectionB+
@@ -242,9 +244,9 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	printf("==Stage 2==\n");
 	printf("Intersection: %f\n", elapsed);
 	if( DEBUG_SPGEMM ) { 
-		print_array_device("intersectionA", d_intersectionA, h_inter[partNum*partNum]);
-		print_array_device("intersectionB", d_intersectionB, h_inter[partNum*partNum]);
-		print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
+		print_array_device("intersectionA", d_intersectionA+260, h_inter[1]);
+		print_array_device("intersectionB", d_intersectionB+260, h_inter[1]);
+		//print_array_device("interbalance", d_interbalance, h_inter[partNum*partNum]);
 		printf("intersection (total): %d\n", h_inter[partNum*partNum]); }
 
 	// Stage 3:
@@ -299,7 +301,7 @@ void spgemm( d_matrix *C, d_matrix *A, d_matrix *B, const int partSize, const in
 	if(DEBUG_SPGEMM) print_array_device("offA", d_offA, numInter);
 	printf("numInter: %d\n", numInter);
 	print_array_device("interA", d_intersectionA+280, 40);
-	print_array_device("interbalance", d_interbalance+280, 40);
+	//print_array_device("interbalance", d_interbalance+280, 40);
 	print_array_device("lengthA", d_lengthA+280, 40);
 	print_array_device("offA", d_offA+280, 40);
 

@@ -268,7 +268,7 @@ __global__ void KernelInsert( const int* d_moveCount,
     // The scan of interval counts are in the right part (intervalCount).
     int destCount = range.y - range.x;
     int sourceCount = range.w - range.z;
-	if( tid==0 && block<20 && block<60 ) printf("block:%d, tid:%d, idx:%d, %d, %d, %d, %d, destC:%d, sourceC:%d\n", block, tid, idx, range.x, range.y, range.z, range.w, destCount, sourceCount );
+	//if( tid==0 && block<20 && block<60 ) printf("block:%d, tid:%d, idx:%d, %d, %d, %d, %d, destC:%d, sourceC:%d\n", block, tid, idx, range.x, range.y, range.z, range.w, destCount, sourceCount );
 
     // Copy the source indices into register.
     int sources[VT];
@@ -319,7 +319,7 @@ __global__ void KernelInsert( const int* d_moveCount,
 			off[i]    = d_offB[inter+sources[i]];        // offB
 			row_idx[i]= d_dcscRowIndA[gather[i]];
 			valA[i]   = d_dcscValA[gather[i]];
-			if( block==0 && tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f, rank:%d, sources:%d, values:%d, inter:%d\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i], rank[i], sources[i], values[i], inter); 
+			//if( block==0 && tid<32 ) printf("tid:%d, vid:%d, gather: %d, off:%d, length:%d, row:%d, val:%f, rank:%d, sources:%d, values:%d, inter:%d\n", tid, i, gather[i], off[i], length[i], row_idx[i], valA[i], rank[i], sources[i], values[i], inter); 
 
 			for( int j=0; j<length[i]; j++ ) {
 				col_idx[i] = d_dcscRowIndB[off[i]+j];
@@ -328,7 +328,7 @@ __global__ void KernelInsert( const int* d_moveCount,
 				//valB[i]    = __ldg(d_dcscValB+off[i]+j);
 				valC[i]    = valA[i]*valB[i];
 				//if( tid<32 ) printf("vid:%d, bid:%d, row:%d, col: %d, val:%f, idx:%d\n", i, j, row_idx[i], col_idx[i], valC[i], idx); 
-				if( block<20 && tid==0 ) printf("block:%d, tid:%d, bid:%d, row:%d, col: %d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", block, tid, j, row_idx[i], col_idx[i], gather[i], sources[i], values[i], off[i], length[i], inter); 
+				//if( block<20 && tid==0 ) printf("block:%d, tid:%d, bid:%d, row:%d, col: %d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", block, tid, j, row_idx[i], col_idx[i], gather[i], sources[i], values[i], off[i], length[i], inter); 
 				//if( row_idx[i]==6 ) printf("bid:%d, row:%d, col: %d, block:%d, tid:%d, gather:%d, src:%d, values:%d, off:%d, length:%d, inter:%d\n", j, row_idx[i], col_idx[i], block, tid, gather[i], sources[i], values[i], off[i], length[i], inter); 
 				atomicAdd( value, 1 );
 				insert( row_idx[i]-row_i*partSize, col_idx[i]-
