@@ -383,6 +383,10 @@ void runBfs(int argc, char**argv) {
     float elapsed2 = 0.0f;
 	gpu_timer2.Start();
 
+	matrix_free( &A );
+	matrix_free( &B );
+	matrix_free( &C );
+
 	//bhsparseSpgemm( &Csub, &A, &Bsub );
 	//bhsparseSpgemm( &D, &A, &B );
 	spgemm( &C, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );

@@ -45,7 +45,7 @@ void matrix_new( d_matrix *A, int m, int n )
 // @param[in] h_cooVal
 // @param[out] A
 
-void matrix_delete( d_matrix *A )
+void matrix_free( d_matrix *A )
 {
 	cudaFree( A->d_cscColPtr );
 	if( A->d_cscRowInd != NULL ) cudaFree( A->d_cscRowInd );
