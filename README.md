@@ -4,8 +4,7 @@ apspie
 1. `git clone --recursive https://github.com/owensgroup/apspie.git`
 2. In base folder:  
    ```
-   mkdir ext  
-   cd ext  
+   git checkout d247428
    git submodule update --remote --merge
    ```
 3. Build individual algorithms:  
@@ -17,7 +16,7 @@ apspie
 
    From base folder:  
    ```
-   cd tests/[insert algorithm here]  
+   cd test/[insert algorithm here]  
    vi CMakeLists.txt  
    cmake .  
    make -j16
