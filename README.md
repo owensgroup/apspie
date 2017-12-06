@@ -1,12 +1,13 @@
 apspie
 ======
 
-1. git clone https://github.com/owensgroup/apspie.git
+1. `git clone --recursive https://github.com/owensgroup/apspie.git`
 2. In base folder:  
+   ```
    mkdir ext  
    cd ext  
-   git submodule add https://github.com/NVlabs/cub.git  
-   git submodule add https://github.com/NVlabs/moderngpu.git
+   git submodule update --remote --merge
+   ```
 3. Build individual algorithms:  
    bfs - Breadth First Search  
    mis - Maximal Independent Set  
@@ -15,8 +16,10 @@ apspie
    tc - Triangle Counting  
 
    From base folder:  
+   ```
    cd tests/[insert algorithm here]  
    vi CMakeLists.txt  
    cmake .  
-   make  
-   sh run.sh  
+   make -j16
+   sh run.sh
+   ```
