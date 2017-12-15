@@ -553,11 +553,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, d_hashKeyTest, d_hashKeyTemp, d_hashValTest, d_hashValTemp, TABLE_SIZE );
 	CudaCheckError();
 	cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost );
-	printf("Failed inserts: %d\n", value);
-	print_array_device( "single key", d_hashKeyTemp, TABLE_SIZE ); 
-	print_array_device( "single val", d_hashValTemp, TABLE_SIZE ); 
+	if( DEBUG_KERNEL )printf("Failed inserts: %d\n", value);
+	if( DEBUG_KERNEL )print_array_device( "single key", d_hashKeyTemp, TABLE_SIZE ); 
+	if( DEBUG_KERNEL )print_array_device( "single val", d_hashValTemp, TABLE_SIZE ); 
 
-	cudaProfilerStart();
+	//cudaProfilerStart();
 	GpuTimer gpu_timer;
 	float elapsed = 0.0f;
 	gpu_timer.Start();
@@ -601,7 +601,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	if( DEBUG_KERNEL ) print_array_device( "partitions", d_partitions, h_partitionsBegin[partNum*partNum] );
 
 	gpu_timer.Stop();
-	cudaProfilerStop();
+	//cudaProfilerStop();
 	elapsed += gpu_timer.ElapsedMillis();
 	printf("==Stage 4==\n");
 	printf("MergePath: %f\n", elapsed);
@@ -610,6 +610,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 	cudaProfilerStart();
 	float elapsed2 = 0.0f;
 	gpu_timer2.Start();
+	cudaProfilerStart();
 
 	KernelInsert<Tuning><<<h_blocksBegin[partNum*partNum], launch.x, 0, 
 		context.Stream()>>>( d_moveCount, d_scanbalance, d_offA, d_offB, 
@@ -618,25 +619,27 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		d_value, constants, d_blocksBegin, d_partitionsBegin, partNum, 
 		partSize );
 
+	cudaProfilerStop();
 	gpu_timer2.Stop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
 	cudaProfilerStop();
 	printf("==Stage 5==\n");
 	printf("Insertion: %f\n", elapsed2);
 	CUDA_SAFE_CALL( cudaMemcpy( &value, d_value, sizeof(int), cudaMemcpyDeviceToHost ));
-	printf("Failed inserts: %d\n", value);
+	if( DEBUG_KERNEL ) printf("Failed inserts: %d\n", value);
 	//CudaCheckError();
 
-	print_array_device( "d_interbalance", d_interbalance+950, 40 );
-	print_array_device( "d_interbalance", d_interbalance+990, 40 );
-	print_array_device( "d_interbalance", d_interbalance+1030, 40 );
-	print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
-	print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
-		partNum+1 );
-	print_array_device( "d_scanbalance", d_scanbalance, 40 );
-	print_array_device( "d_scanbalance", d_scanbalance+575, 40 );
-	printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);
-
+	if( DEBUG_KERNEL ) {
+		print_array_device( "d_interbalance", d_interbalance+950, 40 );
+		print_array_device( "d_interbalance", d_interbalance+990, 40 );
+		print_array_device( "d_interbalance", d_interbalance+1030, 40 );
+		print_array_device( "d_blocksBegin", d_blocksBegin, partNum*partNum+1 );
+		print_array_device( "d_partitionsBegin", d_partitionsBegin, partNum*
+			partNum+1 );
+		print_array_device( "d_scanbalance", d_scanbalance, 40 );
+		print_array_device( "d_scanbalance", d_scanbalance+575, 40 );
+		printf("Blocks launched: %d\n", h_blocksBegin[partNum*partNum]);
+	}
 
 	// Radix sort
 	GpuTimer gpu_timer3;
@@ -689,9 +692,11 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		cudaMemcpyDeviceToHost) );
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscColPtr), (C->m+1)*sizeof(int) ));
 	CUDA_SAFE_CALL( cudaMalloc( &(C->d_cscRowInd), (C->nnz)*sizeof(int) ));
-	print_array_device("Row", C->d_dcscRowInd, C->nnz);
-	print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
-	print_array_device("Val", C->d_dcscVal, C->nnz);
+	if( DEBUG_KERNEL ) {
+		print_array_device("Row", C->d_dcscRowInd, C->nnz);
+		print_array_device("Col", C->d_dcscColPtr_ind, C->nnz);
+		print_array_device("Val", C->d_dcscVal, C->nnz);
+	}
 
 	int *h_index;
 	int *d_index, *d_map;
@@ -716,7 +721,7 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
     //	partNum*partNum*TABLE_SIZE, partNum*partNum, d_offsets, d_offsets + 1);
 	cub::DeviceRadixSort::SortPairs( d_temp_storage, temp_storage_bytes, 
 		C->d_dcscRowInd, C->d_dcscColPtr_off, d_index, d_map, C->nnz );
-	print_array_device( "map", d_map, C->nnz );
+	if( DEBUG_KERNEL ) print_array_device( "map", d_map, C->nnz );
 	blocks = (C->nnz+THREADS-1)/THREADS;
 	gather<<<blocks,THREADS>>>( C->nnz, d_map, C->d_dcscColPtr_ind, 
 		C->d_cscRowInd );
@@ -733,15 +738,18 @@ template <typename typeVal>//, typename ProblemData, typename Functor>
 		C->d_cscColPtr+(partNum-1)*(partSize+1) );*/
 	coo2csr( C->d_dcscColPtr_off, C->nnz, C->m, C->d_cscColPtr );
 
+	CudaCheckError();
 	gpu_timer4.Stop();
 	elapsed4 += gpu_timer4.ElapsedMillis();
 	printf("==Stage 7==\n");
 	printf("Conversion: %f ms\n", elapsed4);
-	CudaCheckError();
+	//CudaCheckError();
 
-	print_array_device("Row sorted", C->d_dcscColPtr_off, C->nnz);
-	print_array_device("Col sorted", C->d_cscRowInd, C->nnz);
-	print_array_device("CSR sorted", C->d_cscColPtr, C->m+1);
-	print_array_device("Val sorted", C->d_cscVal, C->nnz);
+	if( DEBUG_KERNEL ) {
+		print_array_device("Row sorted", C->d_dcscColPtr_off, C->nnz);
+		print_array_device("Col sorted", C->d_cscRowInd, C->nnz);
+		print_array_device("CSR sorted", C->d_cscColPtr, C->m+1);
+		print_array_device("Val sorted", C->d_cscVal, C->nnz);
+	}
 }
 

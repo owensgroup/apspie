@@ -380,14 +380,14 @@ void runBfs(int argc, char**argv) {
 
     GpuTimer gpu_timer2;
     float elapsed2 = 0.0f;
-	cudaProfilerStart();
+	//cudaProfilerStart();
 	gpu_timer2.Start();
 
 	spgemm( &E, &A, &D, (int)TARGET_PART_SIZE, (int)TARGET_PART_NUM, *context );
 
 	gpu_timer2.Stop();
-	cudaDeviceSynchronize();
-	cudaProfilerStop();
+	//cudaDeviceSynchronize();
+	//cudaProfilerStop();
 	elapsed2 += gpu_timer2.ElapsedMillis();
 	printf("Total time: %f ms\n", elapsed2);
 	copy_matrix_device( &E );
